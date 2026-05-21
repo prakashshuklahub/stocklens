@@ -259,22 +259,10 @@ function QuietSection({ quiet }: { quiet: Signal[] }) {
       defaultOpen={false}
       hideWhenEmpty
     >
-      <ul className="space-y-1.5">
+      <ul className="space-y-2.5">
         {quiet.map((s) => (
-          <li key={s.ticker} className="flex items-center justify-between bg-zinc-900/60 rounded-xl px-4 py-2.5 gap-3">
-            <div className="flex items-center gap-2.5 min-w-0">
-              <StockLogo ticker={s.ticker} size="sm" />
-              <span className="text-sm font-semibold text-zinc-300 tracking-tight" translate="no">{s.ticker}</span>
-              <span className="text-xs text-zinc-600 truncate">{s.company_name}</span>
-            </div>
-            {s.change_1d_pct != null && (
-              <span className={cn(
-                'text-xs font-medium tabular-nums shrink-0',
-                s.change_1d_pct >= 0 ? 'text-emerald-500/80' : 'text-red-500/80'
-              )}>
-                {s.change_1d_pct >= 0 ? '+' : ''}{s.change_1d_pct.toFixed(2)}%
-              </span>
-            )}
+          <li key={s.ticker}>
+            <SignalCard signal={s} />
           </li>
         ))}
       </ul>

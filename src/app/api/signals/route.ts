@@ -173,13 +173,20 @@ export async function GET() {
     }
   })
 
-  // Fetch news only for stocks that already qualify (top movers).
-  // This keeps the route bounded (max ~30 RSS requests instead of 46+).
-  const newsTargets = scored
+  // Fetch news for movers + quiet watchlist names (bounded RSS volume).
+  const moverTickers = scored
     .filter((x) => Math.abs(x.score) >= BIAS_THRESHOLD)
     .sort((a, b) => Math.abs(b.score) - Math.abs(a.score))
     .slice(0, 30)
     .map((x) => x.stock.ticker)
+
+  const quietTickers = scored
+    .filter((x) => Math.abs(x.score) < BIAS_THRESHOLD)
+    .sort((a, b) => Math.abs(b.change_1d_pct ?? 0) - Math.abs(a.change_1d_pct ?? 0))
+    .slice(0, 30)
+    .map((x) => x.stock.ticker)
+
+  const newsTargets = [...new Set([...moverTickers, ...quietTickers])]
 
   const newsByTicker = new Map<string, SignalNewsItem[]>()
   if (newsTargets.length) {

@@ -221,6 +221,8 @@ export function scorePick(input: ScoreInput): ScoredPick | null {
     target_high: target.target_high,
     upside_pct,
     target_label: target.label,
+    week52_high: f.week52_high,
+    week52_low: f.week52_low,
     analyst_total,
     analyst_buy: f.analyst_buy ?? 0,
     analyst_hold: f.analyst_hold ?? 0,

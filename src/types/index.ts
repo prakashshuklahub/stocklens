@@ -135,6 +135,8 @@ export interface Pick {
   upside_pct: number
   /** analyst = Finnhub mean; 52w_high = room to 52W high; momentum = consensus + trend */
   target_label: 'analyst' | '52w_high' | 'momentum'
+  week52_high: number | null
+  week52_low: number | null
 
   // Confidence / coverage
   analyst_total: number

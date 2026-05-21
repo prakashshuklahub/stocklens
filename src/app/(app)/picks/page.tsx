@@ -13,6 +13,7 @@ import {
   Briefcase,
 } from 'lucide-react'
 import StockLogo from '@/components/StockLogo'
+import Week52Range from '@/components/Week52Range'
 import { pickDisplayCopy } from '@/lib/picks'
 import {
   formatTargetPrice,
@@ -79,31 +80,6 @@ function FactorChip({ factor }: { factor: PickFactor }) {
   )
 }
 
-// ── Target range bar ──────────────────────────────────────────────────────────
-function TargetRange({ pick }: { pick: Pick }) {
-  if (pick.target_label === '52w_high') return null
-  if (pick.target_low == null || pick.target_high == null || pick.target_high <= pick.target_low) return null
-  const lo = pick.target_low
-  const hi = pick.target_high
-  const meanPos = Math.max(0, Math.min(100, ((pick.target_mean - lo) / (hi - lo)) * 100))
-  return (
-    <div className="space-y-1">
-      <div className="flex items-center justify-between text-[11px] text-zinc-500 tabular-nums">
-        <span>${fmt(lo)}</span>
-        <span className="text-zinc-600 font-medium">Target price range</span>
-        <span>${fmt(hi)}</span>
-      </div>
-      <div className="h-1.5 bg-zinc-700/40 rounded-full relative">
-        <div
-          className="absolute top-1/2 -translate-y-1/2 w-1 h-3 bg-zinc-300 rounded-full"
-          style={{ left: `calc(${meanPos}% - 2px)` }}
-          aria-label={`Target price $${fmt(pick.target_mean)}`}
-        />
-      </div>
-    </div>
-  )
-}
-
 // ── Pick card ─────────────────────────────────────────────────────────────────
 function PickCard({ pick, rank }: { pick: Pick; rank: number }) {
   const [open, setOpen] = useState(false)
@@ -112,6 +88,11 @@ function PickCard({ pick, rank }: { pick: Pick; rank: number }) {
   const isPos = upsidePct != null && upsidePct >= 0
   const targetCopy = pickDisplayCopy(pick.target_label)
   const subline = showTarget ? targetCopy.targetSub : null
+  const showAnalystRange =
+    showTarget &&
+    pick.target_low != null &&
+    pick.target_high != null &&
+    pick.target_high > pick.target_low
 
   return (
     <div className="card-surface overflow-hidden">
@@ -167,6 +148,11 @@ function PickCard({ pick, rank }: { pick: Pick; rank: number }) {
                 {showTarget ? formatTargetPrice(pick.target_mean) : TARGET_UNAVAILABLE}
               </p>
               {subline && <p className="text-[11px] text-zinc-500">{subline}</p>}
+              {showAnalystRange && (
+                <p className="text-[10px] text-zinc-600 tabular-nums mt-0.5">
+                  Range ${fmt(pick.target_low!)} – ${fmt(pick.target_high!)}
+                </p>
+              )}
             </div>
             {/* Upside */}
             <div>
@@ -200,6 +186,11 @@ function PickCard({ pick, rank }: { pick: Pick; rank: number }) {
               </p>
             </div>
           </div>
+          <Week52Range
+            high={pick.week52_high}
+            low={pick.week52_low}
+            current={pick.current_price}
+          />
         </div>
 
         {/* Ownership tag */}
@@ -237,6 +228,18 @@ function PickCard({ pick, rank }: { pick: Pick; rank: number }) {
       {/* ── Expanded section ── */}
       {open && (
         <div className="px-4 pb-4 pt-1 space-y-4">
+          {/* Analyst breakdown — context before thesis */}
+          <div>
+            <p className="text-[11px] font-semibold text-zinc-500 uppercase tracking-wide mb-2">
+              Analyst coverage ({pick.analyst_total})
+            </p>
+            <div className="flex gap-2">
+              <Mini label="Buy" value={pick.analyst_buy} tone="emerald" />
+              <Mini label="Hold" value={pick.analyst_hold} tone="zinc" />
+              <Mini label="Sell" value={pick.analyst_sell} tone="red" />
+            </div>
+          </div>
+
           {/* Thesis */}
           {pick.thesis && (
             <div>
@@ -258,21 +261,6 @@ function PickCard({ pick, rank }: { pick: Pick; rank: number }) {
               <p className="text-sm text-zinc-300 leading-relaxed">{pick.main_risk}</p>
             </div>
           )}
-
-          {/* Target range visual */}
-          <TargetRange pick={pick} />
-
-          {/* Analyst breakdown */}
-          <div>
-            <p className="text-[11px] font-semibold text-zinc-500 uppercase tracking-wide mb-2">
-              Analyst coverage ({pick.analyst_total})
-            </p>
-            <div className="flex gap-2">
-              <Mini label="Buy" value={pick.analyst_buy} tone="emerald" />
-              <Mini label="Hold" value={pick.analyst_hold} tone="zinc" />
-              <Mini label="Sell" value={pick.analyst_sell} tone="red" />
-            </div>
-          </div>
 
           {/* Source attribution */}
           <p className="text-[10px] text-zinc-600 pt-1">
