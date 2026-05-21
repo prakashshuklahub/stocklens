@@ -22,7 +22,10 @@ ALTER TABLE stock_fundamentals
   ADD COLUMN IF NOT EXISTS news_count_7d   integer,
   ADD COLUMN IF NOT EXISTS support_5d      numeric(12,4),
   ADD COLUMN IF NOT EXISTS support_20d     numeric(12,4),
-  ADD COLUMN IF NOT EXISTS avg_20d         numeric(12,4);
+  ADD COLUMN IF NOT EXISTS avg_20d         numeric(12,4),
+  ADD COLUMN IF NOT EXISTS target_price      numeric(12,4),
+  ADD COLUMN IF NOT EXISTS target_source     text CHECK (target_source IN ('fmp', 'finnhub', 'yahoo', '52w_high')),
+  ADD COLUMN IF NOT EXISTS target_fetched_at timestamptz;
 
 ALTER TABLE stock_fundamentals ENABLE ROW LEVEL SECURITY;
 

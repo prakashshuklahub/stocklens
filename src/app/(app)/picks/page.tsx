@@ -82,20 +82,14 @@ function TargetRange({ pick }: { pick: Pick }) {
     <div className="space-y-1">
       <div className="flex items-center justify-between text-[11px] text-zinc-500 tabular-nums">
         <span>${fmt(lo)}</span>
-        <span className="text-zinc-600 font-medium">
-          {pick.target_label === 'analyst' ? 'Analyst target range' : '52-week range'}
-        </span>
+        <span className="text-zinc-600 font-medium">Target price range</span>
         <span>${fmt(hi)}</span>
       </div>
       <div className="h-1.5 bg-zinc-700/40 rounded-full relative">
         <div
           className="absolute top-1/2 -translate-y-1/2 w-1 h-3 bg-zinc-300 rounded-full"
           style={{ left: `calc(${meanPos}% - 2px)` }}
-          aria-label={
-            pick.target_label === 'analyst'
-              ? `Mean analyst target $${fmt(pick.target_mean)}`
-              : `52-week high $${fmt(pick.target_mean)}`
-          }
+          aria-label={`Target price $${fmt(pick.target_mean)}`}
         />
       </div>
     </div>
@@ -148,7 +142,7 @@ function PickCard({ pick, rank }: { pick: Pick; rank: number }) {
               </p>
               <p className="text-[11px] text-zinc-500 tabular-nums">now ${fmt(pick.current_price)}</p>
             </div>
-            {/* Target / 52-week high / trend estimate */}
+            {/* Target price */}
             <div className="text-right">
               <p className="text-[10px] font-semibold text-zinc-500 uppercase tracking-wide">
                 {targetCopy.targetHeading}

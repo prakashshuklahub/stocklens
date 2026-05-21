@@ -1,8 +1,7 @@
 // Buy-recommendation scoring. Pure functions — no IO.
 // Consumed by /api/picks.
 //
-// Analyst targets come from Finnhub (paid) or Yahoo financialData (free).
-// We fall back to 52W-high room or momentum only when both are unavailable.
+// Analyst targets: FMP → Finnhub → Yahoo. Cached globally; 52W-high override when all fail.
 
 import type {
   Pick,
@@ -26,37 +25,36 @@ const MIN_SCORE = 10
 
 type TargetLabel = Pick['target_label']
 
-/** Plain-language labels for the Picks UI (no vendor jargon). */
+/** Plain-language labels for the Picks UI. */
 export function pickDisplayCopy(label: TargetLabel) {
   switch (label) {
     case 'analyst':
       return {
-        targetHeading: 'Target',
-        targetSub: 'Wall Street average',
-        upsideSub: 'to analyst target',
-        thesisTarget: (price: number) => `the average 12-month analyst target of $${price.toFixed(2)}`,
+        targetHeading: 'Target price',
+        targetSub: 'Wall Street average · 12 mo',
+        upsideSub: 'to target price',
+        thesisTarget: (price: number) => `a target price of $${price.toFixed(2)} (Wall Street average)`,
         defaultRisk:
           'Analyst targets look about a year ahead; the stock can still move up or down in the meantime.',
       }
     case '52w_high':
       return {
-        targetHeading: '52-week high',
-        targetSub: 'Not an analyst forecast',
-        upsideSub: 'to 52-week high',
-        thesisTarget: (price: number) =>
-          `room to move back toward its 52-week high of $${price.toFixed(2)}`,
+        targetHeading: 'Target price',
+        targetSub: 'Estimated · year high basis',
+        upsideSub: 'to target price',
+        thesisTarget: (price: number) => `a target price of $${price.toFixed(2)}`,
         defaultRisk:
-          'This is this year’s highest price so far—not a guarantee the stock will reach it.',
+          'This target is estimated from the 52-week high—not a bank forecast—and is not a guarantee the stock will reach it.',
       }
     case 'momentum':
       return {
-        targetHeading: 'Trend estimate',
-        targetSub: 'Not an analyst forecast',
-        upsideSub: 'momentum estimate',
+        targetHeading: 'Target price',
+        targetSub: 'Trend estimate · not analyst forecast',
+        upsideSub: 'to target price',
         thesisTarget: (_price: number, upsidePct: number) =>
-          `recent momentum and strong buy ratings suggesting about ${upsidePct.toFixed(0)}% upside`,
+          `recent momentum and strong buy ratings suggesting about ${upsidePct.toFixed(0)}% upside to the estimated target price`,
         defaultRisk:
-          'This is an estimate from recent price action and analyst ratings—not an official bank forecast.',
+          'This target is estimated from recent price action and analyst ratings—not an official bank forecast.',
       }
   }
 }
@@ -66,6 +64,22 @@ function resolveTarget(
   current_price: number,
   buy_ratio: number,
 ): { target_mean: number; target_low: number | null; target_high: number | null; upside_pct: number; label: TargetLabel; factor?: PickFactor } | null {
+  // Use globally cached target (analyst or 52W override from stock_fundamentals)
+  if (f.target_price && f.target_price > 0 && f.target_source) {
+    const upside_pct = ((f.target_price - current_price) / current_price) * 100
+    const is52w = f.target_source === '52w_high'
+    if (is52w && upside_pct < 3) return null
+    return {
+      target_mean: f.target_price,
+      target_low: is52w ? f.week52_low : f.target_low,
+      target_high: is52w ? f.week52_high : f.target_high,
+      upside_pct,
+      label: is52w ? '52w_high' : 'analyst',
+      factor: is52w ? { label: 'Upside to target price', tone: 'positive' } : undefined,
+    }
+  }
+
+  // Legacy fallback if cache columns not yet migrated
   if (f.target_mean && f.target_mean > 0) {
     const upside_pct = ((f.target_mean - current_price) / current_price) * 100
     return {
@@ -77,7 +91,6 @@ function resolveTarget(
     }
   }
 
-  // Free-tier fallback: room to 52-week high
   if (f.week52_high && current_price < f.week52_high * 0.97) {
     const upside_pct = ((f.week52_high - current_price) / current_price) * 100
     if (upside_pct >= 3) {
@@ -87,7 +100,7 @@ function resolveTarget(
         target_high: f.week52_high,
         upside_pct,
         label: '52w_high',
-        factor: { label: 'Upside to 52W high', tone: 'positive' },
+        factor: { label: 'Upside to target price', tone: 'positive' },
       }
     }
   }

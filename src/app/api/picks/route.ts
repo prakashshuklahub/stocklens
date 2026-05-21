@@ -127,7 +127,7 @@ export async function GET(req: NextRequest) {
     hydrated_live: hydratedLive,
     table_missing: tableMissing,
     missing_fundamentals: 0,
-    missing_target_mean: 0,
+    missing_target_price: 0,
     missing_analyst_data: 0,
     disqualified: 0,
     scored: 0,
@@ -139,7 +139,7 @@ export async function GET(req: NextRequest) {
     const current_price = priceByTicker.get(stock.ticker)
     if (!fundamentals) { debug.missing_fundamentals++; continue }
     if (current_price == null) continue
-    if (!fundamentals.target_mean) debug.missing_target_mean++
+    if (!fundamentals.target_price && !fundamentals.target_mean) debug.missing_target_price++
     const total = (fundamentals.analyst_buy ?? 0) + (fundamentals.analyst_hold ?? 0) + (fundamentals.analyst_sell ?? 0)
     if (total < 3) debug.missing_analyst_data++
     const pick = scorePick({

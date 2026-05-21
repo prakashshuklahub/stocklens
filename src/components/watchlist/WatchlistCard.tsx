@@ -143,17 +143,17 @@ function AnalystRating({ buy, hold, sell }: { buy: number | null; hold: number |
 }
 
 function TargetPrice({
-  targetMean,
+  targetPrice,
   targetLow,
   targetHigh,
-  week52High,
+  targetSource,
   current,
   loading,
 }: {
-  targetMean: number | null
+  targetPrice: number | null
   targetLow: number | null
   targetHigh: number | null
-  week52High: number | null
+  targetSource: StockFundamentals['target_source']
   current: number | null
   loading?: boolean
 }) {
@@ -166,30 +166,25 @@ function TargetPrice({
     )
   }
 
-  if (current == null) return null
+  if (current == null || targetPrice == null || targetPrice <= 0) return null
 
-  const isAnalyst = targetMean != null && targetMean > 0
-  const use52w = !isAnalyst && week52High != null && current < week52High * 0.99
-  if (!isAnalyst && !use52w) return null
-
-  const refPrice = isAnalyst ? targetMean! : week52High!
-  const upside = ((refPrice - current) / current) * 100
+  const is52w = targetSource === '52w_high'
+  const upside = ((targetPrice - current) / current) * 100
   const isPos = upside >= 0
-  const heading = isAnalyst ? 'Target price' : '52-week high'
-  const subline = isAnalyst ? 'Wall Street average · 12 mo' : 'Not an analyst forecast'
+  const subline = is52w ? 'Estimated · year high basis' : 'Wall Street average · 12 mo'
 
-  const showAnalystRange =
-    isAnalyst &&
+  const showRange =
+    !is52w &&
     targetLow != null &&
     targetHigh != null &&
     targetHigh > targetLow
 
   return (
     <div className="rounded-xl bg-zinc-800/80 px-3 py-2.5 space-y-1">
-      <p className="text-[10px] font-bold text-zinc-500 uppercase tracking-wider">{heading}</p>
+      <p className="text-[10px] font-bold text-zinc-500 uppercase tracking-wider">Target price</p>
       <div className="flex items-end justify-between gap-2">
         <div>
-          <p className="text-lg font-black text-white tabular-nums leading-none">{fmtPrice(refPrice)}</p>
+          <p className="text-lg font-black text-white tabular-nums leading-none">{fmtPrice(targetPrice)}</p>
           <p className="text-[10px] text-zinc-500 mt-1">{subline}</p>
         </div>
         <span
@@ -201,7 +196,7 @@ function TargetPrice({
           {fmtPct(upside)}
         </span>
       </div>
-      {showAnalystRange && (
+      {showRange && (
         <p className="text-[10px] text-zinc-600 tabular-nums pt-0.5">
           Range {fmtPrice(targetLow)} – {fmtPrice(targetHigh)}
         </p>
@@ -332,10 +327,10 @@ export default function WatchlistCard({
 
         {/* Target — one clear block (not a second 52W slider) */}
         <TargetPrice
-          targetMean={fundamentals?.target_mean ?? null}
+          targetPrice={fundamentals?.target_price ?? null}
           targetLow={fundamentals?.target_low ?? null}
           targetHigh={fundamentals?.target_high ?? null}
-          week52High={fundamentals?.week52_high ?? null}
+          targetSource={fundamentals?.target_source ?? null}
           current={currentPrice}
           loading={fundamentalsLoading && !fundamentals}
         />

@@ -105,7 +105,13 @@ export function scorePortfolioAlert(input: AlertScoreInput): ScoredAlert | null 
     bearish(14, { label: 'Near 52-week low', tone: 'negative' })
   }
 
-  if (f?.target_mean && current_price > f.target_mean * 1.08) {
+  if (f?.target_price && current_price > f.target_price * 1.08) {
+    bearish(10, {
+      label: 'Above typical target',
+      value: `${(((current_price - f.target_price) / f.target_price) * 100).toFixed(0)}% over ref.`,
+      tone: 'negative',
+    })
+  } else if (!f?.target_price && f?.target_mean && current_price > f.target_mean * 1.08) {
     bearish(10, {
       label: 'Above typical target',
       value: `${(((current_price - f.target_mean) / f.target_mean) * 100).toFixed(0)}% over ref.`,

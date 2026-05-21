@@ -1,3 +1,4 @@
+import { isTargetCacheFresh } from '@/lib/target-price-cache'
 import type { StockFundamentals } from '@/types'
 
 export const FUNDAMENTALS_CACHE_MINUTES = 30
@@ -11,13 +12,13 @@ export function hasAnalystCoverage(row: StockFundamentals): boolean {
   return total >= 3
 }
 
-export function hasAnalystTarget(row: StockFundamentals): boolean {
-  return row.target_mean != null && row.target_mean > 0
+export function hasCachedTarget(row: StockFundamentals): boolean {
+  return row.target_price != null && row.target_price > 0
 }
 
-/** Cached row is missing Yahoo/Finnhub targets we expect for rated stocks. */
+/** Target cache expired (resets daily at 5pm ET). */
 export function needsTargetRefresh(row: StockFundamentals): boolean {
-  return hasAnalystCoverage(row) && !hasAnalystTarget(row)
+  return !isTargetCacheFresh(row.target_fetched_at)
 }
 
 export function isFundamentalsCacheFresh(

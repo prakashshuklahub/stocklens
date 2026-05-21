@@ -1,10 +1,15 @@
-// Shared Yahoo + Finnhub fetch for stock fundamentals.
+// Shared Yahoo + Finnhub + FMP fetch for stock fundamentals.
 // Used by /api/fundamentals/[ticker] and /api/picks (live hydration).
 //
-// Analyst price targets: Finnhub /stock/price-target when subscribed; otherwise
-// Yahoo quoteSummary financialData (free).
+// Analyst price targets: FMP → Finnhub → Yahoo (fallback chain).
+// Cached globally in stock_fundamentals; target_fetched_at resets daily at 5pm ET.
 
 import { env } from '@/lib/env'
+import { fetchFmpPriceTarget } from '@/lib/fmp-price-target'
+import {
+  applyResolvedTarget,
+  type TargetFetchResult,
+} from '@/lib/target-price-cache'
 import { fetchYahooPriceTarget, type PriceTargetFields } from '@/lib/yahoo-session'
 import type { StockFundamentals } from '@/types'
 
@@ -83,41 +88,63 @@ export async function fetchFinnhubRecommendation(ticker: string) {
 }
 
 export async function fetchFinnhubPriceTarget(ticker: string): Promise<PriceTargetFields | null> {
+  const sym = ticker.toUpperCase()
   try {
     const res = await fetch(
-      `https://finnhub.io/api/v1/stock/price-target?symbol=${ticker}&token=${env.FINNHUB_API_KEY}`,
+      `https://finnhub.io/api/v1/stock/price-target?symbol=${sym}&token=${env.FINNHUB_API_KEY}`,
       { cache: 'no-store' }
     )
-    if (!res.ok) return null
+    if (!res.ok) {
+      console.warn(`[price-target] ${sym}: finnhub http=${res.status}`)
+      return null
+    }
     const data = await res.json()
-    if (data?.error) return null
+    if (data?.error) {
+      console.warn(`[price-target] ${sym}: finnhub error=${JSON.stringify(data.error)}`)
+      return null
+    }
     const target_mean = (data.targetMean as number) ?? null
-    if (target_mean == null || target_mean <= 0) return null
+    if (target_mean == null || target_mean <= 0) {
+      console.warn(`[price-target] ${sym}: finnhub empty`)
+      return null
+    }
     return {
       target_mean,
       target_high: (data.targetHigh as number) ?? null,
       target_low: (data.targetLow as number) ?? null,
     }
-  } catch {
+  } catch (err) {
+    console.warn(`[price-target] ${sym}: finnhub error`, err instanceof Error ? err.message : err)
     return null
   }
 }
 
-/** Prefer Finnhub when available; otherwise Yahoo analyst consensus. */
-export function mergePriceTargets(
-  finnhub: PriceTargetFields | null,
-  yahoo: PriceTargetFields | null,
-): PriceTargetFields | null {
-  if (finnhub?.target_mean && finnhub.target_mean > 0) return finnhub
-  if (yahoo?.target_mean && yahoo.target_mean > 0) return yahoo
-  return null
-}
+/** FMP → Finnhub → Yahoo with diagnostic logging. */
+export async function fetchAnalystPriceTarget(ticker: string): Promise<TargetFetchResult | null> {
+  const sym = ticker.toUpperCase()
 
-export async function fetchAnalystPriceTarget(ticker: string): Promise<PriceTargetFields | null> {
-  const finnhub = await fetchFinnhubPriceTarget(ticker)
-  if (finnhub?.target_mean) return finnhub
-  const yahoo = await fetchYahooPriceTarget(ticker)
-  return mergePriceTargets(finnhub, yahoo)
+  if (env.FMP_API_KEY) {
+    const fmp = await fetchFmpPriceTarget(sym)
+    if (fmp?.target_mean) {
+      console.info(`[price-target] ${sym}: source=fmp mean=${fmp.target_mean.toFixed(2)}`)
+      return { ...fmp, source: 'fmp' }
+    }
+  }
+
+  const finnhub = await fetchFinnhubPriceTarget(sym)
+  if (finnhub?.target_mean) {
+    console.info(`[price-target] ${sym}: source=finnhub mean=${finnhub.target_mean.toFixed(2)}`)
+    return { ...finnhub, source: 'finnhub' }
+  }
+
+  const yahoo = await fetchYahooPriceTarget(sym)
+  if (yahoo?.target_mean) {
+    console.info(`[price-target] ${sym}: source=yahoo mean=${yahoo.target_mean.toFixed(2)}`)
+    return { ...yahoo, source: 'yahoo' }
+  }
+
+  console.warn(`[price-target] ${sym}: all sources failed`)
+  return null
 }
 
 export async function fetchFinnhubNewsSentiment(ticker: string) {
@@ -139,13 +166,15 @@ export async function fetchFinnhubNewsSentiment(ticker: string) {
   }
 }
 
-/** Fetch fresh fundamentals from Yahoo + Finnhub (no DB). */
-export async function fetchStockFundamentals(ticker: string): Promise<StockFundamentals> {
+/** Live price / trend data only (no target price API calls). */
+export async function fetchStockPriceData(ticker: string): Promise<Omit<
+  StockFundamentals,
+  'target_mean' | 'target_high' | 'target_low' | 'target_price' | 'target_source' | 'target_fetched_at'
+>> {
   const sym = ticker.toUpperCase()
-  const [yahoo, recommendation, priceTarget, newsSentiment] = await Promise.all([
+  const [yahoo, recommendation, newsSentiment] = await Promise.all([
     fetchYahooHistory(sym),
     fetchFinnhubRecommendation(sym),
-    fetchAnalystPriceTarget(sym),
     fetchFinnhubNewsSentiment(sym),
   ])
 
@@ -156,9 +185,6 @@ export async function fetchStockFundamentals(ticker: string): Promise<StockFunda
     change_30d_pct: yahoo?.change_30d_pct ?? null,
     week52_high: yahoo?.week52_high ?? null,
     week52_low: yahoo?.week52_low ?? null,
-    target_mean: priceTarget?.target_mean ?? null,
-    target_high: priceTarget?.target_high ?? null,
-    target_low: priceTarget?.target_low ?? null,
     analyst_buy: recommendation?.analyst_buy ?? null,
     analyst_hold: recommendation?.analyst_hold ?? null,
     analyst_sell: recommendation?.analyst_sell ?? null,
@@ -168,6 +194,71 @@ export async function fetchStockFundamentals(ticker: string): Promise<StockFunda
     support_20d: yahoo?.support_20d ?? null,
     avg_20d: yahoo?.avg_20d ?? null,
   }
+}
+
+/** Fetch target via FMP/Finnhub/Yahoo and apply 52W override using week52_high. */
+export async function fetchAndResolveTarget(
+  ticker: string,
+  week52High: number | null,
+): Promise<Pick<StockFundamentals, 'target_mean' | 'target_high' | 'target_low' | 'target_price' | 'target_source' | 'target_fetched_at'>> {
+  const sym = ticker.toUpperCase()
+  const fetchedAt = new Date().toISOString()
+  const base: StockFundamentals = {
+    ticker: sym,
+    change_7d_pct: null,
+    change_14d_pct: null,
+    change_30d_pct: null,
+    week52_high: week52High,
+    week52_low: null,
+    target_mean: null,
+    target_high: null,
+    target_low: null,
+    target_price: null,
+    target_source: null,
+    target_fetched_at: null,
+    analyst_buy: null,
+    analyst_hold: null,
+    analyst_sell: null,
+    news_sentiment: null,
+    news_count_7d: null,
+    support_5d: null,
+    support_20d: null,
+    avg_20d: null,
+  }
+
+  const analyst = await fetchAnalystPriceTarget(sym)
+  const resolved = applyResolvedTarget(base, analyst, fetchedAt)
+
+  if (resolved.target_source === '52w_high') {
+    console.info(`[price-target] ${sym}: override=52w_high price=${resolved.target_price?.toFixed(2)}`)
+  }
+
+  return {
+    target_mean: resolved.target_mean,
+    target_high: resolved.target_high,
+    target_low: resolved.target_low,
+    target_price: resolved.target_price,
+    target_source: resolved.target_source,
+    target_fetched_at: resolved.target_fetched_at,
+  }
+}
+
+/** Fetch fresh fundamentals from Yahoo + Finnhub + FMP (no DB). */
+export async function fetchStockFundamentals(ticker: string): Promise<StockFundamentals> {
+  const sym = ticker.toUpperCase()
+  const priceData = await fetchStockPriceData(sym)
+  const priceRow: StockFundamentals = {
+    ...priceData,
+    target_mean: null,
+    target_high: null,
+    target_low: null,
+    target_price: null,
+    target_source: null,
+    target_fetched_at: null,
+  }
+
+  const analyst = await fetchAnalystPriceTarget(sym)
+  return applyResolvedTarget(priceRow, analyst, new Date().toISOString())
 }
 
 /** Run async tasks with limited concurrency. */

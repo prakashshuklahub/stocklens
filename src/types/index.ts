@@ -54,10 +54,14 @@ export interface StockFundamentals {
   // 52-week range
   week52_high: number | null
   week52_low: number | null
-  // Analyst data (from Finnhub)
+  // Analyst consensus (raw from FMP / Finnhub / Yahoo)
   target_mean: number | null
   target_high: number | null
   target_low: number | null
+  // Resolved target price — shared cache, refreshed after 5pm ET daily
+  target_price: number | null
+  target_source: 'fmp' | 'finnhub' | 'yahoo' | '52w_high' | null
+  target_fetched_at: string | null
   analyst_buy: number | null
   analyst_hold: number | null
   analyst_sell: number | null

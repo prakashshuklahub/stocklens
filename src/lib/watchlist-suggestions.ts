@@ -73,11 +73,13 @@ export function scoreSuggestion(
   if (score < MIN_SCORE) return null
 
   const target =
-    fundamentals?.target_mean && fundamentals.target_mean > price
-      ? fundamentals.target_mean
-      : fundamentals?.week52_high && fundamentals.week52_high > price
-        ? fundamentals.week52_high
-        : price * (1 + Math.min(d30 ?? d1, 35) / 100)
+    fundamentals?.target_price && fundamentals.target_price > price
+      ? fundamentals.target_price
+      : fundamentals?.target_mean && fundamentals.target_mean > price
+        ? fundamentals.target_mean
+        : fundamentals?.week52_high && fundamentals.week52_high > price
+          ? fundamentals.week52_high
+          : price * (1 + Math.min(d30 ?? d1, 35) / 100)
 
   const upside_pct = ((target - price) / price) * 100
   const near_52w_high = Boolean(

@@ -76,9 +76,10 @@ function score(input: ScoreInput): { score: number; reasons: SignalReason[] } {
     else if (fromLow <= 5) { s -= 20; reasons.push({ label: 'Near 52W low', tone: 'bearish' }) }
   }
 
-  // ── Analyst price target ───────────────────────────────────
-  if (f?.target_mean && price) {
-    const upside = ((f.target_mean - price) / price) * 100
+  // ── Target price (cached analyst or 52W override) ──────────
+  const refTarget = f?.target_price ?? f?.target_mean
+  if (refTarget && price) {
+    const upside = ((refTarget - price) / price) * 100
     if (upside > 20)      { s += 15; reasons.push({ label: `+${upside.toFixed(0)}% to target`, tone: 'bullish' }) }
     else if (upside < -10) { s -= 15; reasons.push({ label: `${upside.toFixed(0)}% to target`, tone: 'bearish' }) }
   }

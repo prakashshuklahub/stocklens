@@ -49,8 +49,8 @@ function systemPrompt(targetLabel: NarrativeInput['target_label']): string {
     targetLabel === 'analyst'
       ? 'The upside reference is the average 12-month Wall Street analyst price target.'
       : targetLabel === '52w_high'
-        ? 'The upside reference is the stock\'s 52-week high—not a bank forecast. Say that plainly if you mention the target.'
-        : 'The upside is estimated from recent momentum and analyst buy ratings—not an official bank price target. Say that plainly if you mention the target.'
+        ? 'The target price is estimated from the 52-week high—not a bank forecast. Say "target price" if you mention it; you may note it is year-high based.'
+        : 'The target price is estimated from recent momentum and analyst buy ratings—not an official bank forecast. Say "target price" if you mention it.'
 
   return `You are a sober equity analyst writing concise buy theses for everyday investors.
 
@@ -74,8 +74,8 @@ function buildUserPrompt(input: NarrativeInput): string {
           ? ` (range $${input.target_low.toFixed(2)}–$${input.target_high.toFixed(2)})`
           : '')
       : input.target_label === '52w_high'
-        ? `52-week high (upside reference): $${input.target_mean.toFixed(2)}`
-        : `Estimated upside reference: $${input.target_mean.toFixed(2)}`
+        ? `Target price (year-high basis): $${input.target_mean.toFixed(2)}`
+        : `Estimated target price: $${input.target_mean.toFixed(2)}`
 
   const lines: string[] = [
     `Ticker: ${input.ticker} (${input.company_name})`,

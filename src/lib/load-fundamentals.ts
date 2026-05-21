@@ -3,7 +3,11 @@ import {
   isFundamentalsCacheFresh,
   needsTargetRefresh,
 } from '@/lib/fundamentals-cache'
-import { fetchAnalystPriceTarget, fetchStockFundamentals } from '@/lib/fundamentals-fetch'
+import {
+  fetchAndResolveTarget,
+  fetchStockFundamentals,
+  fetchStockPriceData,
+} from '@/lib/fundamentals-fetch'
 import { isUSMarketOpen } from '@/lib/market-hours'
 import type { createServerClient } from '@/lib/supabase'
 import type { StockFundamentals } from '@/types'
@@ -35,27 +39,61 @@ export async function loadFundamentalsForTickers(
 
   const shouldUpsert = options?.upsert !== false && !tableMissing
   const marketOpen = isUSMarketOpen()
+  const nowIso = new Date().toISOString()
 
   for (const sym of syms) {
     const cached = byTicker.get(sym)
-    const freshCache = cached && isFundamentalsCacheFresh(cached, cutoff)
+    const priceFresh = cached && isFundamentalsCacheFresh(cached, cutoff)
+    const targetFresh = cached && !needsTargetRefresh(cached)
 
-    if (freshCache && !needsTargetRefresh(cached)) continue
+    if (priceFresh && targetFresh) continue
 
-    // Outside regular session: keep cached fundamentals; only cold-start fetch if missing.
-    if (!marketOpen && cached) continue
+    // Target-only refresh — runs any time (including after 5pm when market is closed)
+    if (priceFresh && !targetFresh) {
+      const targetFields = await fetchAndResolveTarget(sym, cached!.week52_high ?? null)
+      const next: StockFundamentals = { ...cached!, ...targetFields }
+      byTicker.set(sym, next)
+      if (shouldUpsert) {
+        await supabase
+          .from('stock_fundamentals')
+          .upsert({ ...next, fetched_at: cached!.fetched_at ?? nowIso }, { onConflict: 'ticker' })
+      }
+      continue
+    }
+
+    // Outside regular session: keep stale price data but still allow target refresh above
+    if (!marketOpen && cached && !priceFresh) {
+      if (!targetFresh) {
+        const targetFields = await fetchAndResolveTarget(sym, cached.week52_high ?? null)
+        const next: StockFundamentals = { ...cached, ...targetFields }
+        byTicker.set(sym, next)
+        if (shouldUpsert) {
+          await supabase
+            .from('stock_fundamentals')
+            .upsert({ ...next, fetched_at: cached.fetched_at ?? nowIso }, { onConflict: 'ticker' })
+        }
+      }
+      continue
+    }
 
     let next: StockFundamentals
 
-    if (freshCache && needsTargetRefresh(cached) && marketOpen) {
-      const targets = await fetchAnalystPriceTarget(sym)
-      if (targets?.target_mean) {
-        next = { ...cached, ...targets }
-      } else {
-        continue
+    if (!cached) {
+      next = await fetchStockFundamentals(sym)
+    } else if (!priceFresh) {
+      const priceData = await fetchStockPriceData(sym)
+      next = {
+        ...cached,
+        ...priceData,
+        fetched_at: nowIso,
+      } as StockFundamentals & { fetched_at?: string }
+
+      if (!targetFresh) {
+        const targetFields = await fetchAndResolveTarget(sym, next.week52_high ?? null)
+        next = { ...next, ...targetFields }
       }
     } else {
-      next = await fetchStockFundamentals(sym)
+      continue
     }
 
     byTicker.set(sym, next)
@@ -63,7 +101,7 @@ export async function loadFundamentalsForTickers(
     if (shouldUpsert) {
       await supabase
         .from('stock_fundamentals')
-        .upsert({ ...next, fetched_at: new Date().toISOString() }, { onConflict: 'ticker' })
+        .upsert({ ...next, fetched_at: (next as { fetched_at?: string }).fetched_at ?? nowIso }, { onConflict: 'ticker' })
     }
   }
 
