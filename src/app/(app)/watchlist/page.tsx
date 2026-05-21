@@ -397,6 +397,7 @@ export default function WatchlistPage() {
             onAdd={handleAdd}
             adding={adding}
             refreshToken={suggestionsRefresh}
+            marketOpen={marketOpen}
           />
 
           {/* Content */}

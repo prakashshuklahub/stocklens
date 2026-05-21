@@ -4,6 +4,7 @@ import { useMemo, useState } from 'react'
 import useSWR from 'swr'
 import { ChevronDown, Flame, Plus } from 'lucide-react'
 import StockLogo from '@/components/StockLogo'
+import { LIVE_REFRESH_SEC } from '@/components/LiveRefreshHeader'
 import { cn } from '@/lib/utils'
 import type { WatchlistSuggestionsResponse } from '@/types'
 import type { StockResult } from '@/components/watchlist/StockSearchInput'
@@ -23,9 +24,16 @@ interface Props {
   onAdd: (result: StockResult) => void
   adding?: boolean
   refreshToken?: number
+  marketOpen?: boolean
 }
 
-export default function WatchlistSuggestions({ ownedTickers, onAdd, adding, refreshToken = 0 }: Props) {
+export default function WatchlistSuggestions({
+  ownedTickers,
+  onAdd,
+  adding,
+  refreshToken = 0,
+  marketOpen = true,
+}: Props) {
   const url = useMemo(
     () =>
       refreshToken > 0
@@ -37,6 +45,7 @@ export default function WatchlistSuggestions({ ownedTickers, onAdd, adding, refr
   const { data, isLoading, error } = useSWR<WatchlistSuggestionsResponse>(url, fetcher, {
     revalidateOnFocus: false,
     dedupingInterval: 0,
+    refreshInterval: marketOpen ? LIVE_REFRESH_SEC * 1000 : 0,
   })
 
   const [open, setOpen] = useState(false)
@@ -105,7 +114,9 @@ export default function WatchlistSuggestions({ ownedTickers, onAdd, adding, refr
         </div>
       ) : (
         <ul className="space-y-2">
-          {visible.map((s, i) => (
+          {visible.map((s, i) => {
+            const isUp = s.change_1d_pct >= 0
+            return (
             <li
               key={s.ticker}
               className="rounded-[20px] bg-gradient-to-br from-orange-500/10 to-zinc-900 border border-orange-500/15 px-5 py-4"
@@ -127,8 +138,13 @@ export default function WatchlistSuggestions({ ownedTickers, onAdd, adding, refr
                 </div>
                 <div className="text-right shrink-0">
                   <p className="text-sm font-bold text-white tabular-nums">${fmt(s.current_price)}</p>
-                  <p className="text-xs font-bold text-emerald-400 tabular-nums">
-                    +{s.change_1d_pct.toFixed(1)}% today
+                  <p
+                    className={cn(
+                      'text-xs font-bold tabular-nums',
+                      isUp ? 'text-emerald-400' : 'text-red-400',
+                    )}
+                  >
+                    {isUp ? '+' : ''}{s.change_1d_pct.toFixed(2)}% today
                   </p>
                 </div>
               </div>
@@ -164,15 +180,16 @@ export default function WatchlistSuggestions({ ownedTickers, onAdd, adding, refr
                 {s.sector && s.sector !== 'Other' ? `Add to ${s.sector}` : 'Add to watchlist'}
               </button>
             </li>
-          ))}
+            )
+          })}
         </ul>
       )}
 
       {data?.generated_at && !isLoading && visible.length > 0 && (
         <p className="text-xs text-zinc-600 mt-3 leading-relaxed">
-          Updated {timeAgo(data.generated_at)}
+          Prices refresh every {LIVE_REFRESH_SEC}s when market is open
           {data.scanned_count > 0 && ` · ${data.scanned_count} screened`}
-          {' · '}refreshes every 3h
+          {' · '}picks rescan every 3h
           {data.llm_enabled ? ' · AI blurbs' : ''}
           <span className="block mt-1 text-zinc-700">Not financial advice.</span>
         </p>
@@ -181,12 +198,4 @@ export default function WatchlistSuggestions({ ownedTickers, onAdd, adding, refr
       )}
     </section>
   )
-}
-
-function timeAgo(iso: string): string {
-  const s = Math.floor((Date.now() - new Date(iso).getTime()) / 1000)
-  if (s < 60) return `${s}s ago`
-  const m = Math.floor(s / 60)
-  if (m < 60) return `${m}m ago`
-  return `${Math.floor(m / 60)}h ago`
 }

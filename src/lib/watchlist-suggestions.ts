@@ -86,10 +86,7 @@ export function scoreSuggestion(
     fundamentals?.week52_high && price >= fundamentals.week52_high * 0.97,
   )
 
-  const headline =
-    d1 >= 8
-      ? `Hot momentum — +${d1.toFixed(0)}% today`
-      : `Strong day — +${d1.toFixed(0)}% with buy ratings`
+  const headline = suggestionHeadline(d1)
 
   return {
     ticker: mover.ticker,
@@ -202,4 +199,12 @@ export function suggestionBlurbContext(s: ScoredSuggestion) {
 
 export function rankSuggestions(scored: ScoredSuggestion[], limit = 10): ScoredSuggestion[] {
   return [...scored].sort((a, b) => b.score - a.score).slice(0, limit)
+}
+
+/** Headline shown on trending cards — reused when overlaying live day change. */
+export function suggestionHeadline(change_1d_pct: number): string {
+  if (change_1d_pct >= 8) return `Hot momentum — +${change_1d_pct.toFixed(0)}% today`
+  if (change_1d_pct >= 3) return `Strong day — +${change_1d_pct.toFixed(0)}% with buy ratings`
+  const sign = change_1d_pct >= 0 ? '+' : ''
+  return `${sign}${change_1d_pct.toFixed(1)}% today with buy ratings`
 }

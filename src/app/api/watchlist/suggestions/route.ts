@@ -1,5 +1,7 @@
 import { auth, getSessionUserId } from '@/lib/auth'
 import { fetchStockFundamentals, mapPool } from '@/lib/fundamentals-fetch'
+import { fetchLivePricesForTickers } from '@/lib/live-prices'
+import { isUSMarketOpen } from '@/lib/market-hours'
 import { ensureLogosForTickers } from '@/lib/stock-logo-cache'
 import { fetchYahooSector } from '@/lib/sectors'
 import { fetchMarketMovers } from '@/lib/market-movers'
@@ -11,6 +13,7 @@ import {
   rankSuggestions,
   scoreSuggestion,
   suggestionBlurbContext,
+  suggestionHeadline,
   type ScoredSuggestion,
 } from '@/lib/watchlist-suggestions'
 import { createServerClient } from '@/lib/supabase'
@@ -207,6 +210,27 @@ function toSuggestion(s: ScoredSuggestion, cached: CachedReason | undefined): Wa
   }
 }
 
+/** Same Yahoo chart source as /api/watchlist — keeps day % aligned with watchlist cards. */
+async function overlayLivePrices(
+  suggestions: WatchlistSuggestion[],
+): Promise<WatchlistSuggestion[]> {
+  if (!suggestions.length || !isUSMarketOpen()) return suggestions
+
+  const live = await fetchLivePricesForTickers(suggestions.map((s) => s.ticker))
+  if (!live.size) return suggestions
+
+  return suggestions.map((s) => {
+    const snap = live.get(s.ticker)
+    if (!snap) return s
+    return {
+      ...s,
+      current_price: snap.price,
+      change_1d_pct: snap.change_1d_pct,
+      headline: suggestionHeadline(snap.change_1d_pct),
+    }
+  })
+}
+
 export async function GET(req: NextRequest) {
   const forceRefresh = req.nextUrl.searchParams.get('refresh') === '1'
   const session = await auth()
@@ -248,10 +272,12 @@ export async function GET(req: NextRequest) {
   const available = cached.ranked.filter((s) => !owned.has(s.ticker))
   const top = available.slice(0, USER_TOP)
 
-  const suggestions: WatchlistSuggestion[] = top.map((s) => {
+  let suggestions: WatchlistSuggestion[] = top.map((s) => {
     const key = s.ticker.toUpperCase()
     return toSuggestion(s, cached!.reasons[key] ?? cached!.reasons[s.ticker])
   })
+
+  suggestions = await overlayLivePrices(suggestions)
 
   const response: WatchlistSuggestionsResponse = {
     suggestions,
@@ -260,5 +286,10 @@ export async function GET(req: NextRequest) {
     scanned_count: cached.ranked.length,
   }
 
-  return NextResponse.json(response, { headers: NO_CACHE })
+  return NextResponse.json(response, {
+    headers: {
+      ...NO_CACHE,
+      'X-Market-Open': isUSMarketOpen() ? '1' : '0',
+    },
+  })
 }
