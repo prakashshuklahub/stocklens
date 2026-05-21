@@ -46,28 +46,35 @@ export async function loadCachedLogo(
   return null
 }
 
+type StockLogoUpsert = {
+  ticker: string
+  content_type: string
+  logo_base64: string | null
+  status: 'ok' | 'unavailable'
+}
+
 async function persistLogo(
   supabase: Supabase,
   ticker: string,
   payload: CachedLogo,
 ): Promise<void> {
   const sym = ticker.toUpperCase()
-  const row =
+  const row: StockLogoUpsert =
     payload.status === 'ok'
       ? {
           ticker: sym,
-          status: 'ok' as const,
+          status: 'ok',
           content_type: payload.content_type,
           logo_base64: payload.logo_base64,
         }
       : {
           ticker: sym,
-          status: 'unavailable' as const,
+          status: 'unavailable',
           content_type: 'image/png',
           logo_base64: null,
         }
 
-  const { error } = await supabase.from('stock_logos').upsert(row)
+  const { error } = await supabase.from('stock_logos').upsert(row as never)
   if (error) {
     console.warn('[stock-logo] upsert failed:', error.message)
   }
