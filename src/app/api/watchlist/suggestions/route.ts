@@ -34,27 +34,24 @@ type CachedPayload = {
   generated_at: string
 }
 
-async function loadGlobalCache(
+async function loadStoredPayload(
   supabase: ReturnType<typeof createServerClient>,
-  forceRefresh: boolean,
 ): Promise<CachedPayload | null> {
-  if (forceRefresh) return null
-
   const { data, error } = await supabase
     .from('watchlist_suggestions_cache')
     .select('suggestions, generated_at')
     .eq('cache_key', 'global')
     .maybeSingle()
 
-  if (error || !data) return null
-
-  const cutoff = Date.now() - CACHE_HOURS * 3600 * 1000
-  if (new Date(data.generated_at).getTime() < cutoff) return null
+  if (error) {
+    console.warn('[watchlist/suggestions] cache SELECT failed:', error.message)
+    return null
+  }
+  if (!data) return null
 
   const raw = data.suggestions as CachedPayload | ScoredSuggestion[]
   if (!raw) return null
 
-  // Back-compat: old cache was only an array
   if (Array.isArray(raw)) {
     if (!raw.length) return null
     return { ranked: raw, reasons: {}, generated_at: data.generated_at }
@@ -68,10 +65,14 @@ async function loadGlobalCache(
   }
 }
 
+function isPayloadFresh(generatedAt: string): boolean {
+  const cutoff = Date.now() - CACHE_HOURS * 3600 * 1000
+  return new Date(generatedAt).getTime() >= cutoff
+}
+
 async function enrichWithBlurbs(
   ranked: ScoredSuggestion[],
   existing: Record<string, CachedReason>,
-  forceLlm: boolean,
 ): Promise<Record<string, CachedReason>> {
   const reasons = { ...existing }
   const llmEnabled = isLLMEnabled()
@@ -80,23 +81,24 @@ async function enrichWithBlurbs(
   // Sequential calls — avoids Gemini 429 when Picks/Signals run at the same time
   for (let i = 0; i < targets.length; i++) {
     const s = targets[i]
-    const cached = reasons[s.ticker]
+    const key = s.ticker.toUpperCase()
+    const cached = reasons[key] ?? reasons[s.ticker]
     const staleBlurb =
       cached?.reason &&
       (isRedundantBlurb(s, cached.reason) ||
         (cached.narrative_source === 'mechanical' && cached.reason !== mechanicalReason(s)))
-    if (!forceLlm && cached?.narrative_source === 'llm' && !staleBlurb) continue
+    if (cached?.narrative_source === 'llm' && !staleBlurb) continue
 
     if (llmEnabled) {
       if (i > 0) await new Promise((r) => setTimeout(r, LLM_BLURB_DELAY_MS))
       const blurb = await generateSuggestionBlurb(suggestionBlurbContext(s))
       if (blurb && !isRedundantBlurb(s, blurb.reason)) {
-        reasons[s.ticker] = { reason: blurb.reason, narrative_source: 'llm' }
+        reasons[key] = { reason: blurb.reason, narrative_source: 'llm' }
         continue
       }
     }
 
-    reasons[s.ticker] = { reason: mechanicalReason(s), narrative_source: 'mechanical' }
+    reasons[key] = { reason: mechanicalReason(s), narrative_source: 'mechanical' }
   }
 
   return reasons
@@ -104,7 +106,7 @@ async function enrichWithBlurbs(
 
 async function buildGlobalRanked(
   supabase: ReturnType<typeof createServerClient>,
-  forceLlm: boolean,
+  existingReasons: Record<string, CachedReason>,
 ): Promise<CachedPayload> {
   const movers = await fetchMarketMovers(CANDIDATE_POOL)
   const tickers = movers.map((m) => m.ticker)
@@ -142,7 +144,7 @@ async function buildGlobalRanked(
       if (sector) s.sector = sector
     }),
   )
-  const reasons = await enrichWithBlurbs(ranked, {}, forceLlm)
+  const reasons = await enrichWithBlurbs(ranked, existingReasons)
   const generated_at = new Date().toISOString()
 
   const payload: CachedPayload = { ranked, reasons, generated_at }
@@ -157,23 +159,27 @@ async function buildGlobalRanked(
   )
   if (cacheWriteError) {
     console.warn('[watchlist/suggestions] cache upsert failed:', cacheWriteError.message)
+  } else {
+    const llmCount = Object.values(reasons).filter((r) => r.narrative_source === 'llm').length
+    console.info(`[watchlist/suggestions] rebuilt rankings; ${llmCount} LLM blurbs in cache`)
   }
 
   return payload
 }
 
 function resolveNarrative(s: ScoredSuggestion, cached: CachedReason | undefined): CachedReason {
+  const resolved = cached ?? undefined
   const stale =
-    cached?.reason &&
-    (isRedundantBlurb(s, cached.reason) ||
-      (cached.narrative_source === 'mechanical' && cached.reason !== mechanicalReason(s)))
-  if (!cached || stale) {
+    resolved?.reason &&
+    (isRedundantBlurb(s, resolved.reason) ||
+      (resolved.narrative_source === 'mechanical' && resolved.reason !== mechanicalReason(s)))
+  if (!resolved || stale) {
     return { reason: mechanicalReason(s), narrative_source: 'mechanical' }
   }
-  if (cached.narrative_source === 'mechanical') {
+  if (resolved.narrative_source === 'mechanical') {
     return { reason: mechanicalReason(s), narrative_source: 'mechanical' }
   }
-  return cached
+  return resolved
 }
 
 function toSuggestion(s: ScoredSuggestion, cached: CachedReason | undefined): WatchlistSuggestion {
@@ -209,10 +215,15 @@ export async function GET(req: NextRequest) {
 
   const owned = new Set((watchlist ?? []).map((w) => String(w.ticker).toUpperCase()))
 
-  let cached = await loadGlobalCache(supabase, forceRefresh)
-  if (!cached) {
+  const stored = await loadStoredPayload(supabase)
+  const useStoredRankings = stored && isPayloadFresh(stored.generated_at) && !forceRefresh
+
+  let cached: CachedPayload
+  if (useStoredRankings) {
+    cached = stored
+  } else {
     try {
-      cached = await buildGlobalRanked(supabase, forceRefresh)
+      cached = await buildGlobalRanked(supabase, stored?.reasons ?? {})
     } catch (err) {
       console.error('[watchlist/suggestions] build failed:', err)
       const empty: WatchlistSuggestionsResponse = {
@@ -228,9 +239,10 @@ export async function GET(req: NextRequest) {
   const available = cached.ranked.filter((s) => !owned.has(s.ticker))
   const top = available.slice(0, USER_TOP)
 
-  const suggestions: WatchlistSuggestion[] = top.map((s) =>
-    toSuggestion(s, cached!.reasons[s.ticker]),
-  )
+  const suggestions: WatchlistSuggestion[] = top.map((s) => {
+    const key = s.ticker.toUpperCase()
+    return toSuggestion(s, cached!.reasons[key] ?? cached!.reasons[s.ticker])
+  })
 
   const response: WatchlistSuggestionsResponse = {
     suggestions,

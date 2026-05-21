@@ -1,6 +1,7 @@
 import { auth } from '@/lib/auth'
 import { fetchStockFundamentals, mapPool } from '@/lib/fundamentals-fetch'
 import { generateSellReview, isLLMEnabled } from '@/lib/llm'
+import { loadFreshNarratives, mapSequential, upsertNarratives } from '@/lib/narrative-cache'
 import {
   mechanicalSellReview,
   rankAlerts,
@@ -16,8 +17,8 @@ import type {
   StockFundamentals,
 } from '@/types'
 
-const NARRATIVE_TTL_HOURS = 6
 const NO_CACHE_HEADERS = { 'Cache-Control': 'private, no-store, max-age=0' } as const
+const LOG_PREFIX = 'portfolio/alerts'
 
 async function fetchOnePrice(ticker: string): Promise<number | null> {
   try {
@@ -119,29 +120,20 @@ export async function GET(req: NextRequest) {
     return NextResponse.json(response, { headers: NO_CACHE_HEADERS })
   }
 
-  const alertTickers = ranked.map((a) => a.ticker)
-  const cachedByTicker = new Map<string, { review_reason: string; caveat: string }>()
+  const alertTickers = ranked.map((a) => a.ticker.toUpperCase())
+  const cachedByTicker = await loadFreshNarratives<{
+    ticker: string
+    review_reason: string
+    caveat: string
+  }>(supabase, 'portfolio_sell_narratives', alertTickers, LOG_PREFIX)
 
-  if (!forceRefresh) {
-    const ttlCutoff = new Date(Date.now() - NARRATIVE_TTL_HOURS * 3600 * 1000).toISOString()
-    const { data: narrativeRows, error: narrativeError } = await supabase
-      .from('portfolio_sell_narratives')
-      .select('*')
-      .in('ticker', alertTickers)
-      .gte('generated_at', ttlCutoff)
+  const needGeneration = ranked.filter((a) => !cachedByTicker.has(a.ticker.toUpperCase()))
 
-    if (!narrativeError) {
-      for (const r of (narrativeRows ?? []) as Array<{
-        ticker: string
-        review_reason: string
-        caveat: string
-      }>) {
-        cachedByTicker.set(r.ticker, { review_reason: r.review_reason, caveat: r.caveat })
-      }
-    }
+  if (needGeneration.length) {
+    console.info(
+      `[${LOG_PREFIX}] narratives cache: ${cachedByTicker.size} hit, ${needGeneration.length} miss`,
+    )
   }
-
-  const needGeneration = ranked.filter((a) => !cachedByTicker.has(a.ticker))
 
   type GenResult = {
     ticker: string
@@ -151,8 +143,7 @@ export async function GET(req: NextRequest) {
     model: string | null
   }
 
-  const generated: GenResult[] = await Promise.all(
-    needGeneration.map(async (alert): Promise<GenResult> => {
+  const generated: GenResult[] = await mapSequential(needGeneration, async (alert): Promise<GenResult> => {
       const f = fundamentalsByTicker.get(alert.ticker)
       if (llmEnabled) {
         const narrative = await generateSellReview({
@@ -179,33 +170,26 @@ export async function GET(req: NextRequest) {
       }
       const fallback = mechanicalSellReview(alert)
       return { ticker: alert.ticker, ...fallback, source: 'mechanical', model: null }
-    }),
-  )
+  })
 
   const llmRows = generated
     .filter((g): g is GenResult & { source: 'llm'; model: string } => g.source === 'llm' && g.model != null)
     .map((g) => ({
-      ticker: g.ticker,
+      ticker: g.ticker.toUpperCase(),
       review_reason: g.review_reason,
       caveat: g.caveat,
       model: g.model,
       generated_at: new Date().toISOString(),
     }))
 
-  if (llmRows.length) {
-    const { error: upsertError } = await supabase
-      .from('portfolio_sell_narratives')
-      .upsert(llmRows, { onConflict: 'ticker' })
-    if (upsertError) {
-      console.warn('[portfolio/alerts] narrative upsert failed:', upsertError.message)
-    }
-  }
+  await upsertNarratives(supabase, 'portfolio_sell_narratives', llmRows, LOG_PREFIX)
 
   const generatedByTicker = new Map<string, GenResult>()
   for (const g of generated) generatedByTicker.set(g.ticker, g)
 
   const alerts: PortfolioAlert[] = ranked.map((a) => {
-    const cached = cachedByTicker.get(a.ticker)
+    const key = a.ticker.toUpperCase()
+    const cached = cachedByTicker.get(key)
     const fresh = generatedByTicker.get(a.ticker)
     const narrative = cached ?? fresh
     return {

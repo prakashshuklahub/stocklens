@@ -6,7 +6,7 @@
 //   3. Score each ticker with pure rules in lib/picks.ts
 //   4. Rank, take top N
 //   5. For each top pick: check pick_narratives cache (6h TTL),
-//      otherwise call Groq (in parallel) and upsert the narrative
+//      otherwise call Gemini (sequential) and upsert the narrative
 //   6. For tickers we couldn't generate LLM narrative, fall back to mechanical
 
 import { auth } from '@/lib/auth'
@@ -14,6 +14,7 @@ import { fetchStockFundamentals, mapPool } from '@/lib/fundamentals-fetch'
 import { createServerClient } from '@/lib/supabase'
 import { fetchNewsForTicker } from '@/lib/news'
 import { generateNarrative, isLLMEnabled } from '@/lib/llm'
+import { loadFreshNarratives, mapSequential, upsertNarratives } from '@/lib/narrative-cache'
 import { mechanicalThesis, rankPicks, scorePick, type ScoredPick } from '@/lib/picks'
 import { NextRequest, NextResponse } from 'next/server'
 import type {
@@ -26,8 +27,8 @@ import type {
 } from '@/types'
 
 const MAX_PICKS = 10
-const NARRATIVE_TTL_HOURS = 6
 const NO_CACHE_HEADERS = { 'Cache-Control': 'private, no-store, max-age=0' } as const
+const LOG_PREFIX = 'picks'
 
 // ── Live price (same pattern as /api/watchlist) ──────────────────────────────
 async function fetchOnePrice(ticker: string): Promise<number | null> {
@@ -181,27 +182,23 @@ export async function GET(req: NextRequest) {
     return NextResponse.json(empty, { headers: NO_CACHE_HEADERS })
   }
 
-  // ── 5. Narrative cache lookup (skipped on manual refresh) ───────────────────
-  const cachedByTicker = new Map<string, { thesis: string; main_risk: string }>()
-  if (!forceRefresh) {
-    const topTickers = top.map((p) => p.ticker)
-    const ttlCutoff = new Date(Date.now() - NARRATIVE_TTL_HOURS * 3600 * 1000).toISOString()
-    const { data: narrativeRows } = await supabase
-      .from('pick_narratives')
-      .select('*')
-      .in('ticker', topTickers)
-      .gte('generated_at', ttlCutoff)
-
-    for (const r of (narrativeRows ?? []) as Array<{ ticker: string; thesis: string; main_risk: string }>) {
-      cachedByTicker.set(r.ticker, { thesis: r.thesis, main_risk: r.main_risk })
-    }
-  }
+  // ── 5. Narrative cache lookup (6h TTL; refresh only updates prices/scores) ──
+  const topTickers = top.map((p) => p.ticker.toUpperCase())
+  const cachedByTicker = await loadFreshNarratives<{
+    ticker: string
+    thesis: string
+    main_risk: string
+  }>(supabase, 'pick_narratives', topTickers, LOG_PREFIX)
 
   // ── 6. Generate missing narratives (LLM or mechanical) ─────────────────────
   const llmEnabled = isLLMEnabled()
-  const needGeneration = forceRefresh
-    ? top
-    : top.filter((p) => !cachedByTicker.has(p.ticker))
+  const needGeneration = top.filter((p) => !cachedByTicker.has(p.ticker.toUpperCase()))
+
+  if (needGeneration.length) {
+    console.info(
+      `[${LOG_PREFIX}] narratives cache: ${cachedByTicker.size} hit, ${needGeneration.length} miss`,
+    )
+  }
 
   // Fetch a few recent headlines for each pick that needs an LLM narrative.
   // (Mechanical fallback doesn't use headlines.)
@@ -226,8 +223,7 @@ export async function GET(req: NextRequest) {
     source: 'llm' | 'mechanical'
     model: string | null
   }
-  const generated: GenResult[] = await Promise.all(
-    needGeneration.map(async (pick): Promise<GenResult> => {
+  const generated: GenResult[] = await mapSequential(needGeneration, async (pick): Promise<GenResult> => {
       const f = fundamentalsByTicker.get(pick.ticker)
       if (llmEnabled && f) {
         const narrative = await generateNarrative({
@@ -264,36 +260,34 @@ export async function GET(req: NextRequest) {
       }
       const fallback = mechanicalThesis(pick)
       return { ticker: pick.ticker, ...fallback, source: 'mechanical', model: null }
-    })
-  )
+  })
 
   // Persist successful LLM narratives so we don't re-spend within TTL.
   const llmRows = generated
     .filter((g): g is GenResult & { source: 'llm'; model: string } => g.source === 'llm' && g.model !== null)
     .map((g) => ({
-      ticker: g.ticker,
+      ticker: g.ticker.toUpperCase(),
       thesis: g.thesis,
       main_risk: g.main_risk,
       model: g.model,
       generated_at: new Date().toISOString(),
     }))
-  if (llmRows.length) {
-    await supabase.from('pick_narratives').upsert(llmRows, { onConflict: 'ticker' })
-  }
+  await upsertNarratives(supabase, 'pick_narratives', llmRows, LOG_PREFIX)
 
   // ── 7. Final response ──────────────────────────────────────────────────────
   const generatedByTicker = new Map<string, GenResult>()
   for (const g of generated) generatedByTicker.set(g.ticker, g)
 
   const picks: Pick[] = top.map((p) => {
-    const cached = cachedByTicker.get(p.ticker)
+    const key = p.ticker.toUpperCase()
+    const cached = cachedByTicker.get(key)
     const fresh = generatedByTicker.get(p.ticker)
     const narrative = cached ?? fresh
     return {
       ...p,
       thesis: narrative?.thesis ?? null,
       main_risk: narrative?.main_risk ?? null,
-      narrative_source: fresh?.source ?? 'llm',
+      narrative_source: fresh?.source ?? (cached ? 'llm' : 'mechanical'),
     }
   })
 
