@@ -1,4 +1,4 @@
-import { auth } from '@/lib/auth'
+import { auth, getSessionUserId } from '@/lib/auth'
 import { resolveSectorForTicker } from '@/lib/sectors'
 import { createServerClient } from '@/lib/supabase'
 import { NextRequest, NextResponse } from 'next/server'
@@ -36,13 +36,16 @@ async function fetchLivePrices(tickers: string[]) {
 
 export async function GET() {
   const session = await auth()
-  if (!session?.user) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+  const userId = getSessionUserId(session)
+  if (!userId) {
+    return NextResponse.json({ error: 'Session invalid — please sign in again' }, { status: 401 })
+  }
 
   const supabase = createServerClient()
   const { data: stocks, error } = await supabase
     .from('watchlist_stocks')
     .select('*')
-    .eq('user_id', session.user.id)
+    .eq('user_id', userId)
     .order('added_at', { ascending: false })
 
   if (error) return NextResponse.json({ error: error.message }, { status: 500 })
@@ -61,7 +64,10 @@ export async function GET() {
 
 export async function POST(req: NextRequest) {
   const session = await auth()
-  if (!session?.user) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+  const userId = getSessionUserId(session)
+  if (!userId) {
+    return NextResponse.json({ error: 'Session invalid — please sign in again' }, { status: 401 })
+  }
 
   const { ticker, company_name, sector } = await req.json()
   const sym = String(ticker ?? '').toUpperCase()
@@ -76,7 +82,7 @@ export async function POST(req: NextRequest) {
   const { data, error } = await supabase
     .from('watchlist_stocks')
     .insert({
-      user_id: session.user.id,
+      user_id: userId,
       ticker: sym,
       company_name,
       sector: resolvedSector,

@@ -9,7 +9,7 @@
 //      otherwise call Gemini (sequential) and upsert the narrative
 //   6. For tickers we couldn't generate LLM narrative, fall back to mechanical
 
-import { auth } from '@/lib/auth'
+import { auth, getSessionUserId } from '@/lib/auth'
 import { fetchStockFundamentals, mapPool } from '@/lib/fundamentals-fetch'
 import { createServerClient } from '@/lib/supabase'
 import { fetchNewsForTicker } from '@/lib/news'
@@ -50,10 +50,10 @@ async function fetchOnePrice(ticker: string): Promise<number | null> {
 export async function GET(req: NextRequest) {
   const forceRefresh = req.nextUrl.searchParams.get('refresh') === '1'
   const session = await auth()
-  if (!session?.user) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+  const userId = getSessionUserId(session)
+  if (!userId) return NextResponse.json({ error: 'Session invalid — please sign in again' }, { status: 401 })
 
   const supabase = createServerClient()
-  const userId = session.user.id
 
   // ── 1. Watchlist + fundamentals + portfolio in parallel ────────────────────
   const [watchlistResult, portfolioResult] = await Promise.all([

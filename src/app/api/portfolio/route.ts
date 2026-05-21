@@ -1,4 +1,4 @@
-import { auth } from '@/lib/auth'
+import { auth, getSessionUserId } from '@/lib/auth'
 import { createServerClient } from '@/lib/supabase'
 import { NextResponse } from 'next/server'
 
@@ -23,13 +23,14 @@ async function fetchOneTicker(ticker: string): Promise<{ price: number; change_1
 
 export async function GET() {
   const session = await auth()
-  if (!session?.user) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+  const userId = getSessionUserId(session)
+  if (!userId) return NextResponse.json({ error: 'Session invalid — please sign in again' }, { status: 401 })
 
   const supabase = createServerClient()
   const { data: holdings, error } = await supabase
     .from('portfolio_holdings')
     .select('*')
-    .eq('user_id', session.user.id)
+    .eq('user_id', userId)
     .order('synced_at', { ascending: false })
 
   if (error) return NextResponse.json({ error: error.message }, { status: 500 })

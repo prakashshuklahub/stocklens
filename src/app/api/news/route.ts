@@ -1,17 +1,18 @@
-import { auth } from '@/lib/auth'
+import { auth, getSessionUserId } from '@/lib/auth'
 import { createServerClient } from '@/lib/supabase'
 import { fetchNewsForTicker } from '@/lib/news'
 import { NextResponse } from 'next/server'
 
 export async function GET() {
   const session = await auth()
-  if (!session?.user) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+  const userId = getSessionUserId(session)
+  if (!userId) return NextResponse.json({ error: 'Session invalid — please sign in again' }, { status: 401 })
 
   const supabase = createServerClient()
   const { data: watchlist } = await supabase
     .from('watchlist_stocks')
     .select('ticker')
-    .eq('user_id', session.user.id)
+    .eq('user_id', userId)
 
   if (!watchlist?.length) return NextResponse.json({ bullish: [], bearish: [] })
 

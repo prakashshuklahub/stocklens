@@ -6,7 +6,7 @@
 //   2. Cached fundamentals (52W, analyst data, target, news sentiment)
 //   3. Google News RSS headlines (fetched only for top candidates, for context)
 
-import { auth } from '@/lib/auth'
+import { auth, getSessionUserId } from '@/lib/auth'
 import { fetchStockFundamentals, mapPool } from '@/lib/fundamentals-fetch'
 import { createServerClient } from '@/lib/supabase'
 import { fetchNewsForTicker } from '@/lib/news'
@@ -112,14 +112,15 @@ function score(input: ScoreInput): { score: number; reasons: SignalReason[] } {
 // ── Route handler ─────────────────────────────────────────────────────────────
 export async function GET() {
   const session = await auth()
-  if (!session?.user) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+  const userId = getSessionUserId(session)
+  if (!userId) return NextResponse.json({ error: 'Session invalid — please sign in again' }, { status: 401 })
 
   const supabase = createServerClient()
 
   const { data: watchlist } = await supabase
     .from('watchlist_stocks')
     .select('*')
-    .eq('user_id', session.user.id)
+    .eq('user_id', userId)
 
   if (!watchlist?.length) {
     const empty: SignalsResponse = { bullish: [], bearish: [], quiet: [], generated_at: new Date().toISOString() }

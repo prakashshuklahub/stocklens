@@ -1,4 +1,4 @@
-import { auth } from '@/lib/auth'
+import { auth, getSessionUserId } from '@/lib/auth'
 import { fetchStockFundamentals, mapPool } from '@/lib/fundamentals-fetch'
 import { fetchYahooSector } from '@/lib/sectors'
 import { fetchMarketMovers } from '@/lib/market-movers'
@@ -204,14 +204,17 @@ function toSuggestion(s: ScoredSuggestion, cached: CachedReason | undefined): Wa
 export async function GET(req: NextRequest) {
   const forceRefresh = req.nextUrl.searchParams.get('refresh') === '1'
   const session = await auth()
-  if (!session?.user) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+  const userId = getSessionUserId(session)
+  if (!userId) {
+    return NextResponse.json({ error: 'Session invalid — please sign in again' }, { status: 401 })
+  }
 
   const supabase = createServerClient()
 
   const { data: watchlist } = await supabase
     .from('watchlist_stocks')
     .select('ticker')
-    .eq('user_id', session.user.id)
+    .eq('user_id', userId)
 
   const owned = new Set((watchlist ?? []).map((w) => String(w.ticker).toUpperCase()))
 

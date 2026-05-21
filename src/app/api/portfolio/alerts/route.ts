@@ -1,4 +1,4 @@
-import { auth } from '@/lib/auth'
+import { auth, getSessionUserId } from '@/lib/auth'
 import { fetchStockFundamentals, mapPool } from '@/lib/fundamentals-fetch'
 import { generateSellReview, isLLMEnabled } from '@/lib/llm'
 import { loadFreshNarratives, mapSequential, upsertNarratives } from '@/lib/narrative-cache'
@@ -38,10 +38,10 @@ async function fetchOnePrice(ticker: string): Promise<number | null> {
 export async function GET(req: NextRequest) {
   const forceRefresh = req.nextUrl.searchParams.get('refresh') === '1'
   const session = await auth()
-  if (!session?.user) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+  const userId = getSessionUserId(session)
+  if (!userId) return NextResponse.json({ error: 'Session invalid — please sign in again' }, { status: 401 })
 
   const supabase = createServerClient()
-  const userId = session.user.id
 
   const { data: holdings, error } = await supabase
     .from('portfolio_holdings')

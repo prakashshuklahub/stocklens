@@ -1,4 +1,4 @@
-import { auth } from '@/lib/auth'
+import { auth, getSessionUserId } from '@/lib/auth'
 import { createServerClient } from '@/lib/supabase'
 import { NextRequest, NextResponse } from 'next/server'
 
@@ -11,7 +11,8 @@ interface HoldingInput {
 
 export async function POST(req: NextRequest) {
   const session = await auth()
-  if (!session?.user) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+  const userId = getSessionUserId(session)
+  if (!userId) return NextResponse.json({ error: 'Session invalid — please sign in again' }, { status: 401 })
 
   const { holdings }: { holdings: HoldingInput[] } = await req.json()
   if (!Array.isArray(holdings) || holdings.length === 0) {
@@ -19,7 +20,6 @@ export async function POST(req: NextRequest) {
   }
 
   const supabase = createServerClient()
-  const userId = session.user.id
 
   // Delete all existing Vested holdings for this user, then re-insert
   const { error: deleteError } = await supabase
