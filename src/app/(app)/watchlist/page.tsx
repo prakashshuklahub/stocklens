@@ -66,28 +66,37 @@ function WatchlistSortBar({
   ]
 
   return (
-    <div className="mb-4" role="group" aria-label="Sort watchlist">
-      <div className="flex gap-1 p-1 rounded-xl bg-zinc-900 border border-white/[0.06]">
-        {options.map((opt) => {
-          const active = value === opt.id
-          return (
+    <div
+      className="flex items-center flex-wrap gap-x-1 mt-3"
+      role="group"
+      aria-label="Sort watchlist"
+    >
+      {options.map((opt, i) => {
+        const active = value === opt.id
+        return (
+          <span key={opt.id} className="inline-flex items-center">
+            {i > 0 && (
+              <span className="text-zinc-700 px-1 select-none text-xs" aria-hidden>
+                ·
+              </span>
+            )}
             <button
-              key={opt.id}
               type="button"
               aria-pressed={active}
               onClick={() => onChange(opt.id)}
               className={cn(
-                'flex-1 min-h-[44px] px-2 rounded-lg text-xs font-semibold transition-colors [touch-action:manipulation]',
+                'relative min-h-[44px] px-3 -mx-1 text-sm transition-colors [touch-action:manipulation]',
+                'after:absolute after:left-3 after:right-3 after:bottom-2 after:h-0.5 after:rounded-full after:transition-opacity',
                 active
-                  ? 'bg-zinc-700 text-white shadow-sm'
-                  : 'text-zinc-500 active:bg-zinc-800/80',
+                  ? 'text-zinc-300 font-semibold after:bg-zinc-500/80 after:opacity-100'
+                  : 'text-zinc-500 after:opacity-0 active:text-zinc-400',
               )}
             >
               {opt.label}
             </button>
-          )
-        })}
-      </div>
+          </span>
+        )
+      })}
     </div>
   )
 }
@@ -386,11 +395,9 @@ export default function WatchlistPage() {
                 seconds={countdown}
                 refreshing={refreshing}
                 marketOpen={marketOpen}
-              />
-
-              <WatchlistSortBar
-                value={sortMode}
-                onChange={setSortMode}
+                footer={
+                  <WatchlistSortBar value={sortMode} onChange={setSortMode} />
+                }
               />
 
               {layout.type === 'sector' ? (

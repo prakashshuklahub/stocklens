@@ -64,6 +64,8 @@ interface LiveRefreshHeaderProps {
   /** Show divider above (e.g. after another block) */
   bordered?: boolean
   className?: string
+  /** Subtle row under subtitle (e.g. sort controls) */
+  footer?: React.ReactNode
 }
 
 export default function LiveRefreshHeader({
@@ -74,11 +76,12 @@ export default function LiveRefreshHeader({
   marketOpen = true,
   bordered = true,
   className,
+  footer,
 }: LiveRefreshHeaderProps) {
   return (
     <div
       className={cn(
-        'flex items-center justify-between gap-4 mb-4',
+        'flex items-start justify-between gap-4 mb-3',
         bordered && 'mt-6 pt-6 border-t border-zinc-800/60',
         className,
       )}
@@ -88,6 +91,7 @@ export default function LiveRefreshHeader({
         <p className="text-xs text-zinc-600 mt-1">
           {subtitle ?? liveRefreshSubtitle(LIVE_REFRESH_SEC, marketOpen)}
         </p>
+        {footer}
       </div>
       <RefreshCountdown seconds={seconds} refreshing={refreshing} marketOpen={marketOpen} />
     </div>
