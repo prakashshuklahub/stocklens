@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useMemo } from 'react'
 import useSWR from 'swr'
 import { TrendingUp, ChevronDown } from 'lucide-react'
 import WatchlistCard, { type WatchlistStock } from '@/components/watchlist/WatchlistCard'
@@ -29,12 +29,94 @@ const SECTOR_ORDER = [
   'Other',
 ]
 
+type WatchlistSort = 'sector' | 'day_change' | 'alphabetical'
+
+const SORT_STORAGE_KEY = 'watchlist-sort'
+
+function loadSortMode(): WatchlistSort {
+  if (typeof window === 'undefined') return 'sector'
+  const saved = sessionStorage.getItem(SORT_STORAGE_KEY)
+  if (saved === 'day_change' || saved === 'alphabetical' || saved === 'sector') return saved
+  return 'sector'
+}
+
 function sortByDailyChange(stocks: WatchlistStock[]): WatchlistStock[] {
   return [...stocks].sort((a, b) => {
     const ac = a.snapshot?.change_1d_pct ?? -Infinity
     const bc = b.snapshot?.change_1d_pct ?? -Infinity
     return bc - ac // highest gainer first
   })
+}
+
+function sortAlphabetical(stocks: WatchlistStock[]): WatchlistStock[] {
+  return [...stocks].sort((a, b) => a.ticker.localeCompare(b.ticker))
+}
+
+function WatchlistSortBar({
+  value,
+  onChange,
+}: {
+  value: WatchlistSort
+  onChange: (mode: WatchlistSort) => void
+}) {
+  const options: { id: WatchlistSort; label: string }[] = [
+    { id: 'sector', label: 'Sector' },
+    { id: 'day_change', label: 'Day %' },
+    { id: 'alphabetical', label: 'A–Z' },
+  ]
+
+  return (
+    <div className="mb-4" role="group" aria-label="Sort watchlist">
+      <div className="flex gap-1 p-1 rounded-xl bg-zinc-900 border border-white/[0.06]">
+        {options.map((opt) => {
+          const active = value === opt.id
+          return (
+            <button
+              key={opt.id}
+              type="button"
+              aria-pressed={active}
+              onClick={() => onChange(opt.id)}
+              className={cn(
+                'flex-1 min-h-[44px] px-2 rounded-lg text-xs font-semibold transition-colors [touch-action:manipulation]',
+                active
+                  ? 'bg-zinc-700 text-white shadow-sm'
+                  : 'text-zinc-500 active:bg-zinc-800/80',
+              )}
+            >
+              {opt.label}
+            </button>
+          )
+        })}
+      </div>
+    </div>
+  )
+}
+
+function StockList({
+  stocks,
+  onRemove,
+  fundamentalsByTicker,
+  fundamentalsLoading,
+}: {
+  stocks: WatchlistStock[]
+  onRemove: (ticker: string) => void
+  fundamentalsByTicker: Record<string, StockFundamentals>
+  fundamentalsLoading: boolean
+}) {
+  return (
+    <ul className="space-y-3" aria-label="Watchlist stocks">
+      {stocks.map((stock) => (
+        <li key={stock.id}>
+          <WatchlistCard
+            stock={stock}
+            onRemove={onRemove}
+            fundamentals={fundamentalsByTicker[stock.ticker] ?? null}
+            fundamentalsLoading={fundamentalsLoading}
+          />
+        </li>
+      ))}
+    </ul>
+  )
 }
 
 function groupBySector(stocks: WatchlistStock[]): [string, WatchlistStock[]][] {
@@ -154,8 +236,27 @@ export default function WatchlistPage() {
   const [error, setError] = useState('')
   const [countdown, setCountdown] = useState(REFRESH_SEC)
   const [suggestionsRefresh, setSuggestionsRefresh] = useState(0)
+  const [sortMode, setSortMode] = useState<WatchlistSort>('sector')
 
   const refreshing = isValidating && !isLoading
+
+  useEffect(() => {
+    setSortMode(loadSortMode())
+  }, [])
+
+  useEffect(() => {
+    sessionStorage.setItem(SORT_STORAGE_KEY, sortMode)
+  }, [sortMode])
+
+  const layout = useMemo(() => {
+    if (sortMode === 'sector') {
+      return { type: 'sector' as const, groups: groupBySector(stocks) }
+    }
+    if (sortMode === 'day_change') {
+      return { type: 'flat' as const, stocks: sortByDailyChange(stocks) }
+    }
+    return { type: 'flat' as const, stocks: sortAlphabetical(stocks) }
+  }, [stocks, sortMode])
 
   useEffect(() => {
     if (!stocks.length || !marketOpen) {
@@ -210,7 +311,6 @@ export default function WatchlistPage() {
     mutate()
   }
 
-  const grouped = groupBySector(stocks)
   const ownedTickers = new Set(stocks.map((s) => s.ticker.toUpperCase()))
 
   return (
@@ -287,17 +387,32 @@ export default function WatchlistPage() {
                 refreshing={refreshing}
                 marketOpen={marketOpen}
               />
-              {grouped.map(([sector, sectorStocks]) => (
-                <SectorGroup
-                  key={sector}
-                  sector={sector}
-                  stocks={sectorStocks}
+
+              <WatchlistSortBar
+                value={sortMode}
+                onChange={setSortMode}
+              />
+
+              {layout.type === 'sector' ? (
+                layout.groups.map(([sector, sectorStocks]) => (
+                  <SectorGroup
+                    key={sector}
+                    sector={sector}
+                    stocks={sectorStocks}
+                    onRemove={handleRemove}
+                    fundamentalsByTicker={fundamentalsByTicker}
+                    fundamentalsLoading={fundamentalsLoading}
+                    defaultOpen
+                  />
+                ))
+              ) : (
+                <StockList
+                  stocks={layout.stocks}
                   onRemove={handleRemove}
                   fundamentalsByTicker={fundamentalsByTicker}
                   fundamentalsLoading={fundamentalsLoading}
-                  defaultOpen
                 />
-              ))}
+              )}
             </div>
           )}
         </main>

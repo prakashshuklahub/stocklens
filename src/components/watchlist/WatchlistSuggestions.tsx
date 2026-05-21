@@ -170,7 +170,7 @@ export default function WatchlistSuggestions({ ownedTickers, onAdd, adding, refr
         <p className="text-xs text-zinc-600 mt-3 leading-relaxed">
           Updated {timeAgo(data.generated_at)}
           {data.scanned_count > 0 && ` · ${data.scanned_count} screened`}
-          {' · '}refreshes every 6h
+          {' · '}refreshes every 3h
           {data.llm_enabled ? ' · AI blurbs' : ''}
           <span className="block mt-1 text-zinc-700">Not financial advice.</span>
         </p>

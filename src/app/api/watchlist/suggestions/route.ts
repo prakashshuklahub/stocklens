@@ -3,6 +3,7 @@ import { fetchStockFundamentals, mapPool } from '@/lib/fundamentals-fetch'
 import { fetchYahooSector } from '@/lib/sectors'
 import { fetchMarketMovers } from '@/lib/market-movers'
 import { generateSuggestionBlurb, isLLMEnabled } from '@/lib/llm'
+import { NARRATIVE_TTL_HOURS } from '@/lib/narrative-cache'
 import {
   isRedundantBlurb,
   mechanicalReason,
@@ -15,7 +16,7 @@ import { createServerClient } from '@/lib/supabase'
 import { NextRequest, NextResponse } from 'next/server'
 import type { StockFundamentals, WatchlistSuggestion, WatchlistSuggestionsResponse } from '@/types'
 
-const CACHE_HOURS = 6
+const CACHE_HOURS = NARRATIVE_TTL_HOURS
 const CANDIDATE_POOL = 40
 const GLOBAL_TOP = 15
 const USER_TOP = 3

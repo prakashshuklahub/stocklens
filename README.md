@@ -23,7 +23,7 @@ Built with **Next.js 16**, **Supabase**, **NextAuth**, and live market data from
   - Sourced from Yahoo **day gainers** + **most active** screeners
   - Rule-based scoring (momentum + analyst buy consensus)
   - Optional Gemini one-line blurbs (no duplicate stats on the card)
-  - 6h global cache; fundamentals ~30m
+  - 3h global cache; fundamentals ~30m
 - Max **30** watchlist tickers per user.
 
 ### Signals (tab 2)
@@ -39,7 +39,7 @@ Built with **Next.js 16**, **Supabase**, **NextAuth**, and live market data from
 - Scoring uses momentum, analyst ratings, 52-week position, news sentiment, and upside vs target (Yahoo analyst consensus when Finnhub paid target is unavailable; 52w high or momentum only as last resort).
 - **Confidence** — High / Medium / Low; sorted by confidence then score.
 - Each pick shows buy zone, target, upside, factor chips, and thesis.
-- Optional **Gemini** thesis + risk (cached ~6h in `pick_narratives`).
+- Optional **Gemini** thesis + risk (cached ~3h in `pick_narratives`).
 - Manual refresh with `?refresh=1` (bypasses browser cache).
 
 ### Portfolio (tab 4)
@@ -94,7 +94,7 @@ Built with **Next.js 16**, **Supabase**, **NextAuth**, and live market data from
 
 - `stock_fundamentals` — cached Yahoo + Finnhub per ticker (~30 min)
 - `pick_narratives`, `portfolio_sell_narratives` — LLM cache
-- `watchlist_suggestions_cache` — global trending pool (6h)
+- `watchlist_suggestions_cache` — global trending pool (3h)
 - News fetched on demand; not stored as a full feed table for all users
 
 See `supabase/migrations/` and project rules in `AGENTS.md`.

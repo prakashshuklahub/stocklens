@@ -5,7 +5,7 @@
 //   2. Fetch live prices in parallel (Yahoo)
 //   3. Score each ticker with pure rules in lib/picks.ts
 //   4. Rank, take top N
-//   5. For each top pick: check pick_narratives cache (6h TTL),
+//   5. For each top pick: check pick_narratives cache (3h TTL),
 //      otherwise call Gemini (sequential) and upsert the narrative
 //   6. For tickers we couldn't generate LLM narrative, fall back to mechanical
 
@@ -167,7 +167,7 @@ export async function GET(req: NextRequest) {
     return NextResponse.json(empty, { headers: NO_CACHE_HEADERS })
   }
 
-  // ── 5. Narrative cache lookup (6h TTL; refresh only updates prices/scores) ──
+  // ── 5. Narrative cache lookup (3h TTL; refresh only updates prices/scores) ──
   const topTickers = top.map((p) => p.ticker.toUpperCase())
   const cachedByTicker = await loadFreshNarratives<{
     ticker: string
