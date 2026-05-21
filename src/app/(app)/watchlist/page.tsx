@@ -10,6 +10,10 @@ import AppNav from '@/components/AppNav'
 import LiveRefreshHeader, { LIVE_REFRESH_SEC, RefreshCountdown } from '@/components/LiveRefreshHeader'
 import { useMarketOpen } from '@/hooks/useMarketOpen'
 import { createMarketAwareFetcher } from '@/lib/swr-market-fetcher'
+import {
+  computeTargetUpsidePct,
+  hasDisplayTargetPrice,
+} from '@/lib/target-price-display'
 import { cn } from '@/lib/utils'
 import type { StockFundamentals } from '@/types'
 
@@ -29,14 +33,21 @@ const SECTOR_ORDER = [
   'Other',
 ]
 
-type WatchlistSort = 'sector' | 'day_change' | 'alphabetical'
+type WatchlistSort = 'sector' | 'day_change' | 'target_upside' | 'alphabetical'
 
 const SORT_STORAGE_KEY = 'watchlist-sort'
 
 function loadSortMode(): WatchlistSort {
   if (typeof window === 'undefined') return 'sector'
   const saved = sessionStorage.getItem(SORT_STORAGE_KEY)
-  if (saved === 'day_change' || saved === 'alphabetical' || saved === 'sector') return saved
+  if (
+    saved === 'day_change' ||
+    saved === 'target_upside' ||
+    saved === 'alphabetical' ||
+    saved === 'sector'
+  ) {
+    return saved
+  }
   return 'sector'
 }
 
@@ -52,6 +63,24 @@ function sortAlphabetical(stocks: WatchlistStock[]): WatchlistStock[] {
   return [...stocks].sort((a, b) => a.ticker.localeCompare(b.ticker))
 }
 
+function targetUpsidePct(
+  stock: WatchlistStock,
+  fundamentalsByTicker: Record<string, StockFundamentals>,
+): number {
+  const f = fundamentalsByTicker[stock.ticker]
+  if (!f || !hasDisplayTargetPrice(f.target_price, f.target_source)) return -Infinity
+  return computeTargetUpsidePct(f.target_price, stock.snapshot?.price ?? null) ?? -Infinity
+}
+
+function sortByTargetUpside(
+  stocks: WatchlistStock[],
+  fundamentalsByTicker: Record<string, StockFundamentals>,
+): WatchlistStock[] {
+  return [...stocks].sort(
+    (a, b) => targetUpsidePct(b, fundamentalsByTicker) - targetUpsidePct(a, fundamentalsByTicker),
+  )
+}
+
 function WatchlistSortBar({
   value,
   onChange,
@@ -62,6 +91,7 @@ function WatchlistSortBar({
   const options: { id: WatchlistSort; label: string }[] = [
     { id: 'sector', label: 'Sector' },
     { id: 'day_change', label: 'Day %' },
+    { id: 'target_upside', label: 'Target upside' },
     { id: 'alphabetical', label: 'A–Z' },
   ]
 
@@ -219,20 +249,36 @@ const BATCH_CHUNK = 40
 
 async function fundamentalsBatchFetcher(url: string): Promise<{
   fundamentals: Record<string, StockFundamentals>
+  refreshing: boolean
 }> {
   const tickers =
     new URL(url, window.location.origin).searchParams.get('tickers')?.split(',').filter(Boolean) ?? []
 
-  const fundamentals: Record<string, StockFundamentals> = {}
+  const chunks: string[] = []
   for (let i = 0; i < tickers.length; i += BATCH_CHUNK) {
-    const chunk = tickers.slice(i, i + BATCH_CHUNK).join(',')
-    const params = new URLSearchParams({ tickers: chunk })
-    const res = await fetch(`/api/fundamentals/batch?${params}`)
-    if (!res.ok) continue
-    const data = (await res.json()) as { fundamentals?: Record<string, StockFundamentals> }
-    Object.assign(fundamentals, data.fundamentals ?? {})
+    chunks.push(tickers.slice(i, i + BATCH_CHUNK).join(','))
   }
-  return { fundamentals }
+
+  const results = await Promise.all(
+    chunks.map(async (chunk) => {
+      const params = new URLSearchParams({ tickers: chunk })
+      const res = await fetch(`/api/fundamentals/batch?${params}`)
+      if (!res.ok) return null
+      return res.json() as Promise<{
+        fundamentals?: Record<string, StockFundamentals>
+        refreshing?: boolean
+      }>
+    }),
+  )
+
+  const fundamentals: Record<string, StockFundamentals> = {}
+  let refreshing = false
+  for (const data of results) {
+    if (!data) continue
+    Object.assign(fundamentals, data.fundamentals ?? {})
+    if (data.refreshing) refreshing = true
+  }
+  return { fundamentals, refreshing }
 }
 
 const REFRESH_SEC = LIVE_REFRESH_SEC
@@ -257,10 +303,12 @@ export default function WatchlistPage() {
     mutate: mutateFundamentals,
   } = useSWR<{
     fundamentals: Record<string, StockFundamentals>
+    refreshing: boolean
   }>(tickerKey, fundamentalsBatchFetcher, {
     revalidateOnFocus: false,
     revalidateOnReconnect: false,
     dedupingInterval: 60_000,
+    refreshInterval: (latest) => (latest?.refreshing ? 10_000 : 0),
   })
 
   const fundamentalsByTicker = fundamentalsBatch?.fundamentals ?? {}
@@ -287,8 +335,14 @@ export default function WatchlistPage() {
     if (sortMode === 'day_change') {
       return { type: 'flat' as const, stocks: sortByDailyChange(stocks) }
     }
+    if (sortMode === 'target_upside') {
+      return {
+        type: 'flat' as const,
+        stocks: sortByTargetUpside(stocks, fundamentalsByTicker),
+      }
+    }
     return { type: 'flat' as const, stocks: sortAlphabetical(stocks) }
-  }, [stocks, sortMode])
+  }, [stocks, sortMode, fundamentalsByTicker])
 
   useEffect(() => {
     if (!stocks.length || !marketOpen) {

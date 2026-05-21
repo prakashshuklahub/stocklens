@@ -294,6 +294,11 @@ export default function PicksPage() {
   const { data, isLoading, isValidating, mutate } = useSWR<PicksResponse>('/api/picks', fetcher, {
     revalidateOnFocus: false,
     dedupingInterval: 0,
+    refreshInterval: (latest) => {
+      if (!latest?.llm_enabled || !latest.picks.length) return 0
+      const pendingLlm = latest.picks.some((p) => p.narrative_source === 'mechanical')
+      return pendingLlm ? 15_000 : 0
+    },
   })
   const [manualRefresh, setManualRefresh] = useState(false)
 

@@ -10,22 +10,21 @@
 //   6. For tickers we couldn't generate LLM narrative, fall back to mechanical
 
 import { auth, getSessionUserId } from '@/lib/auth'
-import { loadFundamentalsForTickers } from '@/lib/load-fundamentals'
+import { loadFundamentalsCacheFirst, refreshFundamentalsForTickers } from '@/lib/load-fundamentals'
 import { ensureLogosForTickers } from '@/lib/stock-logo-cache'
-import { fetchLivePriceForTicker } from '@/lib/live-prices'
+import { fetchLivePricesForTickers } from '@/lib/live-prices'
 import { isUSMarketOpen } from '@/lib/market-hours'
 import { createServerClient } from '@/lib/supabase'
 import { fetchNewsForTicker } from '@/lib/news'
 import { generateNarrative, isLLMEnabled } from '@/lib/llm'
 import {
   loadFreshNarratives,
-  mapSequential,
   MECHANICAL_MODEL,
   narrativeSourceFromModel,
   upsertNarratives,
 } from '@/lib/narrative-cache'
 import { mechanicalThesis, rankPicks, scorePick, type ScoredPick } from '@/lib/picks'
-import { NextRequest, NextResponse } from 'next/server'
+import { after, NextRequest, NextResponse } from 'next/server'
 import type {
   Pick,
   PickOwnership,
@@ -65,58 +64,49 @@ export async function GET(req: NextRequest) {
   const logoTickers = [...new Set([...tickers, ...portfolio.map((h) => h.ticker)])]
   void ensureLogosForTickers(supabase, logoTickers).catch(() => {})
 
-  const { data: fundamentalsRows, error: fundamentalsError } = await supabase
-    .from('stock_fundamentals')
-    .select('*')
-    .in('ticker', tickers)
-
-  if (fundamentalsError) {
-    console.error('[picks] stock_fundamentals SELECT failed:', fundamentalsError.message)
-  }
-
+  const forceRefresh = req.nextUrl.searchParams.get('refresh') === '1' && marketOpen
   const fundamentalsByTicker = new Map<string, StockFundamentals>()
+  let fundamentalsCachedCount = 0
+  let staleCount = 0
+  let tableMissing = false
 
-  // Always hydrate via loadFundamentalsForTickers — respects 5pm IST target cache but
-  // refreshes stale / 52W-only rows (e.g. after Eulerpool key added).
-  const tableMissing = Boolean(
-    fundamentalsError?.message?.includes('PGRST205') ||
-    fundamentalsError?.message?.includes('stock_fundamentals')
-  )
-  let hydratedLive = 0
-  const existingTickers = new Set((fundamentalsRows ?? []).map((r) => r.ticker.toUpperCase()))
-  if (!tableMissing) {
-    const loaded = await loadFundamentalsForTickers(supabase, tickers, { upsert: true })
-    for (const [t, row] of Object.entries(loaded)) {
-      if (!existingTickers.has(t.toUpperCase())) hydratedLive++
+  const pricesPromise = marketOpen
+    ? fetchLivePricesForTickers(tickers)
+    : Promise.resolve(new Map<string, { price: number; change_1d_pct: number }>())
+
+  let priceByTicker: Map<string, { price: number; change_1d_pct: number }>
+
+  if (forceRefresh) {
+    const [loaded, prices] = await Promise.all([
+      refreshFundamentalsForTickers(supabase, tickers, { upsert: true }),
+      pricesPromise,
+    ])
+    for (const [t, row] of Object.entries(loaded)) fundamentalsByTicker.set(t, row)
+    fundamentalsCachedCount = Object.keys(loaded).length
+    priceByTicker = prices
+  } else {
+    const [cached, prices] = await Promise.all([
+      loadFundamentalsCacheFirst(supabase, tickers),
+      pricesPromise,
+    ])
+    tableMissing = cached.tableMissing
+    for (const [t, row] of Object.entries(cached.fundamentals)) {
       fundamentalsByTicker.set(t, row)
     }
-  } else {
-    for (const row of (fundamentalsRows ?? []) as StockFundamentals[]) {
-      fundamentalsByTicker.set(row.ticker, row)
+    fundamentalsCachedCount = Object.keys(cached.fundamentals).length
+    staleCount = cached.stale.length
+    priceByTicker = prices
+
+    if (tableMissing && fundamentalsByTicker.size < tickers.length * 0.5) {
+      const loaded = await refreshFundamentalsForTickers(supabase, tickers, { upsert: false })
+      for (const [t, row] of Object.entries(loaded)) fundamentalsByTicker.set(t, row)
     }
-    const forceRefresh = req.nextUrl.searchParams.get('refresh') === '1' && marketOpen
-    if (forceRefresh || fundamentalsByTicker.size < tickers.length * 0.5) {
-      const loaded = await loadFundamentalsForTickers(supabase, tickers, { upsert: false })
-      for (const [t, row] of Object.entries(loaded)) {
-        if (!fundamentalsByTicker.has(t)) hydratedLive++
-        fundamentalsByTicker.set(t, row)
-      }
-    }
+    // Target/price cache is maintained by watchlist batch + daily cron — no duplicate refresh here.
   }
 
-  // ── 2. Live prices in parallel (only during regular session) ───────────────
-  const prices = marketOpen
-    ? await Promise.all(tickers.map((t) => fetchLivePriceForTicker(t).then((s) => s?.price ?? null)))
-    : tickers.map(() => null)
-  const priceByTicker = new Map<string, number>()
-  tickers.forEach((t, i) => {
-    if (prices[i] != null) priceByTicker.set(t, prices[i]!)
-  })
-
-  // ── 3. Portfolio lookup → ownership context ────────────────────────────────
   const ownershipByTicker = new Map<string, PickOwnership>()
   for (const h of portfolio) {
-    const price = priceByTicker.get(h.ticker)
+    const price = priceByTicker.get(h.ticker)?.price
     if (price != null) {
       ownershipByTicker.set(h.ticker, {
         shares: h.quantity,
@@ -131,8 +121,8 @@ export async function GET(req: NextRequest) {
   const debug = {
     watchlist_size: watchlist.length,
     prices_fetched: priceByTicker.size,
-    fundamentals_cached: (fundamentalsRows ?? []).length,
-    hydrated_live: hydratedLive,
+    fundamentals_cached: fundamentalsCachedCount,
+    stale_fundamentals: staleCount,
     table_missing: tableMissing,
     missing_fundamentals: 0,
     missing_target_price: 0,
@@ -144,7 +134,7 @@ export async function GET(req: NextRequest) {
   const scored: ScoredPick[] = []
   for (const stock of watchlist) {
     const fundamentals = fundamentalsByTicker.get(stock.ticker)
-    const current_price = priceByTicker.get(stock.ticker)
+    const current_price = priceByTicker.get(stock.ticker)?.price
     if (!fundamentals) { debug.missing_fundamentals++; continue }
     if (current_price == null) continue
     if (!fundamentals.target_price && !fundamentals.target_mean) debug.missing_target_price++
@@ -187,7 +177,7 @@ export async function GET(req: NextRequest) {
     model: string | null
   }>(supabase, 'pick_narratives', topTickers, LOG_PREFIX)
 
-  // ── 6. Generate missing narratives (LLM or mechanical) ─────────────────────
+  // ── 6. Narratives — cached LLM first; mechanical on miss; LLM generated in background ──
   const llmEnabled = isLLMEnabled()
   const needGeneration = top.filter((p) => !cachedByTicker.has(p.ticker.toUpperCase()))
 
@@ -197,22 +187,6 @@ export async function GET(req: NextRequest) {
     )
   }
 
-  // Fetch a few recent headlines for each pick that needs an LLM narrative.
-  // (Mechanical fallback doesn't use headlines.)
-  const headlinesByTicker = new Map<string, string[]>()
-  if (llmEnabled && needGeneration.length) {
-    const headlineResults = await Promise.all(
-      needGeneration.map((p) => fetchNewsForTicker(p.ticker))
-    )
-    needGeneration.forEach((p, i) => {
-      const items = (headlineResults[i] ?? [])
-        .sort((a, b) => new Date(b.published_at).getTime() - new Date(a.published_at).getTime())
-        .slice(0, 3)
-        .map((n) => n.title)
-      headlinesByTicker.set(p.ticker, items)
-    })
-  }
-
   type GenResult = {
     ticker: string
     thesis: string
@@ -220,9 +194,38 @@ export async function GET(req: NextRequest) {
     source: 'llm' | 'mechanical'
     model: string | null
   }
-  const generated: GenResult[] = await mapSequential(needGeneration, async (pick): Promise<GenResult> => {
-      const f = fundamentalsByTicker.get(pick.ticker)
-      if (llmEnabled && f) {
+
+  // Return mechanical narratives immediately so the response is not blocked on Gemini.
+  const generated: GenResult[] = needGeneration.map((pick) => {
+    const fallback = mechanicalThesis(pick)
+    return { ticker: pick.ticker, ...fallback, source: 'mechanical', model: null }
+  })
+
+  if (llmEnabled && needGeneration.length) {
+    after(async () => {
+      const headlinesByTicker = new Map<string, string[]>()
+      const headlineResults = await Promise.all(
+        needGeneration.map((p) => fetchNewsForTicker(p.ticker)),
+      )
+      needGeneration.forEach((p, i) => {
+        const items = (headlineResults[i] ?? [])
+          .sort((a, b) => new Date(b.published_at).getTime() - new Date(a.published_at).getTime())
+          .slice(0, 3)
+          .map((n) => n.title)
+        headlinesByTicker.set(p.ticker, items)
+      })
+
+      const llmRows: {
+        ticker: string
+        thesis: string
+        main_risk: string
+        model: string
+        generated_at: string
+      }[] = []
+
+      for (const pick of needGeneration) {
+        const f = fundamentalsByTicker.get(pick.ticker)
+        if (!f) continue
         const narrative = await generateNarrative({
           ticker: pick.ticker,
           company_name: pick.company_name,
@@ -246,26 +249,29 @@ export async function GET(req: NextRequest) {
           recent_headlines: headlinesByTicker.get(pick.ticker) ?? [],
         })
         if (narrative) {
-          return {
-            ticker: pick.ticker,
+          llmRows.push({
+            ticker: pick.ticker.toUpperCase(),
             thesis: narrative.thesis,
             main_risk: narrative.main_risk,
-            source: 'llm',
             model: narrative.model,
-          }
+            generated_at: new Date().toISOString(),
+          })
         }
       }
-      const fallback = mechanicalThesis(pick)
-      return { ticker: pick.ticker, ...fallback, source: 'mechanical', model: null }
-  })
 
-  // Persist LLM + mechanical narratives so 429 failures don't retry within TTL.
+      if (llmRows.length) {
+        await upsertNarratives(supabase, 'pick_narratives', llmRows, LOG_PREFIX)
+      }
+    })
+  }
+
+  // Persist mechanical placeholders immediately; background LLM overwrites when ready.
   if (generated.length) {
     const narrativeRows = generated.map((g) => ({
       ticker: g.ticker.toUpperCase(),
       thesis: g.thesis,
       main_risk: g.main_risk,
-      model: g.source === 'llm' && g.model ? g.model : MECHANICAL_MODEL,
+      model: MECHANICAL_MODEL,
       generated_at: new Date().toISOString(),
     }))
     await upsertNarratives(supabase, 'pick_narratives', narrativeRows, LOG_PREFIX)
