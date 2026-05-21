@@ -42,7 +42,6 @@ const LOG_PREFIX = 'picks'
 // ── Route ────────────────────────────────────────────────────────────────────
 export async function GET(req: NextRequest) {
   const marketOpen = isUSMarketOpen()
-  const forceRefresh = req.nextUrl.searchParams.get('refresh') === '1' && marketOpen
   const session = await auth()
   const userId = getSessionUserId(session)
   if (!userId) return NextResponse.json({ error: 'Session invalid — please sign in again' }, { status: 401 })
@@ -76,23 +75,32 @@ export async function GET(req: NextRequest) {
   }
 
   const fundamentalsByTicker = new Map<string, StockFundamentals>()
-  for (const row of (fundamentalsRows ?? []) as StockFundamentals[]) {
-    fundamentalsByTicker.set(row.ticker, row)
-  }
 
-  // If DB table is missing or empty, hydrate live from Yahoo + Finnhub (no cache).
+  // Always hydrate via loadFundamentalsForTickers — respects 5pm IST target cache but
+  // refreshes stale / 52W-only rows (e.g. after Eulerpool key added).
   const tableMissing = Boolean(
     fundamentalsError?.message?.includes('PGRST205') ||
     fundamentalsError?.message?.includes('stock_fundamentals')
   )
-  const needLive =
-    tableMissing || fundamentalsByTicker.size < tickers.length * 0.5 || forceRefresh
   let hydratedLive = 0
-  if (needLive) {
-    const loaded = await loadFundamentalsForTickers(supabase, tickers, { upsert: !tableMissing })
+  const existingTickers = new Set((fundamentalsRows ?? []).map((r) => r.ticker.toUpperCase()))
+  if (!tableMissing) {
+    const loaded = await loadFundamentalsForTickers(supabase, tickers, { upsert: true })
     for (const [t, row] of Object.entries(loaded)) {
-      if (!fundamentalsByTicker.has(t)) hydratedLive++
+      if (!existingTickers.has(t.toUpperCase())) hydratedLive++
       fundamentalsByTicker.set(t, row)
+    }
+  } else {
+    for (const row of (fundamentalsRows ?? []) as StockFundamentals[]) {
+      fundamentalsByTicker.set(row.ticker, row)
+    }
+    const forceRefresh = req.nextUrl.searchParams.get('refresh') === '1' && marketOpen
+    if (forceRefresh || fundamentalsByTicker.size < tickers.length * 0.5) {
+      const loaded = await loadFundamentalsForTickers(supabase, tickers, { upsert: false })
+      for (const [t, row] of Object.entries(loaded)) {
+        if (!fundamentalsByTicker.has(t)) hydratedLive++
+        fundamentalsByTicker.set(t, row)
+      }
     }
   }
 

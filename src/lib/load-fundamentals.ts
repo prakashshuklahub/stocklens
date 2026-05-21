@@ -14,6 +14,24 @@ import type { StockFundamentals } from '@/types'
 
 type Supabase = ReturnType<typeof createServerClient>
 
+async function upsertFundamentals(
+  supabase: Supabase,
+  row: StockFundamentals & { fetched_at?: string },
+  fetchedAt: string,
+): Promise<void> {
+  const { error } = await supabase
+    .from('stock_fundamentals')
+    .upsert({ ...row, fetched_at: row.fetched_at ?? fetchedAt }, { onConflict: 'ticker' })
+
+  if (error) {
+    console.error(
+      `[fundamentals] upsert failed ${row.ticker}:`,
+      error.message,
+      row.target_source ? `target_source=${row.target_source}` : '',
+    )
+  }
+}
+
 export async function loadFundamentalsForTickers(
   supabase: Supabase,
   tickers: string[],
@@ -48,15 +66,13 @@ export async function loadFundamentalsForTickers(
 
     if (priceFresh && targetFresh) continue
 
-    // Target-only refresh — runs any time (including after 5pm when market is closed)
+    // Target-only refresh — runs any time (including after 5pm IST when US market is closed)
     if (priceFresh && !targetFresh) {
       const targetFields = await fetchAndResolveTarget(sym, cached!.week52_high ?? null)
       const next: StockFundamentals = { ...cached!, ...targetFields }
       byTicker.set(sym, next)
       if (shouldUpsert) {
-        await supabase
-          .from('stock_fundamentals')
-          .upsert({ ...next, fetched_at: cached!.fetched_at ?? nowIso }, { onConflict: 'ticker' })
+        await upsertFundamentals(supabase, next, cached!.fetched_at ?? nowIso)
       }
       continue
     }
@@ -68,9 +84,7 @@ export async function loadFundamentalsForTickers(
         const next: StockFundamentals = { ...cached, ...targetFields }
         byTicker.set(sym, next)
         if (shouldUpsert) {
-          await supabase
-            .from('stock_fundamentals')
-            .upsert({ ...next, fetched_at: cached.fetched_at ?? nowIso }, { onConflict: 'ticker' })
+          await upsertFundamentals(supabase, next, cached.fetched_at ?? nowIso)
         }
       }
       continue
@@ -99,9 +113,11 @@ export async function loadFundamentalsForTickers(
     byTicker.set(sym, next)
 
     if (shouldUpsert) {
-      await supabase
-        .from('stock_fundamentals')
-        .upsert({ ...next, fetched_at: (next as { fetched_at?: string }).fetched_at ?? nowIso }, { onConflict: 'ticker' })
+      await upsertFundamentals(
+        supabase,
+        next as StockFundamentals & { fetched_at?: string },
+        (next as { fetched_at?: string }).fetched_at ?? nowIso,
+      )
     }
   }
 

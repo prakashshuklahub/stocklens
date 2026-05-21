@@ -58,9 +58,9 @@ export interface StockFundamentals {
   target_mean: number | null
   target_high: number | null
   target_low: number | null
-  // Resolved target price — shared cache, refreshed after 5pm ET daily
+  // Resolved target price — shared cache, refreshed after 5pm IST daily
   target_price: number | null
-  target_source: 'fmp' | 'finnhub' | 'yahoo' | '52w_high' | null
+  target_source: 'fmp' | 'eulerpool' | 'finnhub' | 'yahoo' | '52w_high' | null
   target_fetched_at: string | null
   analyst_buy: number | null
   analyst_hold: number | null

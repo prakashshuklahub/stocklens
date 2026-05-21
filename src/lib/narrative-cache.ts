@@ -2,7 +2,7 @@ import type { createServerClient } from '@/lib/supabase'
 
 export const NARRATIVE_TTL_HOURS = 3
 /** Delay between sequential Gemini calls to reduce 429 rate limits. */
-export const LLM_CALL_DELAY_MS = 500
+export const LLM_CALL_DELAY_MS = 1200
 /** Stored in `model` column when Gemini failed or was skipped. */
 export const MECHANICAL_MODEL = 'mechanical'
 

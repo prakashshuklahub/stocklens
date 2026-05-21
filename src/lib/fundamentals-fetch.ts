@@ -1,10 +1,11 @@
 // Shared Yahoo + Finnhub + FMP fetch for stock fundamentals.
 // Used by /api/fundamentals/[ticker] and /api/picks (live hydration).
 //
-// Analyst price targets: FMP → Finnhub → Yahoo (fallback chain).
-// Cached globally in stock_fundamentals; target_fetched_at resets daily at 5pm ET.
+// Analyst price targets: FMP → Eulerpool → Finnhub → Yahoo (fallback chain).
+// Cached globally in stock_fundamentals; target_fetched_at resets daily at 5pm IST.
 
 import { env } from '@/lib/env'
+import { fetchEulerpoolPriceTarget } from '@/lib/eulerpool-price-target'
 import { fetchFmpPriceTarget } from '@/lib/fmp-price-target'
 import {
   applyResolvedTarget,
@@ -119,7 +120,7 @@ export async function fetchFinnhubPriceTarget(ticker: string): Promise<PriceTarg
   }
 }
 
-/** FMP → Finnhub → Yahoo with diagnostic logging. */
+/** FMP → Eulerpool → Finnhub → Yahoo with diagnostic logging. */
 export async function fetchAnalystPriceTarget(ticker: string): Promise<TargetFetchResult | null> {
   const sym = ticker.toUpperCase()
 
@@ -128,6 +129,14 @@ export async function fetchAnalystPriceTarget(ticker: string): Promise<TargetFet
     if (fmp?.target_mean) {
       console.info(`[price-target] ${sym}: source=fmp mean=${fmp.target_mean.toFixed(2)}`)
       return { ...fmp, source: 'fmp' }
+    }
+  }
+
+  if (env.EULERPOOL_API_KEY) {
+    const euler = await fetchEulerpoolPriceTarget(sym)
+    if (euler?.target_mean) {
+      console.info(`[price-target] ${sym}: source=eulerpool mean=${euler.target_mean.toFixed(2)}`)
+      return { ...euler, source: 'eulerpool' }
     }
   }
 
@@ -196,7 +205,7 @@ export async function fetchStockPriceData(ticker: string): Promise<Omit<
   }
 }
 
-/** Fetch target via FMP/Finnhub/Yahoo and apply 52W override using week52_high. */
+/** Fetch target via FMP/Eulerpool/Finnhub/Yahoo and apply 52W override using week52_high. */
 export async function fetchAndResolveTarget(
   ticker: string,
   week52High: number | null,

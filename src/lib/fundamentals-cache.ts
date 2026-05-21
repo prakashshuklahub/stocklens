@@ -16,8 +16,11 @@ export function hasCachedTarget(row: StockFundamentals): boolean {
   return row.target_price != null && row.target_price > 0
 }
 
-/** Target cache expired (resets daily at 5pm ET). */
+/** Target cache expired (resets daily at 5pm IST) or never fetched. */
 export function needsTargetRefresh(row: StockFundamentals): boolean {
+  if (!row.target_fetched_at) return true
+  // Stuck on 52W fallback despite analyst coverage — keep trying FMP/Eulerpool
+  if (row.target_source === '52w_high' && hasAnalystCoverage(row)) return true
   return !isTargetCacheFresh(row.target_fetched_at)
 }
 

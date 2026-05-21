@@ -215,7 +215,26 @@ function SectorGroup({
 }
 
 const watchlistFetcher = createMarketAwareFetcher<WatchlistStock>()
-const jsonFetcher = (url: string) => fetch(url).then((r) => r.json())
+const BATCH_CHUNK = 40
+
+async function fundamentalsBatchFetcher(url: string): Promise<{
+  fundamentals: Record<string, StockFundamentals>
+}> {
+  const tickers =
+    new URL(url, window.location.origin).searchParams.get('tickers')?.split(',').filter(Boolean) ?? []
+
+  const fundamentals: Record<string, StockFundamentals> = {}
+  for (let i = 0; i < tickers.length; i += BATCH_CHUNK) {
+    const chunk = tickers.slice(i, i + BATCH_CHUNK).join(',')
+    const params = new URLSearchParams({ tickers: chunk })
+    const res = await fetch(`/api/fundamentals/batch?${params}`)
+    if (!res.ok) continue
+    const data = (await res.json()) as { fundamentals?: Record<string, StockFundamentals> }
+    Object.assign(fundamentals, data.fundamentals ?? {})
+  }
+  return { fundamentals }
+}
+
 const REFRESH_SEC = LIVE_REFRESH_SEC
 
 export default function WatchlistPage() {
@@ -232,12 +251,16 @@ export default function WatchlistPage() {
       ? `/api/fundamentals/batch?tickers=${stocks.map((s) => s.ticker).join(',')}`
       : null
 
-  const { data: fundamentalsBatch, isLoading: fundamentalsLoading } = useSWR<{
+  const {
+    data: fundamentalsBatch,
+    isLoading: fundamentalsLoading,
+    mutate: mutateFundamentals,
+  } = useSWR<{
     fundamentals: Record<string, StockFundamentals>
-  }>(tickerKey, jsonFetcher, {
+  }>(tickerKey, fundamentalsBatchFetcher, {
     revalidateOnFocus: false,
     revalidateOnReconnect: false,
-    dedupingInterval: 3_600_000,
+    dedupingInterval: 60_000,
   })
 
   const fundamentalsByTicker = fundamentalsBatch?.fundamentals ?? {}
@@ -278,6 +301,7 @@ export default function WatchlistPage() {
       secs -= 1
       if (secs <= 0) {
         mutate()
+        void mutateFundamentals()
         secs = REFRESH_SEC
       }
       setCountdown(secs)
@@ -334,10 +358,12 @@ export default function WatchlistPage() {
       <div className="min-h-screen bg-zinc-950">
         <AppNav
           onRefresh={() => {
-            if (!marketOpen) return
-            mutate()
+            void mutateFundamentals()
+            if (marketOpen) {
+              mutate()
+              setSuggestionsRefresh((n) => n + 1)
+            }
             setCountdown(REFRESH_SEC)
-            setSuggestionsRefresh((n) => n + 1)
           }}
           refreshing={refreshing}
           marketOpen={marketOpen}
@@ -377,7 +403,7 @@ export default function WatchlistPage() {
           {isLoading ? (
             <div className="space-y-5" aria-busy="true" aria-label="Loading watchlist">
               {[1, 2, 3].map((n) => (
-                <div key={n} className="h-[220px] rounded-2xl bg-zinc-900 animate-pulse" style={{ animationDelay: `${n * 80}ms` }} />
+                <div key={n} className="h-[120px] rounded-2xl bg-zinc-900 animate-pulse" style={{ animationDelay: `${n * 80}ms` }} />
               ))}
             </div>
           ) : stocks.length === 0 ? (

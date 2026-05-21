@@ -1,9 +1,17 @@
 'use client'
 
 import { useState, useRef, useEffect } from 'react'
-import { MoreVertical, Trash2 } from 'lucide-react'
+import { MoreVertical, Trash2, ChevronDown } from 'lucide-react'
 import useSWR from 'swr'
 import StockLogo from '@/components/StockLogo'
+import {
+  computeTargetUpsidePct,
+  formatDisplayTargetPrice,
+  formatDisplayUpsidePct,
+  formatTargetPrice,
+  hasDisplayTargetPrice,
+  targetPriceSubline,
+} from '@/lib/target-price-display'
 import { cn } from '@/lib/utils'
 import type { StockFundamentals } from '@/types'
 
@@ -166,40 +174,123 @@ function TargetPrice({
     )
   }
 
-  if (current == null || targetPrice == null || targetPrice <= 0) return null
-
-  const is52w = targetSource === '52w_high'
-  const upside = ((targetPrice - current) / current) * 100
-  const isPos = upside >= 0
-  const subline = is52w ? 'Estimated · year high basis' : 'Wall Street average · 12 mo'
+  const showTarget = hasDisplayTargetPrice(targetPrice, targetSource)
+  const upside = showTarget ? computeTargetUpsidePct(targetPrice, current) : null
+  const isPos = upside != null && upside >= 0
+  const subline = showTarget ? targetPriceSubline(targetSource) : null
 
   const showRange =
-    !is52w &&
+    showTarget &&
     targetLow != null &&
     targetHigh != null &&
     targetHigh > targetLow
 
   return (
     <div className="rounded-xl bg-zinc-800/80 px-3 py-2.5 space-y-1">
-      <p className="text-[10px] font-bold text-zinc-500 uppercase tracking-wider">Target price</p>
-      <div className="flex items-end justify-between gap-2">
-        <div>
-          <p className="text-lg font-black text-white tabular-nums leading-none">{fmtPrice(targetPrice)}</p>
-          <p className="text-[10px] text-zinc-500 mt-1">{subline}</p>
+      <div className="flex items-start justify-between gap-3">
+        <div className="min-w-0">
+          <p className="text-[10px] font-bold text-zinc-500 uppercase tracking-wider">Target price</p>
+          <p
+            className={cn(
+              'text-lg font-black tabular-nums leading-none mt-0.5',
+              showTarget ? 'text-white' : 'text-zinc-500',
+            )}
+          >
+            {formatDisplayTargetPrice(targetPrice, targetSource)}
+          </p>
+          {subline && <p className="text-[10px] text-zinc-500 mt-1">{subline}</p>}
         </div>
-        <span
-          className={cn(
-            'text-sm font-bold tabular-nums px-2 py-1 rounded-lg shrink-0',
-            isPos ? 'bg-emerald-500/15 text-emerald-400' : 'bg-red-500/15 text-red-400',
-          )}
-        >
-          {fmtPct(upside)}
-        </span>
+        <div className="text-right shrink-0">
+          <p className="text-[10px] font-bold text-zinc-500 uppercase tracking-wider">Upside to target</p>
+          <p
+            className={cn(
+              'text-lg font-black tabular-nums leading-none mt-0.5',
+              !showTarget || upside == null
+                ? 'text-zinc-500'
+                : isPos
+                  ? 'text-emerald-400'
+                  : 'text-red-400',
+            )}
+          >
+            {formatDisplayUpsidePct(targetPrice, current, targetSource)}
+          </p>
+          <p className="text-[10px] text-zinc-600 mt-1">vs current price</p>
+        </div>
       </div>
       {showRange && (
         <p className="text-[10px] text-zinc-600 tabular-nums pt-0.5">
-          Range {fmtPrice(targetLow)} – {fmtPrice(targetHigh)}
+          Analyst range {formatTargetPrice(targetLow)} – {formatTargetPrice(targetHigh)}
         </p>
+      )}
+    </div>
+  )
+}
+
+function CollapsedSummary({
+  fundamentals,
+  currentPrice,
+  loading,
+}: {
+  fundamentals: StockFundamentals | null | undefined
+  currentPrice: number | null
+  loading: boolean
+}) {
+  const showTarget = hasDisplayTargetPrice(
+    fundamentals?.target_price,
+    fundamentals?.target_source ?? null,
+  )
+  const upside = showTarget
+    ? formatDisplayUpsidePct(
+        fundamentals?.target_price,
+        currentPrice,
+        fundamentals?.target_source ?? null,
+      )
+    : null
+
+  if (loading && !fundamentals) {
+    return (
+      <div className="flex gap-2 px-5 pb-1">
+        <div className="h-6 w-16 rounded-full bg-zinc-800 animate-pulse" />
+        <div className="h-6 w-16 rounded-full bg-zinc-800 animate-pulse" />
+        <div className="h-6 w-24 rounded-full bg-zinc-800 animate-pulse" />
+      </div>
+    )
+  }
+
+  return (
+    <div className="flex flex-wrap items-center gap-1.5 px-5 pb-1">
+      {fundamentals?.change_7d_pct != null && (
+        <span
+          className={cn(
+            'text-xs font-semibold tabular-nums px-2 py-0.5 rounded-full',
+            fundamentals.change_7d_pct >= 0
+              ? 'bg-emerald-500/10 text-emerald-400'
+              : 'bg-red-500/10 text-red-400',
+          )}
+        >
+          7d {fmtPct(fundamentals.change_7d_pct)}
+        </span>
+      )}
+      {fundamentals?.change_30d_pct != null && (
+        <span
+          className={cn(
+            'text-xs font-semibold tabular-nums px-2 py-0.5 rounded-full',
+            fundamentals.change_30d_pct >= 0
+              ? 'bg-emerald-500/10 text-emerald-400'
+              : 'bg-red-500/10 text-red-400',
+          )}
+        >
+          30d {fmtPct(fundamentals.change_30d_pct)}
+        </span>
+      )}
+      {showTarget && upside && upside !== '—' ? (
+        <span className="text-xs font-semibold tabular-nums px-2 py-0.5 rounded-full bg-zinc-800 text-zinc-300">
+          Target upside {upside}
+        </span>
+      ) : (
+        <span className="text-xs font-medium px-2 py-0.5 rounded-full bg-zinc-800/80 text-zinc-500">
+          No analyst target
+        </span>
       )}
     </div>
   )
@@ -211,6 +302,7 @@ export default function WatchlistCard({
   fundamentals: fundamentalsProp,
   fundamentalsLoading: fundamentalsLoadingProp,
 }: Props) {
+  const [expanded, setExpanded] = useState(false)
   const [menuOpen, setMenuOpen] = useState(false)
   const [confirming, setConfirming] = useState(false)
   const menuRef = useRef<HTMLDivElement>(null)
@@ -283,71 +375,95 @@ export default function WatchlistCard({
   }
 
   return (
-    <div className="relative card-surface active:scale-[0.99] active:brightness-95 transition-all duration-100">
-      {/* ── Top section: identity + live price ── */}
-      <div className="px-5 pt-4 pb-3.5 flex items-start justify-between gap-3 pr-14">
-        <div className="flex items-start gap-3 flex-1 min-w-0">
-          <StockLogo ticker={stock.ticker} size="md" />
-          <div className="min-w-0 flex-1">
-            <div className="flex items-center gap-2 mb-0.5">
+    <div className="relative card-surface overflow-hidden active:scale-[0.99] active:brightness-95 transition-all duration-100">
+      <button
+        type="button"
+        onClick={() => setExpanded((o) => !o)}
+        aria-expanded={expanded}
+        aria-label={`${expanded ? 'Collapse' : 'Expand'} details for ${stock.ticker}`}
+        className="w-full text-left px-5 pt-4 pb-3 pr-14 active:bg-zinc-800/40 transition-colors [touch-action:manipulation]"
+      >
+        <div className="flex items-start justify-between gap-3">
+          <div className="flex items-start gap-3 flex-1 min-w-0">
+            <StockLogo ticker={stock.ticker} size="md" />
+            <div className="min-w-0 flex-1">
               <span className="font-bold text-white text-lg tracking-tight" translate="no">
                 {stock.ticker}
               </span>
+              <p className="text-sm text-zinc-500 truncate leading-relaxed">{stock.company_name}</p>
             </div>
-            <p className="text-sm text-zinc-500 truncate leading-relaxed">{stock.company_name}</p>
+          </div>
+
+          <div className="text-right shrink-0">
+            {price ? (
+              <>
+                <p className="text-lg font-bold text-white tabular-nums leading-tight">{price}</p>
+                {pct && (
+                  <p className={cn('text-sm font-semibold tabular-nums mt-0.5', isUp ? 'text-emerald-400' : 'text-red-400')}>
+                    {pct} today
+                  </p>
+                )}
+              </>
+            ) : (
+              <p className="text-sm text-zinc-600">—</p>
+            )}
           </div>
         </div>
 
-        <div className="text-right shrink-0">
-          {price ? (
-            <>
-              <p className="text-lg font-bold text-white tabular-nums leading-tight">{price}</p>
-              {pct && (
-                <p className={cn('text-sm font-semibold tabular-nums mt-0.5', isUp ? 'text-emerald-400' : 'text-red-400')}>
-                  {pct} today
-                </p>
-              )}
-            </>
-          ) : (
-            <p className="text-sm text-zinc-600">—</p>
-          )}
+        {!expanded && (
+          <CollapsedSummary
+            fundamentals={fundamentals}
+            currentPrice={currentPrice}
+            loading={fundamentalsLoading}
+          />
+        )}
+
+        <div className="flex items-center justify-between gap-2 mt-2.5 pt-2 border-t border-white/[0.04]">
+          <span className="text-[11px] text-zinc-500 font-medium">
+            {expanded ? 'Hide details' : 'Tap for target, range & ratings'}
+          </span>
+          <ChevronDown
+            className={cn(
+              'w-4 h-4 text-zinc-600 shrink-0 transition-transform duration-200',
+              expanded ? 'rotate-180' : '',
+            )}
+            aria-hidden="true"
+          />
         </div>
-      </div>
+      </button>
 
-      {/* ── Metrics section ── */}
-      <div className="mx-3 mb-3 bg-zinc-800/50 rounded-xl px-3 py-2.5 space-y-2.5">
-        {/* 7d / 14d / 30d */}
-        <div className="flex items-center justify-around">
-          <PctBadge value={fundamentals?.change_7d_pct ?? null} label="7d" />
-          <div className="w-px h-5 bg-zinc-700/60" />
-          <PctBadge value={fundamentals?.change_14d_pct ?? null} label="14d" />
-          <div className="w-px h-5 bg-zinc-700/60" />
-          <PctBadge value={fundamentals?.change_30d_pct ?? null} label="30d" />
+      {expanded && (
+        <div className="mx-3 mb-3 bg-zinc-800/50 rounded-xl px-3 py-2.5 space-y-2.5 border-t border-white/[0.04]">
+          <div className="flex items-center justify-around">
+            <PctBadge value={fundamentals?.change_7d_pct ?? null} label="7d" />
+            <div className="w-px h-5 bg-zinc-700/60" />
+            <PctBadge value={fundamentals?.change_14d_pct ?? null} label="14d" />
+            <div className="w-px h-5 bg-zinc-700/60" />
+            <PctBadge value={fundamentals?.change_30d_pct ?? null} label="30d" />
+          </div>
+
+          <TargetPrice
+            targetPrice={fundamentals?.target_price ?? null}
+            targetLow={fundamentals?.target_low ?? null}
+            targetHigh={fundamentals?.target_high ?? null}
+            targetSource={fundamentals?.target_source ?? null}
+            current={currentPrice}
+            loading={fundamentalsLoading && !fundamentals}
+          />
+
+          <Week52Range
+            high={fundamentals?.week52_high ?? null}
+            low={fundamentals?.week52_low ?? null}
+            current={currentPrice}
+          />
+
+          <AnalystRating
+            buy={fundamentals?.analyst_buy ?? null}
+            hold={fundamentals?.analyst_hold ?? null}
+            sell={fundamentals?.analyst_sell ?? null}
+          />
         </div>
-
-        {/* Target — one clear block (not a second 52W slider) */}
-        <TargetPrice
-          targetPrice={fundamentals?.target_price ?? null}
-          targetLow={fundamentals?.target_low ?? null}
-          targetHigh={fundamentals?.target_high ?? null}
-          targetSource={fundamentals?.target_source ?? null}
-          current={currentPrice}
-          loading={fundamentalsLoading && !fundamentals}
-        />
-
-        {/* Where price sits in the year (separate from target) */}
-        <Week52Range
-          high={fundamentals?.week52_high ?? null}
-          low={fundamentals?.week52_low ?? null}
-          current={currentPrice}
-        />
-
-        <AnalystRating
-          buy={fundamentals?.analyst_buy ?? null}
-          hold={fundamentals?.analyst_hold ?? null}
-          sell={fundamentals?.analyst_sell ?? null}
-        />
-      </div>
+      )}
 
       {/* ── 3-dot menu ── */}
       <div ref={menuRef} className="absolute right-1 top-2">

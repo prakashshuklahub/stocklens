@@ -21,7 +21,13 @@ export async function GET(req: NextRequest) {
   }
 
   const supabase = createServerClient()
+  console.info(`[fundamentals/batch] loading ${tickers.length} tickers: ${tickers.slice(0, 5).join(',')}${tickers.length > 5 ? '…' : ''}`)
   const fundamentals = await loadFundamentalsForTickers(supabase, tickers)
+  const withTarget = tickers.filter((t) => {
+    const f = fundamentals[t]
+    return f?.target_source && f.target_source !== '52w_high'
+  })
+  console.info(`[fundamentals/batch] done ${tickers.length} tickers, ${withTarget.length} analyst targets`)
 
   return NextResponse.json(
     { fundamentals },

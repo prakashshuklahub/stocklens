@@ -17,6 +17,7 @@ const MIGRATION_FILES = [
   '007_portfolio_sell_alerts.sql',
   '008_watchlist_suggestions_cache.sql',
   '010_target_price_cache.sql',
+  '011_eulerpool_target_source.sql',
   'run_once_combined.sql',
 ]
 

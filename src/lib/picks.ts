@@ -1,7 +1,8 @@
 // Buy-recommendation scoring. Pure functions — no IO.
 // Consumed by /api/picks.
 //
-// Analyst targets: FMP → Finnhub → Yahoo. Cached globally; 52W-high override when all fail.
+// Analyst targets: FMP → Eulerpool → Finnhub → Yahoo. Cached globally in stock_fundamentals.
+// Picks only score/display real analyst targets (not 52W fallback).
 
 import type {
   Pick,
@@ -10,6 +11,7 @@ import type {
   StockFundamentals,
   WatchlistStock,
 } from '@/types'
+import { isAnalystTargetSource } from '@/lib/target-price-display'
 
 export interface ScoreInput {
   stock: WatchlistStock
@@ -64,24 +66,23 @@ function resolveTarget(
   current_price: number,
   buy_ratio: number,
 ): { target_mean: number; target_low: number | null; target_high: number | null; upside_pct: number; label: TargetLabel; factor?: PickFactor } | null {
-  // Use globally cached target (analyst or 52W override from stock_fundamentals)
-  if (f.target_price && f.target_price > 0 && f.target_source) {
+  // Analyst target only (FMP/Eulerpool/Finnhub/Yahoo) — matches watchlist UI; no 52W masquerading as target
+  if (f.target_price && f.target_price > 0 && isAnalystTargetSource(f.target_source)) {
     const upside_pct = ((f.target_price - current_price) / current_price) * 100
-    const is52w = f.target_source === '52w_high'
-    if (is52w && upside_pct < 3) return null
+    if (upside_pct <= 0) return null
     return {
       target_mean: f.target_price,
-      target_low: is52w ? f.week52_low : f.target_low,
-      target_high: is52w ? f.week52_high : f.target_high,
+      target_low: f.target_low,
+      target_high: f.target_high,
       upside_pct,
-      label: is52w ? '52w_high' : 'analyst',
-      factor: is52w ? { label: 'Upside to target price', tone: 'positive' } : undefined,
+      label: 'analyst',
     }
   }
 
-  // Legacy fallback if cache columns not yet migrated
-  if (f.target_mean && f.target_mean > 0) {
+  // Legacy rows before target_source column
+  if (f.target_mean && f.target_mean > 0 && !f.target_source) {
     const upside_pct = ((f.target_mean - current_price) / current_price) * 100
+    if (upside_pct <= 0) return null
     return {
       target_mean: f.target_mean,
       target_low: f.target_low,
@@ -91,21 +92,7 @@ function resolveTarget(
     }
   }
 
-  if (f.week52_high && current_price < f.week52_high * 0.97) {
-    const upside_pct = ((f.week52_high - current_price) / current_price) * 100
-    if (upside_pct >= 3) {
-      return {
-        target_mean: f.week52_high,
-        target_low: f.week52_low,
-        target_high: f.week52_high,
-        upside_pct,
-        label: '52w_high',
-        factor: { label: 'Upside to target price', tone: 'positive' },
-      }
-    }
-  }
-
-  // Momentum + buy consensus when no price target data
+  // Momentum + buy consensus when no analyst target data
   if (buy_ratio >= 0.45 && (f.change_30d_pct ?? 0) > 5) {
     const upside_pct = Math.min(f.change_30d_pct ?? 12, 40)
     return {
@@ -149,13 +136,13 @@ export function scorePick(input: ScoreInput): ScoredPick | null {
   if (target.label === 'analyst') {
     if (upside_pct > 30) {
       score += 35
-      factors.push({ label: `+${upside_pct.toFixed(0)}% to analyst target`, tone: 'positive' })
+      factors.push({ label: `+${upside_pct.toFixed(0)}% to target price`, tone: 'positive' })
     } else if (upside_pct > 15) {
       score += 25
-      factors.push({ label: `+${upside_pct.toFixed(0)}% to analyst target`, tone: 'positive' })
+      factors.push({ label: `+${upside_pct.toFixed(0)}% to target price`, tone: 'positive' })
     } else if (upside_pct > 5) {
       score += 10
-      factors.push({ label: `+${upside_pct.toFixed(0)}% to analyst target`, tone: 'positive' })
+      factors.push({ label: `+${upside_pct.toFixed(0)}% to target price`, tone: 'positive' })
     }
   } else if (upside_pct >= 10) {
     score += 20

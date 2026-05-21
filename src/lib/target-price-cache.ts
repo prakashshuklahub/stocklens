@@ -1,16 +1,16 @@
-// Target price cache: valid until the next 5pm ET reset (shared global data in stock_fundamentals).
+// Target price cache: valid until the next 5pm IST reset (shared global data in stock_fundamentals).
 
-import { US_MARKET_TZ } from '@/lib/market-hours'
 import type { StockFundamentals } from '@/types'
 import type { PriceTargetFields } from '@/lib/yahoo-session'
 
-export const TARGET_CACHE_RESET_HOUR_ET = 17 // 5:00 PM Eastern
+export const TARGET_CACHE_TZ = 'Asia/Kolkata'
+export const TARGET_CACHE_RESET_HOUR = 17 // 5:00 PM IST
 
-export type TargetSource = 'fmp' | 'finnhub' | 'yahoo' | '52w_high'
+export type TargetSource = 'fmp' | 'eulerpool' | 'finnhub' | 'yahoo' | '52w_high'
 
 export type TargetFetchResult = PriceTargetFields & { source: Exclude<TargetSource, '52w_high'> }
 
-type EasternParts = {
+type LocalParts = {
   year: number
   month: number
   day: number
@@ -18,9 +18,9 @@ type EasternParts = {
   minute: number
 }
 
-export function getEasternParts(now: Date): EasternParts {
+function getLocalParts(now: Date, timeZone = TARGET_CACHE_TZ): LocalParts {
   const parts = new Intl.DateTimeFormat('en-US', {
-    timeZone: US_MARKET_TZ,
+    timeZone,
     year: 'numeric',
     month: 'numeric',
     day: 'numeric',
@@ -38,42 +38,48 @@ export function getEasternParts(now: Date): EasternParts {
   }
 }
 
-/** UTC instant for a given Eastern local date/time (handles DST). */
-export function easternInstantToUtc(
+/** UTC instant for a given local date/time in the cache timezone. */
+function localInstantToUtc(
   year: number,
   month: number,
   day: number,
   hour: number,
   minute: number,
+  timeZone = TARGET_CACHE_TZ,
 ): Date {
   const dayStartUtc = Date.UTC(year, month - 1, day, 0, 0, 0)
   for (let offsetMin = 0; offsetMin < 48 * 60; offsetMin++) {
     const candidate = new Date(dayStartUtc + offsetMin * 60_000)
-    const p = getEasternParts(candidate)
+    const p = getLocalParts(candidate, timeZone)
     if (p.year === year && p.month === month && p.day === day && p.hour === hour && p.minute === minute) {
       return candidate
     }
   }
-  throw new Error(`Could not resolve ${year}-${month}-${day} ${hour}:${minute} ET`)
+  throw new Error(`Could not resolve ${year}-${month}-${day} ${hour}:${minute} in ${timeZone}`)
 }
 
-function previousEasternDay(year: number, month: number, day: number): EasternParts {
-  const noon = easternInstantToUtc(year, month, day, 12, 0)
-  return getEasternParts(new Date(noon.getTime() - 86_400_000))
+function previousLocalDay(
+  year: number,
+  month: number,
+  day: number,
+  timeZone = TARGET_CACHE_TZ,
+): LocalParts {
+  const noon = localInstantToUtc(year, month, day, 12, 0, timeZone)
+  return getLocalParts(new Date(noon.getTime() - 86_400_000), timeZone)
 }
 
-/** Most recent 5pm ET — target cache is fresh if target_fetched_at >= this. */
+/** Most recent 5pm IST — target cache is fresh if target_fetched_at >= this. */
 export function targetCacheCutoffIso(now = new Date()): string {
-  const p = getEasternParts(now)
+  const p = getLocalParts(now)
   const nowMins = p.hour * 60 + p.minute
-  const resetMins = TARGET_CACHE_RESET_HOUR_ET * 60
+  const resetMins = TARGET_CACHE_RESET_HOUR * 60
 
   if (nowMins >= resetMins) {
-    return easternInstantToUtc(p.year, p.month, p.day, TARGET_CACHE_RESET_HOUR_ET, 0).toISOString()
+    return localInstantToUtc(p.year, p.month, p.day, TARGET_CACHE_RESET_HOUR, 0).toISOString()
   }
 
-  const prev = previousEasternDay(p.year, p.month, p.day)
-  return easternInstantToUtc(prev.year, prev.month, prev.day, TARGET_CACHE_RESET_HOUR_ET, 0).toISOString()
+  const prev = previousLocalDay(p.year, p.month, p.day)
+  return localInstantToUtc(prev.year, prev.month, prev.day, TARGET_CACHE_RESET_HOUR, 0).toISOString()
 }
 
 export function isTargetCacheFresh(
@@ -85,7 +91,12 @@ export function isTargetCacheFresh(
 }
 
 export function isAnalystTargetSource(source: TargetSource | null | undefined): boolean {
-  return source === 'fmp' || source === 'finnhub' || source === 'yahoo'
+  return (
+    source === 'fmp' ||
+    source === 'eulerpool' ||
+    source === 'finnhub' ||
+    source === 'yahoo'
+  )
 }
 
 /** Merge analyst fetch + 52W override into stock_fundamentals target fields. */

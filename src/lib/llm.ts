@@ -44,6 +44,35 @@ export interface NarrativeOutput {
   model: string
 }
 
+/** Extract JSON object from Gemini output (schema mode usually clean; lite model sometimes adds prose). */
+function parseJsonFromLlmText(raw: string): unknown | null {
+  let text = raw.trim()
+  if (!text) return null
+
+  if (text.startsWith('```')) {
+    text = text.replace(/^```(?:json)?\s*/i, '').replace(/\s*```$/, '').trim()
+  }
+
+  try {
+    return JSON.parse(text)
+  } catch {
+    const start = text.indexOf('{')
+    const end = text.lastIndexOf('}')
+    if (start >= 0 && end > start) {
+      try {
+        return JSON.parse(text.slice(start, end + 1))
+      } catch {
+        return null
+      }
+    }
+    return null
+  }
+}
+
+function sleep(ms: number): Promise<void> {
+  return new Promise((resolve) => setTimeout(resolve, ms))
+}
+
 function systemPrompt(targetLabel: NarrativeInput['target_label']): string {
   const targetRule =
     targetLabel === 'analyst'
@@ -107,6 +136,7 @@ async function callGemini(
   system: string,
   user: string,
   ticker: string,
+  attempt = 0,
 ): Promise<NarrativeOutput | null> {
   try {
     const res = await fetch(
@@ -122,7 +152,7 @@ async function callGemini(
           contents: [{ role: 'user', parts: [{ text: user }] }],
           generationConfig: {
             temperature: 0.4,
-            maxOutputTokens: 240,
+            maxOutputTokens: 512,
             responseMimeType: 'application/json',
             responseSchema: {
               type: 'object',
@@ -138,23 +168,30 @@ async function callGemini(
       },
     )
 
+    if (res.status === 429 && attempt < 2) {
+      await sleep(1500 * (attempt + 1))
+      return callGemini(model, system, user, ticker, attempt + 1)
+    }
+
     if (!res.ok) {
       console.warn(`[llm] ${model} ${res.status} for ${ticker}`)
       return null
     }
 
     const data = await res.json()
+    const finishReason: string | undefined = data?.candidates?.[0]?.finishReason
     const text: string | undefined = data?.candidates?.[0]?.content?.parts?.[0]?.text
     if (!text) return null
 
-    // Schema mode should return clean JSON, but strip code fences defensively.
-    let raw = text.trim()
-    if (raw.startsWith('```')) {
-      raw = raw.replace(/^```(?:json)?\s*/i, '').replace(/\s*```$/, '').trim()
+    if (finishReason === 'MAX_TOKENS') {
+      console.warn(`[llm] ${model} truncated output for ${ticker}`)
     }
 
-    const parsed = JSON.parse(raw) as Partial<NarrativeOutput>
-    if (typeof parsed.thesis !== 'string' || typeof parsed.main_risk !== 'string') return null
+    const parsed = parseJsonFromLlmText(text) as Partial<NarrativeOutput> | null
+    if (!parsed || typeof parsed.thesis !== 'string' || typeof parsed.main_risk !== 'string') {
+      console.warn(`[llm] ${model} invalid JSON for ${ticker}: ${text.slice(0, 80)}…`)
+      return null
+    }
 
     return {
       thesis: parsed.thesis.trim(),
@@ -162,7 +199,7 @@ async function callGemini(
       model,
     }
   } catch (err) {
-    console.warn(`[llm] ${model} failed for ${ticker}:`, err)
+    console.warn(`[llm] ${model} failed for ${ticker}:`, err instanceof Error ? err.message : err)
     return null
   }
 }
@@ -269,13 +306,8 @@ async function callGeminiSellReview(
     const text: string | undefined = data?.candidates?.[0]?.content?.parts?.[0]?.text
     if (!text) return null
 
-    let raw = text.trim()
-    if (raw.startsWith('```')) {
-      raw = raw.replace(/^```(?:json)?\s*/i, '').replace(/\s*```$/, '').trim()
-    }
-
-    const parsed = JSON.parse(raw) as Partial<SellReviewOutput>
-    if (typeof parsed.review_reason !== 'string' || typeof parsed.caveat !== 'string') return null
+    const parsed = parseJsonFromLlmText(text) as Partial<SellReviewOutput> | null
+    if (!parsed || typeof parsed.review_reason !== 'string' || typeof parsed.caveat !== 'string') return null
 
     return {
       review_reason: parsed.review_reason.trim(),
@@ -362,13 +394,8 @@ async function callGeminiSuggestionBlurb(
     const text: string | undefined = data?.candidates?.[0]?.content?.parts?.[0]?.text
     if (!text) return null
 
-    let raw = text.trim()
-    if (raw.startsWith('```')) {
-      raw = raw.replace(/^```(?:json)?\s*/i, '').replace(/\s*```$/, '').trim()
-    }
-
-    const parsed = JSON.parse(raw) as Partial<SuggestionBlurbOutput>
-    if (typeof parsed.reason !== 'string' || !parsed.reason.trim()) return null
+    const parsed = parseJsonFromLlmText(text) as Partial<SuggestionBlurbOutput> | null
+    if (!parsed || typeof parsed.reason !== 'string' || !parsed.reason.trim()) return null
 
     return { reason: parsed.reason.trim(), model }
   } catch {

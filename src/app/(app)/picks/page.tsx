@@ -14,6 +14,13 @@ import {
 } from 'lucide-react'
 import StockLogo from '@/components/StockLogo'
 import { pickDisplayCopy } from '@/lib/picks'
+import {
+  formatTargetPrice,
+  formatUpsideDollar,
+  formatUpsidePct,
+  hasDisplayTargetFromPickLabel,
+  TARGET_UNAVAILABLE,
+} from '@/lib/target-price-display'
 import { cn } from '@/lib/utils'
 import type { Pick, PicksResponse, PickFactor } from '@/types'
 
@@ -74,6 +81,7 @@ function FactorChip({ factor }: { factor: PickFactor }) {
 
 // ── Target range bar ──────────────────────────────────────────────────────────
 function TargetRange({ pick }: { pick: Pick }) {
+  if (pick.target_label === '52w_high') return null
   if (pick.target_low == null || pick.target_high == null || pick.target_high <= pick.target_low) return null
   const lo = pick.target_low
   const hi = pick.target_high
@@ -99,8 +107,11 @@ function TargetRange({ pick }: { pick: Pick }) {
 // ── Pick card ─────────────────────────────────────────────────────────────────
 function PickCard({ pick, rank }: { pick: Pick; rank: number }) {
   const [open, setOpen] = useState(false)
-  const isPos = pick.upside_pct >= 0
+  const showTarget = hasDisplayTargetFromPickLabel(pick.target_mean, pick.target_label)
+  const upsidePct = showTarget ? pick.upside_pct : null
+  const isPos = upsidePct != null && upsidePct >= 0
   const targetCopy = pickDisplayCopy(pick.target_label)
+  const subline = showTarget ? targetCopy.targetSub : null
 
   return (
     <div className="card-surface overflow-hidden">
@@ -147,20 +158,35 @@ function PickCard({ pick, rank }: { pick: Pick; rank: number }) {
               <p className="text-[10px] font-semibold text-zinc-500 uppercase tracking-wide">
                 {targetCopy.targetHeading}
               </p>
-              <p className="text-sm font-bold text-white tabular-nums leading-tight">${fmt(pick.target_mean)}</p>
-              <p className="text-[11px] text-zinc-500">{targetCopy.targetSub}</p>
+              <p
+                className={cn(
+                  'text-sm font-bold tabular-nums leading-tight',
+                  showTarget ? 'text-white' : 'text-zinc-500',
+                )}
+              >
+                {showTarget ? formatTargetPrice(pick.target_mean) : TARGET_UNAVAILABLE}
+              </p>
+              {subline && <p className="text-[11px] text-zinc-500">{subline}</p>}
             </div>
             {/* Upside */}
             <div>
               <p className="text-[10px] font-semibold text-zinc-500 uppercase tracking-wide">Upside</p>
-              <p className={cn(
-                'text-sm font-bold tabular-nums leading-tight',
-                isPos ? 'text-emerald-400' : 'text-red-400'
-              )}>
-                {isPos ? '+' : ''}{pick.upside_pct.toFixed(1)}%
+              <p
+                className={cn(
+                  'text-sm font-bold tabular-nums leading-tight',
+                  upsidePct == null
+                    ? 'text-zinc-500'
+                    : isPos
+                      ? 'text-emerald-400'
+                      : 'text-red-400',
+                )}
+              >
+                {formatUpsidePct(upsidePct)}
               </p>
               <p className="text-[11px] text-zinc-500 tabular-nums">
-                +${fmt(pick.target_mean - pick.current_price)} {targetCopy.upsideSub}
+                {showTarget
+                  ? `${formatUpsideDollar(pick.target_mean, pick.current_price)} ${targetCopy.upsideSub}`
+                  : TARGET_UNAVAILABLE}
               </p>
             </div>
             {/* Analyst ratings */}

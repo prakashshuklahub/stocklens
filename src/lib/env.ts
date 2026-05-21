@@ -9,6 +9,8 @@ export const env = {
   FINNHUB_API_KEY: process.env.FINNHUB_API_KEY!,
   // Optional. Analyst price targets via FMP (primary); skipped if unset.
   FMP_API_KEY: process.env.FMP_API_KEY ?? '',
+  // Optional. Analyst price targets when FMP empty (1,000 req/month free).
+  EULERPOOL_API_KEY: process.env.EULERPOOL_API_KEY ?? '',
   // Optional. If absent, /api/picks falls back to mechanical reasoning.
   GEMINI_API_KEY: process.env.GEMINI_API_KEY ?? '',
 }
