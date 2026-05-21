@@ -14,7 +14,13 @@ import { fetchStockFundamentals, mapPool } from '@/lib/fundamentals-fetch'
 import { createServerClient } from '@/lib/supabase'
 import { fetchNewsForTicker } from '@/lib/news'
 import { generateNarrative, isLLMEnabled } from '@/lib/llm'
-import { loadFreshNarratives, mapSequential, upsertNarratives } from '@/lib/narrative-cache'
+import {
+  loadFreshNarratives,
+  mapSequential,
+  MECHANICAL_MODEL,
+  narrativeSourceFromModel,
+  upsertNarratives,
+} from '@/lib/narrative-cache'
 import { mechanicalThesis, rankPicks, scorePick, type ScoredPick } from '@/lib/picks'
 import { NextRequest, NextResponse } from 'next/server'
 import type {
@@ -188,6 +194,7 @@ export async function GET(req: NextRequest) {
     ticker: string
     thesis: string
     main_risk: string
+    model: string | null
   }>(supabase, 'pick_narratives', topTickers, LOG_PREFIX)
 
   // ── 6. Generate missing narratives (LLM or mechanical) ─────────────────────
@@ -262,17 +269,17 @@ export async function GET(req: NextRequest) {
       return { ticker: pick.ticker, ...fallback, source: 'mechanical', model: null }
   })
 
-  // Persist successful LLM narratives so we don't re-spend within TTL.
-  const llmRows = generated
-    .filter((g): g is GenResult & { source: 'llm'; model: string } => g.source === 'llm' && g.model !== null)
-    .map((g) => ({
+  // Persist LLM + mechanical narratives so 429 failures don't retry within TTL.
+  if (generated.length) {
+    const narrativeRows = generated.map((g) => ({
       ticker: g.ticker.toUpperCase(),
       thesis: g.thesis,
       main_risk: g.main_risk,
-      model: g.model,
+      model: g.source === 'llm' && g.model ? g.model : MECHANICAL_MODEL,
       generated_at: new Date().toISOString(),
     }))
-  await upsertNarratives(supabase, 'pick_narratives', llmRows, LOG_PREFIX)
+    await upsertNarratives(supabase, 'pick_narratives', narrativeRows, LOG_PREFIX)
+  }
 
   // ── 7. Final response ──────────────────────────────────────────────────────
   const generatedByTicker = new Map<string, GenResult>()
@@ -287,7 +294,8 @@ export async function GET(req: NextRequest) {
       ...p,
       thesis: narrative?.thesis ?? null,
       main_risk: narrative?.main_risk ?? null,
-      narrative_source: fresh?.source ?? (cached ? 'llm' : 'mechanical'),
+      narrative_source:
+        fresh?.source ?? (cached ? narrativeSourceFromModel(cached.model) : 'mechanical'),
     }
   })
 

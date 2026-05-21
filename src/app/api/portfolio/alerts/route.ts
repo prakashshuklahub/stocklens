@@ -1,7 +1,13 @@
 import { auth, getSessionUserId } from '@/lib/auth'
 import { fetchStockFundamentals, mapPool } from '@/lib/fundamentals-fetch'
 import { generateSellReview, isLLMEnabled } from '@/lib/llm'
-import { loadFreshNarratives, mapSequential, upsertNarratives } from '@/lib/narrative-cache'
+import {
+  loadFreshNarratives,
+  mapSequential,
+  MECHANICAL_MODEL,
+  narrativeSourceFromModel,
+  upsertNarratives,
+} from '@/lib/narrative-cache'
 import {
   mechanicalSellReview,
   rankAlerts,
@@ -125,6 +131,7 @@ export async function GET(req: NextRequest) {
     ticker: string
     review_reason: string
     caveat: string
+    model: string | null
   }>(supabase, 'portfolio_sell_narratives', alertTickers, LOG_PREFIX)
 
   const needGeneration = ranked.filter((a) => !cachedByTicker.has(a.ticker.toUpperCase()))
@@ -172,17 +179,16 @@ export async function GET(req: NextRequest) {
       return { ticker: alert.ticker, ...fallback, source: 'mechanical', model: null }
   })
 
-  const llmRows = generated
-    .filter((g): g is GenResult & { source: 'llm'; model: string } => g.source === 'llm' && g.model != null)
-    .map((g) => ({
+  if (generated.length) {
+    const narrativeRows = generated.map((g) => ({
       ticker: g.ticker.toUpperCase(),
       review_reason: g.review_reason,
       caveat: g.caveat,
-      model: g.model,
+      model: g.source === 'llm' && g.model ? g.model : MECHANICAL_MODEL,
       generated_at: new Date().toISOString(),
     }))
-
-  await upsertNarratives(supabase, 'portfolio_sell_narratives', llmRows, LOG_PREFIX)
+    await upsertNarratives(supabase, 'portfolio_sell_narratives', narrativeRows, LOG_PREFIX)
+  }
 
   const generatedByTicker = new Map<string, GenResult>()
   for (const g of generated) generatedByTicker.set(g.ticker, g)
@@ -196,7 +202,8 @@ export async function GET(req: NextRequest) {
       ...a,
       review_reason: narrative?.review_reason ?? null,
       caveat: narrative?.caveat ?? null,
-      narrative_source: fresh?.source ?? (cached ? 'llm' : 'mechanical'),
+      narrative_source:
+        fresh?.source ?? (cached ? narrativeSourceFromModel(cached.model) : 'mechanical'),
     }
   })
 

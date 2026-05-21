@@ -3,6 +3,12 @@ import type { createServerClient } from '@/lib/supabase'
 export const NARRATIVE_TTL_HOURS = 6
 /** Delay between sequential Gemini calls to reduce 429 rate limits. */
 export const LLM_CALL_DELAY_MS = 500
+/** Stored in `model` column when Gemini failed or was skipped. */
+export const MECHANICAL_MODEL = 'mechanical'
+
+export function narrativeSourceFromModel(model: string | null | undefined): 'llm' | 'mechanical' {
+  return model === MECHANICAL_MODEL ? 'mechanical' : 'llm'
+}
 
 type Supabase = ReturnType<typeof createServerClient>
 
