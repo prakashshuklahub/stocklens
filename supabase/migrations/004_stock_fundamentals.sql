@@ -1,5 +1,5 @@
 -- Shared cache table for stock fundamentals (common across all users)
--- Source of truth: Yahoo Finance (7d/14d/30d, 52W) + Finnhub (analyst, target)
+-- Source of truth: Yahoo Finance (7d/14d/30d, 52W, analyst targets) + Finnhub (analyst recs, sentiment)
 -- Refreshed by API route when data is older than 30 minutes
 
 CREATE TABLE IF NOT EXISTS stock_fundamentals (

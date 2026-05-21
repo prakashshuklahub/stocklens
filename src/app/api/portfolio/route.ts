@@ -1,25 +1,8 @@
 import { auth, getSessionUserId } from '@/lib/auth'
+import { fetchLivePricesForTickers } from '@/lib/live-prices'
+import { isUSMarketOpen } from '@/lib/market-hours'
 import { createServerClient } from '@/lib/supabase'
 import { NextResponse } from 'next/server'
-
-async function fetchOneTicker(ticker: string): Promise<{ price: number; change_1d_pct: number } | null> {
-  try {
-    const res = await fetch(
-      `https://query1.finance.yahoo.com/v8/finance/chart/${ticker}?interval=1d&range=1d`,
-      { headers: { 'User-Agent': 'Mozilla/5.0' }, cache: 'no-store' }
-    )
-    if (!res.ok) return null
-    const data = await res.json()
-    const meta = data?.chart?.result?.[0]?.meta
-    if (!meta?.regularMarketPrice) return null
-    const price: number = meta.regularMarketPrice
-    const prevClose: number = meta.chartPreviousClose ?? meta.previousClose ?? price
-    const change_1d_pct = prevClose ? ((price - prevClose) / prevClose) * 100 : 0
-    return { price, change_1d_pct }
-  } catch {
-    return null
-  }
-}
 
 export async function GET() {
   const session = await auth()
@@ -37,11 +20,14 @@ export async function GET() {
   if (!holdings?.length) return NextResponse.json([])
 
   const tickers = holdings.map((h) => h.ticker)
-  const results = await Promise.all(tickers.map(fetchOneTicker))
-  const enriched = holdings.map((h, i) => ({
+  const marketOpen = isUSMarketOpen()
+  const prices = marketOpen ? await fetchLivePricesForTickers(tickers) : new Map()
+  const enriched = holdings.map((h) => ({
     ...h,
-    snapshot: results[i] ?? null,
+    snapshot: prices.get(h.ticker) ?? null,
   }))
 
-  return NextResponse.json(enriched)
+  return NextResponse.json(enriched, {
+    headers: { 'X-Market-Open': marketOpen ? '1' : '0' },
+  })
 }

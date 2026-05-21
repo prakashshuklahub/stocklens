@@ -36,7 +36,7 @@ Built with **Next.js 16**, **Supabase**, **NextAuth**, and live market data from
 ### Picks (tab 3)
 
 - Ranks **buy candidates only from your watchlist** (not the whole market).
-- Scoring uses momentum, analyst ratings, 52-week position, news sentiment, and upside vs target (analyst mean, 52w high, or momentum estimate when Finnhub targets are unavailable on free tier).
+- Scoring uses momentum, analyst ratings, 52-week position, news sentiment, and upside vs target (Yahoo analyst consensus when Finnhub paid target is unavailable; 52w high or momentum only as last resort).
 - **Confidence** — High / Medium / Low; sorted by confidence then score.
 - Each pick shows buy zone, target, upside, factor chips, and thesis.
 - Optional **Gemini** thesis + risk (cached ~6h in `pick_narratives`).
@@ -107,7 +107,7 @@ See `supabase/migrations/` and project rules in `AGENTS.md`.
 - **npm**
 - **Supabase** project
 - **Google Cloud** OAuth client (Web application)
-- **Finnhub** API key (free tier works; price-target endpoint is paid-only)
+- **Finnhub** API key (free tier works for recommendations/sentiment; analyst targets also come from Yahoo)
 - **Gemini API key** (optional, for AI blurbs/theses)
 
 ---
@@ -251,7 +251,7 @@ scripts/migrate.mjs      # Optional CLI migrator
 ## External services & limits
 
 - **Yahoo Finance** — unofficial endpoints; use reasonable refresh intervals (app uses 15s live prices on open tabs).
-- **Finnhub free tier** — rate limits apply; `price-target` may return empty (app falls back to 52w / momentum).
+- **Finnhub free tier** — `price-target` is paid-only; analyst targets use Yahoo `financialData` instead (52w / momentum only if both fail).
 - **Gemini** — optional; picks/portfolio/trending use sequential calls with delays to reduce 429s.
 - **Not financial advice** — scoring and copy are informational; user decides trades.
 

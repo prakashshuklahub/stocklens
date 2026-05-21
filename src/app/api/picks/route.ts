@@ -10,7 +10,9 @@
 //   6. For tickers we couldn't generate LLM narrative, fall back to mechanical
 
 import { auth, getSessionUserId } from '@/lib/auth'
-import { fetchStockFundamentals, mapPool } from '@/lib/fundamentals-fetch'
+import { loadFundamentalsForTickers } from '@/lib/load-fundamentals'
+import { fetchLivePriceForTicker } from '@/lib/live-prices'
+import { isUSMarketOpen } from '@/lib/market-hours'
 import { createServerClient } from '@/lib/supabase'
 import { fetchNewsForTicker } from '@/lib/news'
 import { generateNarrative, isLLMEnabled } from '@/lib/llm'
@@ -36,25 +38,10 @@ const MAX_PICKS = 10
 const NO_CACHE_HEADERS = { 'Cache-Control': 'private, no-store, max-age=0' } as const
 const LOG_PREFIX = 'picks'
 
-// ── Live price (same pattern as /api/watchlist) ──────────────────────────────
-async function fetchOnePrice(ticker: string): Promise<number | null> {
-  try {
-    const res = await fetch(
-      `https://query1.finance.yahoo.com/v8/finance/chart/${ticker}?interval=1d&range=1d`,
-      { headers: { 'User-Agent': 'Mozilla/5.0' }, cache: 'no-store' }
-    )
-    if (!res.ok) return null
-    const data = await res.json()
-    const price = data?.chart?.result?.[0]?.meta?.regularMarketPrice
-    return typeof price === 'number' ? price : null
-  } catch {
-    return null
-  }
-}
-
 // ── Route ────────────────────────────────────────────────────────────────────
 export async function GET(req: NextRequest) {
-  const forceRefresh = req.nextUrl.searchParams.get('refresh') === '1'
+  const marketOpen = isUSMarketOpen()
+  const forceRefresh = req.nextUrl.searchParams.get('refresh') === '1' && marketOpen
   const session = await auth()
   const userId = getSessionUserId(session)
   if (!userId) return NextResponse.json({ error: 'Session invalid — please sign in again' }, { status: 401 })
@@ -96,28 +83,20 @@ export async function GET(req: NextRequest) {
     fundamentalsError?.message?.includes('stock_fundamentals')
   )
   const needLive =
-    forceRefresh || tableMissing || fundamentalsByTicker.size < tickers.length * 0.5
+    tableMissing || fundamentalsByTicker.size < tickers.length * 0.5 || forceRefresh
   let hydratedLive = 0
   if (needLive) {
-    const toFetch = forceRefresh
-      ? tickers
-      : tickers.filter((t) => !fundamentalsByTicker.has(t))
-    const fetched = await mapPool(toFetch, 6, fetchStockFundamentals)
-    toFetch.forEach((t, i) => {
-      fundamentalsByTicker.set(t, fetched[i])
-      hydratedLive++
-    })
-    // Best-effort cache write when table exists
-    if (!tableMissing && fetched.length) {
-      await supabase.from('stock_fundamentals').upsert(
-        fetched.map((f) => ({ ...f, fetched_at: new Date().toISOString() })),
-        { onConflict: 'ticker' }
-      )
+    const loaded = await loadFundamentalsForTickers(supabase, tickers, { upsert: !tableMissing })
+    for (const [t, row] of Object.entries(loaded)) {
+      if (!fundamentalsByTicker.has(t)) hydratedLive++
+      fundamentalsByTicker.set(t, row)
     }
   }
 
-  // ── 2. Live prices in parallel ──────────────────────────────────────────────
-  const prices = await Promise.all(tickers.map(fetchOnePrice))
+  // ── 2. Live prices in parallel (only during regular session) ───────────────
+  const prices = marketOpen
+    ? await Promise.all(tickers.map((t) => fetchLivePriceForTicker(t).then((s) => s?.price ?? null)))
+    : tickers.map(() => null)
   const priceByTicker = new Map<string, number>()
   tickers.forEach((t, i) => {
     if (prices[i] != null) priceByTicker.set(t, prices[i]!)

@@ -3,6 +3,7 @@
 import useSWR from 'swr'
 import { useCallback, useState } from 'react'
 import AppNav from '@/components/AppNav'
+import { useMarketOpen } from '@/hooks/useMarketOpen'
 import {
   Sparkles,
   ChevronDown,
@@ -89,7 +90,11 @@ function TargetRange({ pick }: { pick: Pick }) {
         <div
           className="absolute top-1/2 -translate-y-1/2 w-1 h-3 bg-zinc-300 rounded-full"
           style={{ left: `calc(${meanPos}% - 2px)` }}
-          aria-label={`Mean target $${fmt(pick.target_mean)}`}
+          aria-label={
+            pick.target_label === 'analyst'
+              ? `Mean analyst target $${fmt(pick.target_mean)}`
+              : `52-week high $${fmt(pick.target_mean)}`
+          }
         />
       </div>
     </div>
@@ -141,9 +146,11 @@ function PickCard({ pick, rank }: { pick: Pick; rank: number }) {
               </p>
               <p className="text-[11px] text-zinc-500 tabular-nums">now ${fmt(pick.current_price)}</p>
             </div>
-            {/* Target */}
+            {/* Target / 52-week high / trend estimate */}
             <div className="text-right">
-              <p className="text-[10px] font-semibold text-zinc-500 uppercase tracking-wide">Target</p>
+              <p className="text-[10px] font-semibold text-zinc-500 uppercase tracking-wide">
+                {targetCopy.targetHeading}
+              </p>
               <p className="text-sm font-bold text-white tabular-nums leading-tight">${fmt(pick.target_mean)}</p>
               <p className="text-[11px] text-zinc-500">{targetCopy.targetSub}</p>
             </div>
@@ -157,7 +164,7 @@ function PickCard({ pick, rank }: { pick: Pick; rank: number }) {
                 {isPos ? '+' : ''}{pick.upside_pct.toFixed(1)}%
               </p>
               <p className="text-[11px] text-zinc-500 tabular-nums">
-                +${fmt(pick.target_mean - pick.current_price)}
+                +${fmt(pick.target_mean - pick.current_price)} {targetCopy.upsideSub}
               </p>
             </div>
             {/* Analyst ratings */}
@@ -273,6 +280,7 @@ function Mini({ label, value, tone }: { label: string; value: number; tone: 'eme
 
 // ── Page ──────────────────────────────────────────────────────────────────────
 export default function PicksPage() {
+  const marketOpen = useMarketOpen()
   const { data, isLoading, isValidating, mutate } = useSWR<PicksResponse>('/api/picks', fetcher, {
     revalidateOnFocus: false,
     dedupingInterval: 0,
@@ -280,6 +288,7 @@ export default function PicksPage() {
   const [manualRefresh, setManualRefresh] = useState(false)
 
   const handleRefresh = useCallback(async () => {
+    if (!marketOpen) return
     setManualRefresh(true)
     try {
       const fresh = await fetch('/api/picks?refresh=1', { cache: 'no-store' })
@@ -291,13 +300,13 @@ export default function PicksPage() {
     } finally {
       setManualRefresh(false)
     }
-  }, [mutate])
+  }, [marketOpen, mutate])
 
   const refreshing = manualRefresh || (isValidating && !isLoading)
 
   return (
     <div className="min-h-screen bg-zinc-950">
-      <AppNav onRefresh={handleRefresh} refreshing={refreshing} showRefresh />
+      <AppNav onRefresh={handleRefresh} refreshing={refreshing} marketOpen={marketOpen} showRefresh />
 
       <main id="main" className="page-shell">
         {/* Header */}

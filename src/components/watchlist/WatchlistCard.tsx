@@ -37,6 +37,9 @@ export interface WatchlistStock {
 interface Props {
   stock: WatchlistStock
   onRemove: (ticker: string) => void
+  /** When provided (watchlist batch load), skips per-card fundamentals fetch. */
+  fundamentals?: StockFundamentals | null
+  fundamentalsLoading?: boolean
 }
 
 const fetcher = (url: string) => fetch(url).then((r) => r.json())
@@ -168,10 +171,11 @@ function TargetPrice({
   const use52w = !isAnalyst && week52High != null && current < week52High * 0.99
   if (!isAnalyst && !use52w) return null
 
-  const target = isAnalyst ? targetMean! : week52High!
-  const upside = ((target - current) / current) * 100
+  const refPrice = isAnalyst ? targetMean! : week52High!
+  const upside = ((refPrice - current) / current) * 100
   const isPos = upside >= 0
-  const basis = isAnalyst ? 'Wall Street average (12 mo)' : '52-week high (our estimate)'
+  const heading = isAnalyst ? 'Target price' : '52-week high'
+  const subline = isAnalyst ? 'Wall Street average · 12 mo' : 'Not an analyst forecast'
 
   const showAnalystRange =
     isAnalyst &&
@@ -181,11 +185,11 @@ function TargetPrice({
 
   return (
     <div className="rounded-xl bg-zinc-800/80 px-3 py-2.5 space-y-1">
-      <p className="text-[10px] font-bold text-zinc-500 uppercase tracking-wider">Target price</p>
+      <p className="text-[10px] font-bold text-zinc-500 uppercase tracking-wider">{heading}</p>
       <div className="flex items-end justify-between gap-2">
         <div>
-          <p className="text-lg font-black text-white tabular-nums leading-none">{fmtPrice(target)}</p>
-          <p className="text-[10px] text-zinc-500 mt-1">{basis}</p>
+          <p className="text-lg font-black text-white tabular-nums leading-none">{fmtPrice(refPrice)}</p>
+          <p className="text-[10px] text-zinc-500 mt-1">{subline}</p>
         </div>
         <span
           className={cn(
@@ -205,14 +209,19 @@ function TargetPrice({
   )
 }
 
-export default function WatchlistCard({ stock, onRemove }: Props) {
+export default function WatchlistCard({
+  stock,
+  onRemove,
+  fundamentals: fundamentalsProp,
+  fundamentalsLoading: fundamentalsLoadingProp,
+}: Props) {
   const [menuOpen, setMenuOpen] = useState(false)
   const [confirming, setConfirming] = useState(false)
   const menuRef = useRef<HTMLDivElement>(null)
   const menuButtonRef = useRef<HTMLButtonElement>(null)
 
-  const { data: fundamentals, isLoading: fundamentalsLoading } = useSWR<StockFundamentals>(
-    `/api/fundamentals/${stock.ticker}`,
+  const { data: fundamentalsSwr, isLoading: fundamentalsSwrLoading } = useSWR<StockFundamentals>(
+    fundamentalsProp === undefined ? `/api/fundamentals/${stock.ticker}` : null,
     fetcher,
     {
       revalidateOnFocus: false,
@@ -220,6 +229,10 @@ export default function WatchlistCard({ stock, onRemove }: Props) {
       dedupingInterval: 3_600_000, // 1 hour
     }
   )
+
+  const fundamentals = fundamentalsProp !== undefined ? fundamentalsProp : fundamentalsSwr
+  const fundamentalsLoading =
+    fundamentalsLoadingProp ?? (fundamentalsProp === undefined ? fundamentalsSwrLoading : false)
 
   useEffect(() => {
     function handler(e: MouseEvent) {

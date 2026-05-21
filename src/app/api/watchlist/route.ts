@@ -1,38 +1,9 @@
 import { auth, getSessionUserId } from '@/lib/auth'
+import { fetchLivePricesForTickers } from '@/lib/live-prices'
+import { isUSMarketOpen } from '@/lib/market-hours'
 import { resolveSectorForTicker } from '@/lib/sectors'
 import { createServerClient } from '@/lib/supabase'
 import { NextRequest, NextResponse } from 'next/server'
-
-async function fetchOneTicker(ticker: string): Promise<{ price: number; change_1d_pct: number } | null> {
-  try {
-    const res = await fetch(
-      `https://query1.finance.yahoo.com/v8/finance/chart/${ticker}?interval=1d&range=1d`,
-      { headers: { 'User-Agent': 'Mozilla/5.0' }, cache: 'no-store' }
-    )
-    if (!res.ok) return null
-    const data = await res.json()
-    const meta = data?.chart?.result?.[0]?.meta
-    if (!meta?.regularMarketPrice) return null
-    const price: number = meta.regularMarketPrice
-    const prevClose: number = meta.chartPreviousClose ?? meta.previousClose ?? price
-    const change_1d_pct = prevClose ? ((price - prevClose) / prevClose) * 100 : 0
-    return { price, change_1d_pct }
-  } catch {
-    return null
-  }
-}
-
-async function fetchLivePrices(tickers: string[]) {
-  const map = new Map<string, { price: number; change_1d_pct: number }>()
-  if (!tickers.length) return map
-  // Fetch all in parallel — v8/chart is per-ticker but fast
-  const results = await Promise.all(tickers.map(t => fetchOneTicker(t)))
-  tickers.forEach((ticker, i) => {
-    const r = results[i]
-    if (r) map.set(ticker, r)
-  })
-  return map
-}
 
 export async function GET() {
   const session = await auth()
@@ -52,14 +23,17 @@ export async function GET() {
   if (!stocks?.length) return NextResponse.json([])
 
   const tickers = stocks.map((s) => s.ticker)
-  const prices = await fetchLivePrices(tickers)
+  const marketOpen = isUSMarketOpen()
+  const prices = marketOpen ? await fetchLivePricesForTickers(tickers) : new Map()
 
   const enriched = stocks.map((s) => ({
     ...s,
     snapshot: prices.get(s.ticker) ?? null,
   }))
 
-  return NextResponse.json(enriched)
+  return NextResponse.json(enriched, {
+    headers: { 'X-Market-Open': marketOpen ? '1' : '0' },
+  })
 }
 
 export async function POST(req: NextRequest) {

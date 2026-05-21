@@ -1,8 +1,8 @@
 // Buy-recommendation scoring. Pure functions — no IO.
 // Consumed by /api/picks.
 //
-// Note: Finnhub price-target is a paid endpoint; target_mean is often null on free tier.
-// We fall back to 52W-high room or momentum when analyst targets are missing.
+// Analyst targets come from Finnhub (paid) or Yahoo financialData (free).
+// We fall back to 52W-high room or momentum only when both are unavailable.
 
 import type {
   Pick,
@@ -31,26 +31,32 @@ export function pickDisplayCopy(label: TargetLabel) {
   switch (label) {
     case 'analyst':
       return {
+        targetHeading: 'Target',
         targetSub: 'Wall Street average',
+        upsideSub: 'to analyst target',
         thesisTarget: (price: number) => `the average 12-month analyst target of $${price.toFixed(2)}`,
         defaultRisk:
           'Analyst targets look about a year ahead; the stock can still move up or down in the meantime.',
       }
     case '52w_high':
       return {
-        targetSub: '52-week high',
+        targetHeading: '52-week high',
+        targetSub: 'Not an analyst forecast',
+        upsideSub: 'to 52-week high',
         thesisTarget: (price: number) =>
           `room to move back toward its 52-week high of $${price.toFixed(2)}`,
         defaultRisk:
-          'The target is this year’s highest price so far—not a guarantee the stock will reach it.',
+          'This is this year’s highest price so far—not a guarantee the stock will reach it.',
       }
     case 'momentum':
       return {
-        targetSub: 'Trend estimate',
+        targetHeading: 'Trend estimate',
+        targetSub: 'Not an analyst forecast',
+        upsideSub: 'momentum estimate',
         thesisTarget: (_price: number, upsidePct: number) =>
           `recent momentum and strong buy ratings suggesting about ${upsidePct.toFixed(0)}% upside`,
         defaultRisk:
-          'The target is an estimate from recent price action and analyst ratings—not an official bank forecast.',
+          'This is an estimate from recent price action and analyst ratings—not an official bank forecast.',
       }
   }
 }

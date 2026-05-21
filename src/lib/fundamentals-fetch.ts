@@ -1,7 +1,11 @@
 // Shared Yahoo + Finnhub fetch for stock fundamentals.
 // Used by /api/fundamentals/[ticker] and /api/picks (live hydration).
+//
+// Analyst price targets: Finnhub /stock/price-target when subscribed; otherwise
+// Yahoo quoteSummary financialData (free).
 
 import { env } from '@/lib/env'
+import { fetchYahooPriceTarget, type PriceTargetFields } from '@/lib/yahoo-session'
 import type { StockFundamentals } from '@/types'
 
 export async function fetchYahooHistory(ticker: string) {
@@ -78,7 +82,7 @@ export async function fetchFinnhubRecommendation(ticker: string) {
   }
 }
 
-export async function fetchFinnhubPriceTarget(ticker: string) {
+export async function fetchFinnhubPriceTarget(ticker: string): Promise<PriceTargetFields | null> {
   try {
     const res = await fetch(
       `https://finnhub.io/api/v1/stock/price-target?symbol=${ticker}&token=${env.FINNHUB_API_KEY}`,
@@ -86,14 +90,34 @@ export async function fetchFinnhubPriceTarget(ticker: string) {
     )
     if (!res.ok) return null
     const data = await res.json()
+    if (data?.error) return null
+    const target_mean = (data.targetMean as number) ?? null
+    if (target_mean == null || target_mean <= 0) return null
     return {
-      target_mean: (data.targetMean as number) ?? null,
+      target_mean,
       target_high: (data.targetHigh as number) ?? null,
       target_low: (data.targetLow as number) ?? null,
     }
   } catch {
     return null
   }
+}
+
+/** Prefer Finnhub when available; otherwise Yahoo analyst consensus. */
+export function mergePriceTargets(
+  finnhub: PriceTargetFields | null,
+  yahoo: PriceTargetFields | null,
+): PriceTargetFields | null {
+  if (finnhub?.target_mean && finnhub.target_mean > 0) return finnhub
+  if (yahoo?.target_mean && yahoo.target_mean > 0) return yahoo
+  return null
+}
+
+export async function fetchAnalystPriceTarget(ticker: string): Promise<PriceTargetFields | null> {
+  const finnhub = await fetchFinnhubPriceTarget(ticker)
+  if (finnhub?.target_mean) return finnhub
+  const yahoo = await fetchYahooPriceTarget(ticker)
+  return mergePriceTargets(finnhub, yahoo)
 }
 
 export async function fetchFinnhubNewsSentiment(ticker: string) {
@@ -121,7 +145,7 @@ export async function fetchStockFundamentals(ticker: string): Promise<StockFunda
   const [yahoo, recommendation, priceTarget, newsSentiment] = await Promise.all([
     fetchYahooHistory(sym),
     fetchFinnhubRecommendation(sym),
-    fetchFinnhubPriceTarget(sym),
+    fetchAnalystPriceTarget(sym),
     fetchFinnhubNewsSentiment(sym),
   ])
 

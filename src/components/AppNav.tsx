@@ -17,9 +17,11 @@ interface AppNavProps {
   onRefresh?: () => void
   refreshing?: boolean
   showRefresh?: boolean
+  /** When false, manual refresh is disabled (outside US regular session). */
+  marketOpen?: boolean
 }
 
-export default function AppNav({ onRefresh, refreshing, showRefresh }: AppNavProps) {
+export default function AppNav({ onRefresh, refreshing, showRefresh, marketOpen = true }: AppNavProps) {
   const { data: session } = useSession()
   const pathname = usePathname()
   const user = session?.user
@@ -45,9 +47,15 @@ export default function AppNav({ onRefresh, refreshing, showRefresh }: AppNavPro
             {showRefresh && (
               <button
                 onClick={onRefresh}
-                disabled={refreshing}
-                aria-label="Refresh data"
-                className="w-11 h-11 flex items-center justify-center rounded-xl text-zinc-500 hover:text-zinc-300 active:bg-zinc-800/80 transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-zinc-500 [touch-action:manipulation]"
+                disabled={refreshing || !marketOpen}
+                aria-label={marketOpen ? 'Refresh data' : 'Refresh unavailable — US market closed'}
+                title={marketOpen ? undefined : 'Refreshes during market hours (9:30 AM–4:00 PM ET)'}
+                className={cn(
+                  'w-11 h-11 flex items-center justify-center rounded-xl transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-zinc-500 [touch-action:manipulation]',
+                  marketOpen
+                    ? 'text-zinc-500 hover:text-zinc-300 active:bg-zinc-800/80'
+                    : 'text-zinc-700 cursor-not-allowed opacity-50',
+                )}
               >
                 <RefreshCw className={cn('w-5 h-5', refreshing && 'animate-spin')} aria-hidden="true" />
               </button>

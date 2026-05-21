@@ -18,7 +18,9 @@ import {
 } from 'lucide-react'
 import AppNav from '@/components/AppNav'
 import LiveRefreshHeader, { LIVE_REFRESH_SEC } from '@/components/LiveRefreshHeader'
+import { useMarketOpen } from '@/hooks/useMarketOpen'
 import { PORTFOLIO_ALERT_DEMO } from '@/lib/portfolio-alerts'
+import { createMarketAwareFetcher } from '@/lib/swr-market-fetcher'
 import { cn } from '@/lib/utils'
 import type {
   PortfolioAlert,
@@ -27,6 +29,8 @@ import type {
   PickFactor,
   VestedRow,
 } from '@/types'
+
+const portfolioFetcher = createMarketAwareFetcher<PortfolioHoldingWithPrice>()
 
 const fetcher = async (url: string) => {
   const res = await fetch(url, { cache: 'no-store' })
@@ -83,30 +87,30 @@ function SummaryBar({ holdings }: { holdings: PortfolioHoldingWithPrice[] }) {
   const isPos = pnl >= 0
 
   return (
-    <div className="card-surface p-5 mb-5">
-      <p className="text-xs font-semibold text-zinc-500 uppercase tracking-[0.1em] mb-2">Portfolio Value</p>
-      <div className="flex items-end justify-between">
-        <p className="text-[32px] font-black text-white tabular-nums leading-none">${fmt(totalCurrent)}</p>
+    <div className="card-surface px-4 py-3 mb-4">
+      <p className="text-[10px] font-semibold text-zinc-500 uppercase tracking-[0.1em] mb-1">Portfolio Value</p>
+      <div className="flex items-end justify-between gap-2">
+        <p className="text-2xl font-black text-white tabular-nums leading-none">${fmt(totalCurrent)}</p>
         <span className={cn(
-          'text-sm font-bold px-2.5 py-1 rounded-full mb-0.5',
+          'text-xs font-bold px-2 py-0.5 rounded-full shrink-0',
           isPos ? 'bg-emerald-500/15 text-emerald-400' : 'bg-red-500/15 text-red-400'
         )}>
           {isPos ? '+' : ''}{fmt(pnlPct)}%
         </span>
       </div>
 
-      <div className="mt-3.5 flex items-center justify-between pt-3 border-t border-white/[0.06] gap-4">
+      <div className="mt-2 flex items-center justify-between pt-2 border-t border-white/[0.06] gap-3">
         <div>
-          <p className="text-[11px] text-zinc-500 mb-0.5">Invested</p>
-          <p className="text-base font-bold text-zinc-200 tabular-nums">${fmt(totalInvested)}</p>
+          <p className="text-[10px] text-zinc-500">Invested</p>
+          <p className="text-sm font-bold text-zinc-200 tabular-nums leading-tight">${fmt(totalInvested)}</p>
         </div>
         <div className="text-right">
-          <p className="text-[11px] text-zinc-500 mb-0.5">Total P&L</p>
+          <p className="text-[10px] text-zinc-500">Total P&L</p>
           <div className="flex items-center justify-end gap-1">
             {isPos
-              ? <TrendingUp className="w-3.5 h-3.5 text-emerald-400" />
-              : <TrendingDown className="w-3.5 h-3.5 text-red-400" />}
-            <p className={cn('text-base font-bold tabular-nums', isPos ? 'text-emerald-400' : 'text-red-400')}>
+              ? <TrendingUp className="w-3 h-3 text-emerald-400" />
+              : <TrendingDown className="w-3 h-3 text-red-400" />}
+            <p className={cn('text-sm font-bold tabular-nums leading-tight', isPos ? 'text-emerald-400' : 'text-red-400')}>
               {isPos ? '+' : '-'}${fmt(Math.abs(pnl))}
             </p>
           </div>
@@ -297,8 +301,8 @@ function AlertsSection({
   if (!preview && holdingCount === 0) return null
 
   return (
-    <section className="mb-5" aria-label="Portfolio review alerts">
-      <div className="flex items-center justify-between gap-2 mb-3">
+    <section className="mb-4" aria-label="Portfolio review alerts">
+      <div className="flex items-center justify-between gap-2 mb-2">
         <div>
           <h2 className="text-sm font-bold text-white">Portfolio review</h2>
           <p className="text-xs text-zinc-500 mt-0.5">
@@ -338,20 +342,20 @@ function AlertsSection({
           ))}
         </ul>
       ) : !preview ? (
-        <div className="rounded-2xl bg-emerald-500/5 border border-emerald-500/15 px-4 py-5 flex flex-col items-center text-center">
-          <CheckCircle className="w-8 h-8 text-emerald-400 mb-3" aria-hidden="true" />
-          <p className="text-sm font-semibold text-emerald-300/90">All clear for now</p>
-          <p className="text-xs text-zinc-500 mt-1.5 leading-relaxed max-w-[280px]">
-            Nothing in your portfolio hit our review bar. We only flag when several weak signals
-            line up—not because a stock is merely down a little.
-          </p>
+        <div className="rounded-xl bg-emerald-500/5 border border-emerald-500/15 px-3.5 py-3 flex items-start gap-2.5">
+          <CheckCircle className="w-5 h-5 text-emerald-400 shrink-0 mt-0.5" aria-hidden="true" />
+          <div className="min-w-0 text-left">
+            <p className="text-sm font-semibold text-emerald-300/90 leading-tight">All clear for now</p>
+            <p className="text-[11px] text-zinc-500 mt-0.5 leading-snug">
+              No holdings need review—we flag only when several weak signals line up.
+            </p>
+          </div>
         </div>
       ) : null}
 
       {!preview && !loading && holdingCount > 0 && (
-        <p className="text-[11px] text-zinc-600 mt-3 leading-relaxed px-0.5">
-          Tap ↻ to rescan. We only flag when several signals align—not to push you to sell.
-          {llmEnabled ? ' · AI summaries when available' : ''}
+        <p className="text-[10px] text-zinc-600 mt-2 leading-snug px-0.5">
+          Tap ↻ to rescan.{llmEnabled ? ' AI summaries when available.' : ''}
         </p>
       )}
     </section>
@@ -430,12 +434,14 @@ export default function PortfolioPage() {
   const [showPreview, setShowPreview] = useState(false)
   const [manualRefresh, setManualRefresh] = useState(false)
 
+  const marketOpen = useMarketOpen()
+
   const {
     data: holdings = [],
     isLoading,
     isValidating,
     mutate,
-  } = useSWR<PortfolioHoldingWithPrice[]>('/api/portfolio', fetcher, {
+  } = useSWR<PortfolioHoldingWithPrice[]>('/api/portfolio', portfolioFetcher, {
     revalidateOnFocus: false,
     onSuccess: (data) => {
       if (data?.length) setSavedAt(data[0].synced_at)
@@ -455,6 +461,7 @@ export default function PortfolioPage() {
   const refreshing = manualRefresh || (isValidating && !isLoading)
 
   const handleRefresh = useCallback(async () => {
+    if (!marketOpen) return
     setManualRefresh(true)
     setCountdown(REFRESH_SEC)
     try {
@@ -471,11 +478,14 @@ export default function PortfolioPage() {
     } finally {
       setManualRefresh(false)
     }
-  }, [holdings.length, mutate, mutateAlerts])
+  }, [holdings.length, marketOpen, mutate, mutateAlerts])
 
   // 15-second countdown that triggers a price refresh
   useEffect(() => {
-    if (!holdings.length) return
+    if (!holdings.length || !marketOpen) {
+      setCountdown(REFRESH_SEC)
+      return
+    }
     let secs = REFRESH_SEC
     setCountdown(secs)
     const tick = setInterval(() => {
@@ -489,7 +499,7 @@ export default function PortfolioPage() {
     }, 1000)
     return () => clearInterval(tick)
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [holdings.length > 0])
+  }, [holdings.length > 0, marketOpen])
 
   // Reset timer to full when a refresh completes
   useEffect(() => {
@@ -566,7 +576,12 @@ export default function PortfolioPage() {
       )}
 
       <div className="min-h-screen bg-zinc-950">
-        <AppNav onRefresh={handleRefresh} refreshing={refreshing} showRefresh={holdings.length > 0} />
+        <AppNav
+          onRefresh={handleRefresh}
+          refreshing={refreshing}
+          marketOpen={marketOpen}
+          showRefresh={holdings.length > 0}
+        />
 
         <main id="main" className="page-shell">
           {/* Header */}
@@ -608,7 +623,7 @@ export default function PortfolioPage() {
           {/* Content */}
           {isLoading ? (
             <div className="space-y-2.5" aria-busy="true">
-              <div className="h-[110px] rounded-2xl bg-zinc-900 animate-pulse mb-1" />
+              <div className="h-[88px] rounded-2xl bg-zinc-900 animate-pulse mb-1" />
               {[1, 2, 3].map((n) => (
                 <div key={n} className="h-[62px] rounded-2xl bg-zinc-900 animate-pulse" style={{ animationDelay: `${n * 80}ms` }} />
               ))}
@@ -667,6 +682,8 @@ export default function PortfolioPage() {
             </div>
           ) : (
             <>
+              <SummaryBar holdings={holdings} />
+
               <AlertsSection
                 alerts={alertsData?.alerts ?? []}
                 clearCount={alertsData?.clear_count ?? holdings.length}
@@ -675,12 +692,11 @@ export default function PortfolioPage() {
                 loading={alertsLoading && !alertsData}
               />
 
-              <SummaryBar holdings={holdings} />
-
               <LiveRefreshHeader
                 title="Your holdings"
                 seconds={countdown}
                 refreshing={refreshing}
+                marketOpen={marketOpen}
               />
 
               <div className="space-y-2">

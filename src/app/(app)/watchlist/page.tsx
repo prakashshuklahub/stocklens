@@ -8,7 +8,10 @@ import StockSearchInput, { type StockResult } from '@/components/watchlist/Stock
 import WatchlistSuggestions from '@/components/watchlist/WatchlistSuggestions'
 import AppNav from '@/components/AppNav'
 import LiveRefreshHeader, { LIVE_REFRESH_SEC } from '@/components/LiveRefreshHeader'
+import { useMarketOpen } from '@/hooks/useMarketOpen'
+import { createMarketAwareFetcher } from '@/lib/swr-market-fetcher'
 import { cn } from '@/lib/utils'
+import type { StockFundamentals } from '@/types'
 
 // Deterministic sector order
 const SECTOR_ORDER = [
@@ -59,11 +62,15 @@ function SectorGroup({
   sector,
   stocks,
   onRemove,
+  fundamentalsByTicker,
+  fundamentalsLoading,
   defaultOpen = true,
 }: {
   sector: string
   stocks: WatchlistStock[]
   onRemove: (ticker: string) => void
+  fundamentalsByTicker: Record<string, StockFundamentals>
+  fundamentalsLoading: boolean
   defaultOpen?: boolean
 }) {
   const [open, setOpen] = useState(defaultOpen)
@@ -100,7 +107,12 @@ function SectorGroup({
         <ul id={`${id}-list`} className="space-y-3 mt-2 mb-6" aria-label={`${sector} stocks`}>
           {stocks.map((stock) => (
             <li key={stock.id}>
-              <WatchlistCard stock={stock} onRemove={onRemove} />
+              <WatchlistCard
+                stock={stock}
+                onRemove={onRemove}
+                fundamentals={fundamentalsByTicker[stock.ticker] ?? null}
+                fundamentalsLoading={fundamentalsLoading}
+              />
             </li>
           ))}
         </ul>
@@ -111,15 +123,33 @@ function SectorGroup({
   )
 }
 
-const fetcher = (url: string) => fetch(url).then((r) => r.json())
+const watchlistFetcher = createMarketAwareFetcher<WatchlistStock>()
+const jsonFetcher = (url: string) => fetch(url).then((r) => r.json())
 const REFRESH_SEC = LIVE_REFRESH_SEC
 
 export default function WatchlistPage() {
+  const marketOpen = useMarketOpen()
+
   const { data: stocks = [], isLoading, isValidating, mutate } = useSWR<WatchlistStock[]>(
     '/api/watchlist',
-    fetcher,
+    watchlistFetcher,
     { revalidateOnFocus: false },
   )
+
+  const tickerKey =
+    stocks.length > 0
+      ? `/api/fundamentals/batch?tickers=${stocks.map((s) => s.ticker).join(',')}`
+      : null
+
+  const { data: fundamentalsBatch, isLoading: fundamentalsLoading } = useSWR<{
+    fundamentals: Record<string, StockFundamentals>
+  }>(tickerKey, jsonFetcher, {
+    revalidateOnFocus: false,
+    revalidateOnReconnect: false,
+    dedupingInterval: 3_600_000,
+  })
+
+  const fundamentalsByTicker = fundamentalsBatch?.fundamentals ?? {}
   const [adding, setAdding] = useState(false)
   const [error, setError] = useState('')
   const [countdown, setCountdown] = useState(REFRESH_SEC)
@@ -128,7 +158,10 @@ export default function WatchlistPage() {
   const refreshing = isValidating && !isLoading
 
   useEffect(() => {
-    if (!stocks.length) return
+    if (!stocks.length || !marketOpen) {
+      setCountdown(REFRESH_SEC)
+      return
+    }
     let secs = REFRESH_SEC
     setCountdown(secs)
     const tick = setInterval(() => {
@@ -141,7 +174,7 @@ export default function WatchlistPage() {
     }, 1000)
     return () => clearInterval(tick)
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [stocks.length > 0])
+  }, [stocks.length > 0, marketOpen])
 
   useEffect(() => {
     if (!refreshing) setCountdown(REFRESH_SEC)
@@ -192,11 +225,13 @@ export default function WatchlistPage() {
       <div className="min-h-screen bg-zinc-950">
         <AppNav
           onRefresh={() => {
+            if (!marketOpen) return
             mutate()
             setCountdown(REFRESH_SEC)
             setSuggestionsRefresh((n) => n + 1)
           }}
           refreshing={refreshing}
+          marketOpen={marketOpen}
           showRefresh
         />
 
@@ -250,6 +285,7 @@ export default function WatchlistPage() {
                 title="Your watchlist"
                 seconds={countdown}
                 refreshing={refreshing}
+                marketOpen={marketOpen}
               />
               {grouped.map(([sector, sectorStocks]) => (
                 <SectorGroup
@@ -257,6 +293,8 @@ export default function WatchlistPage() {
                   sector={sector}
                   stocks={sectorStocks}
                   onRemove={handleRemove}
+                  fundamentalsByTicker={fundamentalsByTicker}
+                  fundamentalsLoading={fundamentalsLoading}
                   defaultOpen
                 />
               ))}

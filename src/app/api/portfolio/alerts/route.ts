@@ -1,5 +1,7 @@
 import { auth, getSessionUserId } from '@/lib/auth'
-import { fetchStockFundamentals, mapPool } from '@/lib/fundamentals-fetch'
+import { loadFundamentalsForTickers } from '@/lib/load-fundamentals'
+import { fetchLivePriceForTicker } from '@/lib/live-prices'
+import { isUSMarketOpen } from '@/lib/market-hours'
 import { generateSellReview, isLLMEnabled } from '@/lib/llm'
 import {
   loadFreshNarratives,
@@ -26,23 +28,9 @@ import type {
 const NO_CACHE_HEADERS = { 'Cache-Control': 'private, no-store, max-age=0' } as const
 const LOG_PREFIX = 'portfolio/alerts'
 
-async function fetchOnePrice(ticker: string): Promise<number | null> {
-  try {
-    const res = await fetch(
-      `https://query1.finance.yahoo.com/v8/finance/chart/${ticker}?interval=1d&range=1d`,
-      { headers: { 'User-Agent': 'Mozilla/5.0' }, cache: 'no-store' },
-    )
-    if (!res.ok) return null
-    const data = await res.json()
-    const price = data?.chart?.result?.[0]?.meta?.regularMarketPrice
-    return typeof price === 'number' ? price : null
-  } catch {
-    return null
-  }
-}
-
 export async function GET(req: NextRequest) {
-  const forceRefresh = req.nextUrl.searchParams.get('refresh') === '1'
+  const marketOpen = isUSMarketOpen()
+  const forceRefresh = req.nextUrl.searchParams.get('refresh') === '1' && marketOpen
   const session = await auth()
   const userId = getSessionUserId(session)
   if (!userId) return NextResponse.json({ error: 'Session invalid — please sign in again' }, { status: 401 })
@@ -85,20 +73,18 @@ export async function GET(req: NextRequest) {
     fundamentalsError?.message?.includes('stock_fundamentals'),
   )
 
-  // Always refresh fundamentals on scan so positions get analyst/trend data
-  if (forceRefresh || tableMissing || fundamentalsByTicker.size < tickers.length) {
-    const toFetch = forceRefresh ? tickers : tickers.filter((t) => !fundamentalsByTicker.has(t))
-    const fetched = await mapPool(toFetch, 6, fetchStockFundamentals)
-    toFetch.forEach((t, i) => fundamentalsByTicker.set(t, fetched[i]))
-    if (!tableMissing && fetched.length) {
-      await supabase.from('stock_fundamentals').upsert(
-        fetched.map((f) => ({ ...f, fetched_at: new Date().toISOString() })),
-        { onConflict: 'ticker' },
-      )
+  const needFundamentals =
+    tableMissing || fundamentalsByTicker.size < tickers.length || forceRefresh
+  if (needFundamentals) {
+    const loaded = await loadFundamentalsForTickers(supabase, tickers, { upsert: !tableMissing })
+    for (const [t, row] of Object.entries(loaded)) {
+      fundamentalsByTicker.set(t, row)
     }
   }
 
-  const prices = await Promise.all(tickers.map(fetchOnePrice))
+  const prices = marketOpen
+    ? await Promise.all(tickers.map((t) => fetchLivePriceForTicker(t).then((s) => s?.price ?? null)))
+    : tickers.map(() => null)
   const scored: ScoredAlert[] = []
 
   list.forEach((holding, i) => {
