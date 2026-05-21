@@ -7,7 +7,7 @@ import WatchlistCard, { type WatchlistStock } from '@/components/watchlist/Watch
 import StockSearchInput, { type StockResult } from '@/components/watchlist/StockSearchInput'
 import WatchlistSuggestions from '@/components/watchlist/WatchlistSuggestions'
 import AppNav from '@/components/AppNav'
-import LiveRefreshHeader, { LIVE_REFRESH_SEC } from '@/components/LiveRefreshHeader'
+import LiveRefreshHeader, { LIVE_REFRESH_SEC, RefreshCountdown } from '@/components/LiveRefreshHeader'
 import { useMarketOpen } from '@/hooks/useMarketOpen'
 import { createMarketAwareFetcher } from '@/lib/swr-market-fetcher'
 import { cn } from '@/lib/utils'
@@ -392,6 +392,16 @@ export default function WatchlistPage() {
             )}
           </div>
 
+          {!isLoading && stocks.length > 0 && (
+            <div className="flex justify-end mb-2">
+              <RefreshCountdown
+                seconds={countdown}
+                refreshing={refreshing}
+                marketOpen={marketOpen}
+              />
+            </div>
+          )}
+
           <WatchlistSuggestions
             ownedTickers={ownedTickers}
             onAdd={handleAdd}
@@ -422,6 +432,7 @@ export default function WatchlistPage() {
                 seconds={countdown}
                 refreshing={refreshing}
                 marketOpen={marketOpen}
+                showCountdown={false}
                 footer={
                   <WatchlistSortBar value={sortMode} onChange={setSortMode} />
                 }

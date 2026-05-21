@@ -6,7 +6,7 @@ import type { PriceTargetFields } from '@/lib/yahoo-session'
 export const TARGET_CACHE_TZ = 'Asia/Kolkata'
 export const TARGET_CACHE_RESET_HOUR = 17 // 5:00 PM IST
 
-export type TargetSource = 'fmp' | 'eulerpool' | 'finnhub' | 'yahoo' | '52w_high'
+export type TargetSource = 'stockanalysis' | 'fmp' | 'eulerpool' | 'finnhub' | 'yahoo' | '52w_high'
 
 export type TargetFetchResult = PriceTargetFields & { source: Exclude<TargetSource, '52w_high'> }
 
@@ -92,6 +92,7 @@ export function isTargetCacheFresh(
 
 export function isAnalystTargetSource(source: TargetSource | null | undefined): boolean {
   return (
+    source === 'stockanalysis' ||
     source === 'fmp' ||
     source === 'eulerpool' ||
     source === 'finnhub' ||

@@ -24,7 +24,7 @@ ALTER TABLE stock_fundamentals
   ADD COLUMN IF NOT EXISTS support_20d     numeric(12,4),
   ADD COLUMN IF NOT EXISTS avg_20d         numeric(12,4),
   ADD COLUMN IF NOT EXISTS target_price      numeric(12,4),
-  ADD COLUMN IF NOT EXISTS target_source     text CHECK (target_source IN ('fmp', 'eulerpool', 'finnhub', 'yahoo', '52w_high')),
+  ADD COLUMN IF NOT EXISTS target_source     text CHECK (target_source IN ('stockanalysis', 'fmp', 'eulerpool', 'finnhub', 'yahoo', '52w_high')),
   ADD COLUMN IF NOT EXISTS target_fetched_at timestamptz;
 
 ALTER TABLE stock_fundamentals ENABLE ROW LEVEL SECURITY;
@@ -100,3 +100,12 @@ ALTER TABLE stock_logos ENABLE ROW LEVEL SECURITY;
 DROP POLICY IF EXISTS "stock_logos_select_auth" ON stock_logos;
 CREATE POLICY "stock_logos_select_auth" ON stock_logos
   FOR SELECT TO authenticated USING (true);
+
+-- 012: StockAnalysis primary target source
+ALTER TABLE stock_fundamentals DROP CONSTRAINT IF EXISTS stock_fundamentals_target_source_check;
+ALTER TABLE stock_fundamentals ADD CONSTRAINT stock_fundamentals_target_source_check
+  CHECK (target_source IN ('stockanalysis', 'fmp', 'eulerpool', 'finnhub', 'yahoo', '52w_high'));
+
+UPDATE stock_fundamentals
+SET target_fetched_at = NULL
+WHERE target_source IS DISTINCT FROM 'stockanalysis';

@@ -11,6 +11,8 @@ export const env = {
   FMP_API_KEY: process.env.FMP_API_KEY ?? '',
   // Optional. Analyst price targets when FMP empty (1,000 req/month free).
   EULERPOOL_API_KEY: process.env.EULERPOOL_API_KEY ?? '',
+  // Bearer token for /api/cron/refresh-targets (manual + Vercel cron).
+  CRON_SECRET: process.env.CRON_SECRET ?? '',
   // Optional. If absent, /api/picks falls back to mechanical reasoning.
   GEMINI_API_KEY: process.env.GEMINI_API_KEY ?? '',
 }

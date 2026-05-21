@@ -66,6 +66,8 @@ interface LiveRefreshHeaderProps {
   className?: string
   /** Subtle row under subtitle (e.g. sort controls) */
   footer?: React.ReactNode
+  /** Show countdown on the right (default true) */
+  showCountdown?: boolean
 }
 
 export default function LiveRefreshHeader({
@@ -77,6 +79,7 @@ export default function LiveRefreshHeader({
   bordered = true,
   className,
   footer,
+  showCountdown = true,
 }: LiveRefreshHeaderProps) {
   return (
     <div
@@ -93,7 +96,9 @@ export default function LiveRefreshHeader({
         </p>
         {footer}
       </div>
-      <RefreshCountdown seconds={seconds} refreshing={refreshing} marketOpen={marketOpen} />
+      {showCountdown && (
+        <RefreshCountdown seconds={seconds} refreshing={refreshing} marketOpen={marketOpen} />
+      )}
     </div>
   )
 }

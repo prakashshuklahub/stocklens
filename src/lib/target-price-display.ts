@@ -10,6 +10,7 @@ export function hasTargetPrice(value: number | null | undefined): boolean {
 
 export function isAnalystTargetSource(source: StockFundamentals['target_source']): boolean {
   return (
+    source === 'stockanalysis' ||
     source === 'fmp' ||
     source === 'eulerpool' ||
     source === 'finnhub' ||

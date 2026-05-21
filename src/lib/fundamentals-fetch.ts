@@ -1,12 +1,13 @@
 // Shared Yahoo + Finnhub + FMP fetch for stock fundamentals.
 // Used by /api/fundamentals/[ticker] and /api/picks (live hydration).
 //
-// Analyst price targets: FMP → Eulerpool → Finnhub → Yahoo (fallback chain).
+// Analyst price targets: StockAnalysis → FMP → Finnhub → Yahoo → Eulerpool (fallback chain).
 // Cached globally in stock_fundamentals; target_fetched_at resets daily at 5pm IST.
 
 import { env } from '@/lib/env'
 import { fetchEulerpoolPriceTarget } from '@/lib/eulerpool-price-target'
 import { fetchFmpPriceTarget } from '@/lib/fmp-price-target'
+import { fetchStockAnalysisPriceTarget } from '@/lib/stockanalysis-target'
 import {
   applyResolvedTarget,
   type TargetFetchResult,
@@ -120,9 +121,15 @@ export async function fetchFinnhubPriceTarget(ticker: string): Promise<PriceTarg
   }
 }
 
-/** FMP → Eulerpool → Finnhub → Yahoo with diagnostic logging. */
+/** StockAnalysis → FMP → Finnhub → Yahoo → Eulerpool with diagnostic logging. */
 export async function fetchAnalystPriceTarget(ticker: string): Promise<TargetFetchResult | null> {
   const sym = ticker.toUpperCase()
+
+  const stockanalysis = await fetchStockAnalysisPriceTarget(sym)
+  if (stockanalysis?.target_mean) {
+    console.info(`[price-target] ${sym}: source=stockanalysis mean=${stockanalysis.target_mean.toFixed(2)}`)
+    return { ...stockanalysis, source: 'stockanalysis' }
+  }
 
   if (env.FMP_API_KEY) {
     const fmp = await fetchFmpPriceTarget(sym)

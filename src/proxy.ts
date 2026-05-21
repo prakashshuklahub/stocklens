@@ -11,6 +11,7 @@ export default auth((req) => {
     pathname === '/' ||
     pathname.startsWith('/login') ||
     pathname.startsWith('/api/auth') ||
+    pathname.startsWith('/api/cron') ||
     isDevMigrate
 
   if (!req.auth && !isPublicPath) {
