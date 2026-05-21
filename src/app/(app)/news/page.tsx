@@ -3,6 +3,7 @@
 import useSWR from 'swr'
 import { useState } from 'react'
 import AppNav from '@/components/AppNav'
+import StockLogo from '@/components/StockLogo'
 import {
   TrendingUp,
   TrendingDown,
@@ -57,7 +58,9 @@ function SignalCard({ signal }: { signal: Signal }) {
       >
         {/* Top row: ticker + name | price + change */}
         <div className="flex items-start justify-between gap-3 mb-2.5">
-          <div className="flex-1 min-w-0">
+          <div className="flex items-start gap-3 flex-1 min-w-0">
+            <StockLogo ticker={signal.ticker} size="md" />
+          <div className="min-w-0 flex-1">
             <div className="flex items-baseline gap-2 flex-wrap">
               <span className="text-base font-bold text-white tracking-tight" translate="no">
                 {signal.ticker}
@@ -69,6 +72,7 @@ function SignalCard({ signal }: { signal: Signal }) {
                 {signal.sector} · watchlist
               </p>
             )}
+          </div>
           </div>
           {signal.price != null && (
             <div className="text-right shrink-0">
@@ -257,8 +261,9 @@ function QuietSection({ quiet }: { quiet: Signal[] }) {
     >
       <ul className="space-y-1.5">
         {quiet.map((s) => (
-          <li key={s.ticker} className="flex items-center justify-between bg-zinc-900/60 rounded-xl px-4 py-2.5">
-            <div className="flex items-baseline gap-2 min-w-0">
+          <li key={s.ticker} className="flex items-center justify-between bg-zinc-900/60 rounded-xl px-4 py-2.5 gap-3">
+            <div className="flex items-center gap-2.5 min-w-0">
+              <StockLogo ticker={s.ticker} size="sm" />
               <span className="text-sm font-semibold text-zinc-300 tracking-tight" translate="no">{s.ticker}</span>
               <span className="text-xs text-zinc-600 truncate">{s.company_name}</span>
             </div>

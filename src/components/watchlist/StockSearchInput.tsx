@@ -2,6 +2,7 @@
 
 import { useState, useRef, useEffect, useCallback, useId } from 'react'
 import { Search, X, Loader2 } from 'lucide-react'
+import StockLogo from '@/components/StockLogo'
 import { cn } from '@/lib/utils'
 
 const SECTOR_COLORS: Record<string, string> = {
@@ -145,6 +146,7 @@ export default function StockSearchInput({ onSelect, disabled }: Props) {
                 aria-label={`Add ${r.ticker} – ${r.company_name}${r.price != null ? `, ${fmtPrice(r.price)}` : ''}`}
                 className="w-full flex items-center px-4 py-3.5 active:bg-zinc-800 transition-colors text-left gap-3 border-b border-white/[0.04] last:border-0 focus-visible:outline-none focus-visible:bg-zinc-800 [touch-action:manipulation]"
               >
+                <StockLogo ticker={r.ticker} size="sm" />
                 <div className="flex-1 min-w-0">
                   <div className="flex items-center gap-2">
                     <span className="font-bold text-white text-sm font-mono" translate="no">{r.ticker}</span>

@@ -13,10 +13,10 @@ import {
   X,
   AlertCircle,
   ChevronDown,
-  ShieldAlert,
   Eye,
 } from 'lucide-react'
 import AppNav from '@/components/AppNav'
+import StockLogo from '@/components/StockLogo'
 import LiveRefreshHeader, { LIVE_REFRESH_SEC } from '@/components/LiveRefreshHeader'
 import { useMarketOpen } from '@/hooks/useMarketOpen'
 import { PORTFOLIO_ALERT_DEMO } from '@/lib/portfolio-alerts'
@@ -132,6 +132,7 @@ function HoldingCard({ h }: { h: PortfolioHoldingWithPrice }) {
 
   return (
     <div className="card-surface px-5 py-4 flex items-center gap-3 active:scale-[0.99] active:brightness-95 transition-all duration-100">
+      <StockLogo ticker={h.ticker} size="md" />
       {/* Left: identity */}
       <div className="flex-1 min-w-0">
         <div className="flex items-baseline gap-1.5">
@@ -201,12 +202,9 @@ function AlertCard({ alert, preview }: { alert: PortfolioAlert; preview?: boolea
         className="w-full text-left px-4 py-4 active:brightness-95 transition-all [touch-action:manipulation]"
       >
         <div className="flex items-start justify-between gap-2 mb-2">
-          <div className="flex items-center gap-2 min-w-0 flex-1">
-            <ShieldAlert
-              className={cn('w-4 h-4 shrink-0 mt-0.5', isRed ? 'text-red-400' : 'text-amber-400')}
-              aria-hidden="true"
-            />
-            <div className="min-w-0">
+          <div className="flex items-start gap-2 min-w-0 flex-1">
+            <StockLogo ticker={alert.ticker} size="sm" className="mt-0.5" />
+            <div className="min-w-0 flex-1">
               <div className="flex items-baseline gap-2">
                 <span className="text-base font-bold text-white">{alert.ticker}</span>
                 <span className="text-xs text-zinc-500 truncate">{alert.company_name ?? ''}</span>
@@ -394,9 +392,12 @@ function PreviewSheet({
       <div className="flex-1 overflow-y-auto px-4 py-4 space-y-2">
         {rows.map((r) => (
           <div key={r.ticker} className="rounded-xl bg-zinc-900 border border-zinc-800/60 px-4 py-3 flex items-center justify-between gap-3">
+            <div className="flex items-center gap-3 min-w-0">
+              <StockLogo ticker={r.ticker} size="sm" />
             <div className="min-w-0">
               <p className="text-sm font-semibold text-white">{r.ticker}</p>
               <p className="text-xs text-zinc-500 truncate">{r.name}</p>
+            </div>
             </div>
             <div className="text-right shrink-0">
               <p className="text-sm text-white tabular-nums">{fmt(r.shares, 4)} shares</p>

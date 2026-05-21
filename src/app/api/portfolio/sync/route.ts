@@ -1,4 +1,5 @@
 import { auth, getSessionUserId } from '@/lib/auth'
+import { ensureLogosForTickers } from '@/lib/stock-logo-cache'
 import { createServerClient } from '@/lib/supabase'
 import { NextRequest, NextResponse } from 'next/server'
 
@@ -45,6 +46,11 @@ export async function POST(req: NextRequest) {
     .insert(rows)
 
   if (insertError) return NextResponse.json({ error: insertError.message }, { status: 500 })
+
+  void ensureLogosForTickers(
+    supabase,
+    rows.map((r) => r.ticker),
+  ).catch(() => {})
 
   return NextResponse.json({ synced: rows.length })
 }

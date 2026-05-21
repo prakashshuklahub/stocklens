@@ -45,7 +45,7 @@ Or paste supabase/migrations/run_once_combined.sql into the SQL Editor manually.
   process.exit(1)
 }
 
-const files = ['run_once_combined.sql', '007_portfolio_sell_alerts.sql']
+const files = ['run_once_combined.sql', '007_portfolio_sell_alerts.sql', '009_stock_logos.sql']
 const sql = files
   .map((f) => readFileSync(resolve(root, 'supabase/migrations', f), 'utf8'))
   .join('\n\n')

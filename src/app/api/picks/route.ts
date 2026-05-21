@@ -11,6 +11,7 @@
 
 import { auth, getSessionUserId } from '@/lib/auth'
 import { loadFundamentalsForTickers } from '@/lib/load-fundamentals'
+import { ensureLogosForTickers } from '@/lib/stock-logo-cache'
 import { fetchLivePriceForTicker } from '@/lib/live-prices'
 import { isUSMarketOpen } from '@/lib/market-hours'
 import { createServerClient } from '@/lib/supabase'
@@ -62,6 +63,8 @@ export async function GET(req: NextRequest) {
 
   const portfolio = (portfolioResult.data ?? []) as PortfolioHolding[]
   const tickers = watchlist.map((s) => s.ticker)
+  const logoTickers = [...new Set([...tickers, ...portfolio.map((h) => h.ticker)])]
+  void ensureLogosForTickers(supabase, logoTickers).catch(() => {})
 
   const { data: fundamentalsRows, error: fundamentalsError } = await supabase
     .from('stock_fundamentals')

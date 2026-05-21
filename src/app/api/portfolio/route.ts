@@ -1,6 +1,7 @@
 import { auth, getSessionUserId } from '@/lib/auth'
 import { fetchLivePricesForTickers } from '@/lib/live-prices'
 import { isUSMarketOpen } from '@/lib/market-hours'
+import { ensureLogosForTickers } from '@/lib/stock-logo-cache'
 import { createServerClient } from '@/lib/supabase'
 import { NextResponse } from 'next/server'
 
@@ -26,6 +27,8 @@ export async function GET() {
     ...h,
     snapshot: prices.get(h.ticker) ?? null,
   }))
+
+  void ensureLogosForTickers(supabase, tickers).catch(() => {})
 
   return NextResponse.json(enriched, {
     headers: { 'X-Market-Open': marketOpen ? '1' : '0' },

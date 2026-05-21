@@ -2,6 +2,7 @@ import { auth, getSessionUserId } from '@/lib/auth'
 import { fetchLivePricesForTickers } from '@/lib/live-prices'
 import { isUSMarketOpen } from '@/lib/market-hours'
 import { resolveSectorForTicker } from '@/lib/sectors'
+import { ensureLogosForTickers } from '@/lib/stock-logo-cache'
 import { createServerClient } from '@/lib/supabase'
 import { NextRequest, NextResponse } from 'next/server'
 
@@ -30,6 +31,10 @@ export async function GET() {
     ...s,
     snapshot: prices.get(s.ticker) ?? null,
   }))
+
+  void ensureLogosForTickers(supabase, tickers).catch((err) => {
+    console.warn('[watchlist] logo warm failed:', err instanceof Error ? err.message : err)
+  })
 
   return NextResponse.json(enriched, {
     headers: { 'X-Market-Open': marketOpen ? '1' : '0' },
@@ -68,6 +73,8 @@ export async function POST(req: NextRequest) {
     if (error.code === '23505') return NextResponse.json({ error: `${ticker} is already in your watchlist` }, { status: 409 })
     return NextResponse.json({ error: error.message }, { status: 500 })
   }
+
+  void ensureLogosForTickers(supabase, [sym]).catch(() => {})
 
   return NextResponse.json(data, { status: 201 })
 }

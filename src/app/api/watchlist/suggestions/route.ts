@@ -1,5 +1,6 @@
 import { auth, getSessionUserId } from '@/lib/auth'
 import { fetchStockFundamentals, mapPool } from '@/lib/fundamentals-fetch'
+import { ensureLogosForTickers } from '@/lib/stock-logo-cache'
 import { fetchYahooSector } from '@/lib/sectors'
 import { fetchMarketMovers } from '@/lib/market-movers'
 import { generateSuggestionBlurb, isLLMEnabled } from '@/lib/llm'
@@ -138,6 +139,10 @@ async function buildGlobalRanked(
   }
 
   const ranked = rankSuggestions(scored, GLOBAL_TOP)
+  void ensureLogosForTickers(
+    supabase,
+    ranked.map((s) => s.ticker),
+  ).catch(() => {})
   await Promise.all(
     ranked.map(async (s) => {
       if (s.sector !== 'Other') return

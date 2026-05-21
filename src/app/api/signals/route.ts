@@ -8,6 +8,7 @@
 
 import { auth, getSessionUserId } from '@/lib/auth'
 import { fetchStockFundamentals, mapPool } from '@/lib/fundamentals-fetch'
+import { ensureLogosForTickers } from '@/lib/stock-logo-cache'
 import { createServerClient } from '@/lib/supabase'
 import { fetchNewsForTicker } from '@/lib/news'
 import { NextResponse } from 'next/server'
@@ -129,6 +130,8 @@ export async function GET() {
 
   const stocks = watchlist as WatchlistStock[]
   const tickers = stocks.map((s) => s.ticker)
+
+  void ensureLogosForTickers(supabase, tickers).catch(() => {})
 
   // Fetch live prices + cached fundamentals in parallel.
   const [priceResults, fundamentalsResult] = await Promise.all([

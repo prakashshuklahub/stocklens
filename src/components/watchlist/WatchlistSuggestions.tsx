@@ -3,6 +3,7 @@
 import { useMemo, useState } from 'react'
 import useSWR from 'swr'
 import { ChevronDown, Flame, Plus } from 'lucide-react'
+import StockLogo from '@/components/StockLogo'
 import { cn } from '@/lib/utils'
 import type { WatchlistSuggestionsResponse } from '@/types'
 import type { StockResult } from '@/components/watchlist/StockSearchInput'
@@ -113,6 +114,7 @@ export default function WatchlistSuggestions({ ownedTickers, onAdd, adding, refr
                 <div className="min-w-0 flex-1">
                   <div className="flex items-center gap-2 flex-wrap">
                     <span className="text-[11px] font-bold text-orange-400/90">#{i + 1}</span>
+                    <StockLogo ticker={s.ticker} size="sm" />
                     <span className="text-lg font-bold text-white">{s.ticker}</span>
                     {s.sector && s.sector !== 'Other' && (
                       <span className="text-[10px] font-semibold text-orange-300/90 px-1.5 py-0.5 rounded-md bg-orange-500/10">

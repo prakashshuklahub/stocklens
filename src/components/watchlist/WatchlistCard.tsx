@@ -3,6 +3,7 @@
 import { useState, useRef, useEffect } from 'react'
 import { MoreVertical, Trash2 } from 'lucide-react'
 import useSWR from 'swr'
+import StockLogo from '@/components/StockLogo'
 import { cn } from '@/lib/utils'
 import type { StockFundamentals } from '@/types'
 
@@ -290,13 +291,16 @@ export default function WatchlistCard({
     <div className="relative card-surface active:scale-[0.99] active:brightness-95 transition-all duration-100">
       {/* ── Top section: identity + live price ── */}
       <div className="px-5 pt-4 pb-3.5 flex items-start justify-between gap-3 pr-14">
-        <div className="flex-1 min-w-0">
-          <div className="flex items-center gap-2 mb-0.5">
-            <span className="font-bold text-white text-lg tracking-tight" translate="no">
-              {stock.ticker}
-            </span>
+        <div className="flex items-start gap-3 flex-1 min-w-0">
+          <StockLogo ticker={stock.ticker} size="md" />
+          <div className="min-w-0 flex-1">
+            <div className="flex items-center gap-2 mb-0.5">
+              <span className="font-bold text-white text-lg tracking-tight" translate="no">
+                {stock.ticker}
+              </span>
+            </div>
+            <p className="text-sm text-zinc-500 truncate leading-relaxed">{stock.company_name}</p>
           </div>
-          <p className="text-sm text-zinc-500 truncate leading-relaxed">{stock.company_name}</p>
         </div>
 
         <div className="text-right shrink-0">
