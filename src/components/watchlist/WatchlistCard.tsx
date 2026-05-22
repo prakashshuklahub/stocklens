@@ -14,7 +14,7 @@ import {
   targetPriceSubline,
 } from '@/lib/target-price-display'
 import { cn } from '@/lib/utils'
-import type { StockFundamentals } from '@/types'
+import type { StockFundamentals, StockSnapshot } from '@/types'
 
 const SECTOR_COLORS: Record<string, { bg: string; text: string }> = {
   Technology:               { bg: 'bg-blue-500/10',    text: 'text-blue-400' },
@@ -28,11 +28,6 @@ const SECTOR_COLORS: Record<string, { bg: string; text: string }> = {
   Utilities:                { bg: 'bg-teal-500/10',    text: 'text-teal-400' },
   'Real Estate':            { bg: 'bg-purple-500/10',  text: 'text-purple-400' },
   'Communication Services': { bg: 'bg-pink-500/10',    text: 'text-pink-400' },
-}
-
-interface StockSnapshot {
-  price?: number | null
-  change_1d_pct?: number | null
 }
 
 export interface WatchlistStock {
@@ -369,7 +364,7 @@ export default function WatchlistCard({
                 <p className="text-lg font-bold text-white tabular-nums leading-tight">{price}</p>
                 {pct && (
                   <p className={cn('text-sm font-semibold tabular-nums mt-0.5', isUp ? 'text-emerald-400' : 'text-red-400')}>
-                    {pct} today
+                    {pct}
                   </p>
                 )}
               </>

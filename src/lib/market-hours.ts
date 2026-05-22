@@ -31,5 +31,19 @@ export function liveRefreshSubtitle(intervalSec: number, marketOpen: boolean): s
   if (marketOpen) {
     return `Live prices · refreshes every ${intervalSec}s while market is open`
   }
-  return 'Market closed · showing last prices from the prior session'
+  return 'Prices from the last regular session'
+}
+
+/** Format snapshot timestamp for display (e.g. "May 20, 4:00 PM ET"). */
+export function formatSnapshotAsOfET(asOfMs: number | null | undefined): string | null {
+  if (asOfMs == null) return null
+  const formatted = new Intl.DateTimeFormat('en-US', {
+    timeZone: US_MARKET_TZ,
+    month: 'short',
+    day: 'numeric',
+    hour: 'numeric',
+    minute: '2-digit',
+    hour12: true,
+  }).format(new Date(asOfMs))
+  return `${formatted} ET`
 }

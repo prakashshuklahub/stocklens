@@ -24,6 +24,10 @@ export interface WatchlistStock {
 export interface StockSnapshot {
   price: number | null
   change_1d_pct: number | null
+  /** true during US regular session (9:30 AM–4:00 PM ET) */
+  is_live?: boolean
+  /** Unix ms when price was last set (Yahoo regularMarketTime) */
+  as_of?: number | null
 }
 
 export interface WatchlistStockWithSnapshot extends WatchlistStock {

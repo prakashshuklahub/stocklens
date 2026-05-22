@@ -1,5 +1,5 @@
 import { auth, getSessionUserId } from '@/lib/auth'
-import { fetchLivePricesForTickers } from '@/lib/live-prices'
+import { fetchStockSnapshotsForTickers } from '@/lib/live-prices'
 import { isUSMarketOpen } from '@/lib/market-hours'
 import { ensureLogosForTickers } from '@/lib/stock-logo-cache'
 import { createServerClient } from '@/lib/supabase'
@@ -22,15 +22,18 @@ export async function GET() {
 
   const tickers = holdings.map((h) => h.ticker)
   const marketOpen = isUSMarketOpen()
-  const prices = marketOpen ? await fetchLivePricesForTickers(tickers) : new Map()
+  const prices = await fetchStockSnapshotsForTickers(tickers, marketOpen)
   const enriched = holdings.map((h) => ({
     ...h,
-    snapshot: prices.get(h.ticker) ?? null,
+    snapshot: prices.get(h.ticker.toUpperCase()) ?? null,
   }))
 
   void ensureLogosForTickers(supabase, tickers).catch(() => {})
 
   return NextResponse.json(enriched, {
-    headers: { 'X-Market-Open': marketOpen ? '1' : '0' },
+    headers: {
+      'X-Market-Open': marketOpen ? '1' : '0',
+      'Cache-Control': marketOpen ? 'private, no-store' : 'private, max-age=3600',
+    },
   })
 }

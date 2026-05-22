@@ -21,6 +21,7 @@ import LiveRefreshHeader, { LIVE_REFRESH_SEC } from '@/components/LiveRefreshHea
 import { useMarketOpen } from '@/hooks/useMarketOpen'
 import { PORTFOLIO_ALERT_DEMO } from '@/lib/portfolio-alerts'
 import { createMarketAwareFetcher } from '@/lib/swr-market-fetcher'
+import { formatSnapshotAsOfET } from '@/lib/market-hours'
 import { cn } from '@/lib/utils'
 import type {
   PortfolioAlert,
@@ -72,25 +73,42 @@ function parseVestedXlsx(file: File): Promise<VestedRow[]> {
 }
 
 // ── Summary card ──────────────────────────────────────────────────────────────
-function SummaryBar({ holdings }: { holdings: PortfolioHoldingWithPrice[] }) {
+function SummaryBar({
+  holdings,
+  marketOpen,
+}: {
+  holdings: PortfolioHoldingWithPrice[]
+  marketOpen: boolean
+}) {
   let totalInvested = 0
   let totalCurrent = 0
+  let latestAsOf: number | null = null
 
   for (const h of holdings) {
     totalInvested += h.avg_cost_basis * h.quantity
-    const price = h.snapshot?.price ?? h.avg_cost_basis
-    totalCurrent += price * h.quantity
+    const price = h.snapshot?.price
+    if (price != null) {
+      totalCurrent += price * h.quantity
+      const asOf = h.snapshot?.as_of
+      if (asOf != null && (latestAsOf == null || asOf > latestAsOf)) latestAsOf = asOf
+    }
   }
 
   const pnl = totalCurrent - totalInvested
   const pnlPct = totalInvested ? (pnl / totalInvested) * 100 : 0
   const isPos = pnl >= 0
+  const asOfLabel = !marketOpen ? formatSnapshotAsOfET(latestAsOf) : null
 
   return (
     <div className="card-surface px-4 py-3 mb-4">
       <p className="text-[10px] font-semibold text-zinc-500 uppercase tracking-[0.1em] mb-1">Portfolio Value</p>
       <div className="flex items-end justify-between gap-2">
-        <p className="text-2xl font-black text-white tabular-nums leading-none">${fmt(totalCurrent)}</p>
+        <div>
+          <p className="text-2xl font-black text-white tabular-nums leading-none">${fmt(totalCurrent)}</p>
+          {asOfLabel && (
+            <p className="text-[10px] text-zinc-600 mt-1">{asOfLabel}</p>
+          )}
+        </div>
         <span className={cn(
           'text-xs font-bold px-2 py-0.5 rounded-full shrink-0',
           isPos ? 'bg-emerald-500/15 text-emerald-400' : 'bg-red-500/15 text-red-400'
@@ -150,12 +168,12 @@ function HoldingCard({ h }: { h: PortfolioHoldingWithPrice }) {
           <span className="text-[15px] font-bold text-white tabular-nums">
             {price != null ? `$${fmt(price)}` : '—'}
           </span>
-          {change1d != null && (
-            <span className={cn('text-xs tabular-nums font-semibold', change1d >= 0 ? 'text-emerald-400' : 'text-red-400')}>
-              {change1d >= 0 ? '+' : ''}{fmt(change1d)}%
-            </span>
-          )}
         </div>
+        {change1d != null && (
+          <p className={cn('text-xs tabular-nums font-semibold mt-0.5', change1d >= 0 ? 'text-emerald-400' : 'text-red-400')}>
+            {change1d >= 0 ? '+' : ''}{fmt(change1d)}%
+          </p>
+        )}
         {pnl != null && pnlPct != null && (
           <p className={cn('text-xs tabular-nums font-semibold mt-0.5', isPos ? 'text-emerald-400' : 'text-red-400')}>
             {isPos ? '+' : '-'}${fmt(Math.abs(pnl))} ({isPos ? '+' : ''}{fmt(pnlPct)}%)
@@ -683,7 +701,7 @@ export default function PortfolioPage() {
             </div>
           ) : (
             <>
-              <SummaryBar holdings={holdings} />
+              <SummaryBar holdings={holdings} marketOpen={marketOpen} />
 
               <AlertsSection
                 alerts={alertsData?.alerts ?? []}

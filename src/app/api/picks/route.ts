@@ -70,9 +70,7 @@ export async function GET(req: NextRequest) {
   let staleCount = 0
   let tableMissing = false
 
-  const pricesPromise = marketOpen
-    ? fetchLivePricesForTickers(tickers)
-    : Promise.resolve(new Map<string, { price: number; change_1d_pct: number }>())
+  const pricesPromise = fetchLivePricesForTickers(tickers)
 
   let priceByTicker: Map<string, { price: number; change_1d_pct: number }>
 

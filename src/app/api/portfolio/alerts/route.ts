@@ -1,6 +1,6 @@
 import { auth, getSessionUserId } from '@/lib/auth'
 import { loadFundamentalsForTickers } from '@/lib/load-fundamentals'
-import { fetchLivePriceForTicker } from '@/lib/live-prices'
+import { fetchLivePricesForTickers } from '@/lib/live-prices'
 import { isUSMarketOpen } from '@/lib/market-hours'
 import { generateSellReview, isLLMEnabled } from '@/lib/llm'
 import {
@@ -82,21 +82,19 @@ export async function GET(req: NextRequest) {
     }
   }
 
-  const prices = marketOpen
-    ? await Promise.all(tickers.map((t) => fetchLivePriceForTicker(t).then((s) => s?.price ?? null)))
-    : tickers.map(() => null)
+  const priceMap = await fetchLivePricesForTickers(tickers)
   const scored: ScoredAlert[] = []
 
-  list.forEach((holding, i) => {
-    const price = prices[i]
-    if (price == null) return
+  for (const holding of list) {
+    const price = priceMap.get(holding.ticker.toUpperCase())?.price ?? null
+    if (price == null) continue
     const alert = scorePortfolioAlert({
       holding,
       current_price: price,
       fundamentals: fundamentalsByTicker.get(holding.ticker) ?? null,
     })
     if (alert) scored.push(alert)
-  })
+  }
 
   const ranked = rankAlerts(scored)
   const llmEnabled = isLLMEnabled()

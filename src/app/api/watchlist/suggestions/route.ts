@@ -210,11 +210,11 @@ function toSuggestion(s: ScoredSuggestion, cached: CachedReason | undefined): Wa
   }
 }
 
-/** Same Yahoo chart source as /api/watchlist — keeps day % aligned with watchlist cards. */
+/** Same Yahoo source as watchlist — live when open, last close when closed. */
 async function overlayLivePrices(
   suggestions: WatchlistSuggestion[],
 ): Promise<WatchlistSuggestion[]> {
-  if (!suggestions.length || !isUSMarketOpen()) return suggestions
+  if (!suggestions.length) return suggestions
 
   const live = await fetchLivePricesForTickers(suggestions.map((s) => s.ticker))
   if (!live.size) return suggestions

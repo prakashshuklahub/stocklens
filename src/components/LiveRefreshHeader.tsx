@@ -24,7 +24,7 @@ export function RefreshCountdown({
       aria-live="polite"
       aria-label={
         !marketOpen
-          ? 'Market closed — prices are not refreshing'
+          ? 'Market closed — showing prices from the last session'
           : refreshing
             ? 'Updating prices'
             : `Prices refresh in ${seconds} seconds`
