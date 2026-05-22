@@ -4,12 +4,56 @@ import { RefreshCw } from 'lucide-react'
 import { liveRefreshSubtitle, type MarketSession } from '@/lib/market-hours'
 import { cn } from '@/lib/utils'
 
-/** Picks LLM polling — watchlist/portfolio use PRICE_REFRESH_MS instead. */
+/** Live session price polling — pre/post use PRICE_REFRESH_MS without a bar. */
 export const LIVE_REFRESH_SEC = 15
+
+export function RefreshCountdown({
+  seconds,
+  refreshing,
+  intervalSec = LIVE_REFRESH_SEC,
+}: {
+  seconds: number
+  refreshing: boolean
+  intervalSec?: number
+}) {
+  const pct = ((intervalSec - seconds) / intervalSec) * 100
+
+  return (
+    <div
+      className="flex items-center gap-2 shrink-0"
+      aria-live="polite"
+      aria-label={
+        refreshing
+          ? 'Updating live prices'
+          : `Live prices refresh in ${seconds} seconds`
+      }
+    >
+      <div className="w-14 h-1 rounded-full bg-zinc-800 overflow-hidden">
+        <div
+          className={cn(
+            'h-full rounded-full bg-blue-500/60 transition-all duration-1000 ease-linear',
+          )}
+          style={{ width: `${pct}%` }}
+        />
+      </div>
+      <span className="text-xs tabular-nums text-zinc-500 min-w-[2.5rem] text-right">
+        {refreshing ? (
+          <span className="inline-flex items-center gap-1">
+            <RefreshCw className="w-3 h-3 animate-spin" aria-hidden="true" />
+            Live
+          </span>
+        ) : (
+          `${seconds}s`
+        )}
+      </span>
+    </div>
+  )
+}
 
 interface LiveRefreshHeaderProps {
   title: string
   subtitle?: string
+  seconds?: number
   refreshing?: boolean
   session?: MarketSession
   bordered?: boolean
@@ -20,13 +64,14 @@ interface LiveRefreshHeaderProps {
 export default function LiveRefreshHeader({
   title,
   subtitle,
+  seconds = LIVE_REFRESH_SEC,
   refreshing = false,
   session = 'regular',
   bordered = true,
   className,
   footer,
 }: LiveRefreshHeaderProps) {
-  const priceLive = session !== 'closed'
+  const isLive = session === 'regular'
 
   return (
     <div
@@ -39,17 +84,13 @@ export default function LiveRefreshHeader({
       <div className="min-w-0">
         <h2 className="section-label">{title}</h2>
         <p className="text-xs text-zinc-600 mt-1" aria-live="polite">
-          {refreshing && priceLive ? (
-            <span className="inline-flex items-center gap-1">
-              <RefreshCw className="w-3 h-3 animate-spin" aria-hidden="true" />
-              Updating prices…
-            </span>
-          ) : (
-            subtitle ?? liveRefreshSubtitle(session)
-          )}
+          {subtitle ?? liveRefreshSubtitle(session)}
         </p>
         {footer}
       </div>
+      {isLive && (
+        <RefreshCountdown seconds={seconds} refreshing={!!refreshing} />
+      )}
     </div>
   )
 }

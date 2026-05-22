@@ -20,7 +20,7 @@ import SessionPriceBadge from '@/components/SessionPriceBadge'
 import StockLogo from '@/components/StockLogo'
 import LiveRefreshHeader from '@/components/LiveRefreshHeader'
 import { useMarketOpen, useMarketSession } from '@/hooks/useMarketOpen'
-import { useBackgroundPriceRefresh } from '@/hooks/useBackgroundPriceRefresh'
+import { useLivePriceRefresh } from '@/hooks/useLivePriceRefresh'
 import { PORTFOLIO_ALERT_DEMO } from '@/lib/portfolio-alerts'
 import { createMarketAwareFetcher } from '@/lib/swr-market-fetcher'
 import type { MarketSession } from '@/lib/market-hours'
@@ -519,7 +519,11 @@ export default function PortfolioPage() {
     if (holdings.length > 0) void mutateAlerts()
   }, [holdings.length, mutate, mutateAlerts])
 
-  useBackgroundPriceRefresh(marketOpen && holdings.length > 0, refreshPrices)
+  const countdown = useLivePriceRefresh(
+    marketSession,
+    marketOpen && holdings.length > 0,
+    refreshPrices,
+  )
 
   async function handleFileChange(e: React.ChangeEvent<HTMLInputElement>) {
     const file = e.target.files?.[0]
@@ -709,6 +713,7 @@ export default function PortfolioPage() {
 
               <LiveRefreshHeader
                 title="Your holdings"
+                seconds={countdown}
                 refreshing={refreshing}
                 session={marketSession}
               />

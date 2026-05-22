@@ -9,7 +9,7 @@ import WatchlistSuggestions from '@/components/watchlist/WatchlistSuggestions'
 import AppNav from '@/components/AppNav'
 import LiveRefreshHeader from '@/components/LiveRefreshHeader'
 import { useMarketOpen, useMarketSession } from '@/hooks/useMarketOpen'
-import { useBackgroundPriceRefresh } from '@/hooks/useBackgroundPriceRefresh'
+import { useLivePriceRefresh } from '@/hooks/useLivePriceRefresh'
 import { createMarketAwareFetcher } from '@/lib/swr-market-fetcher'
 import {
   computeTargetUpsidePct,
@@ -331,7 +331,11 @@ export default function WatchlistPage() {
     void mutateFundamentals()
   }, [mutate, mutateFundamentals])
 
-  useBackgroundPriceRefresh(marketOpen && stocks.length > 0, refreshPrices)
+  const countdown = useLivePriceRefresh(
+    marketSession,
+    marketOpen && stocks.length > 0,
+    refreshPrices,
+  )
 
   useEffect(() => {
     setSortMode(loadSortMode())
@@ -458,6 +462,7 @@ export default function WatchlistPage() {
             <div>
               <LiveRefreshHeader
                 title="Your watchlist"
+                seconds={countdown}
                 refreshing={refreshing}
                 session={marketSession}
                 footer={

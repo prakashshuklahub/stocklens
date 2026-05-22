@@ -73,7 +73,7 @@ export function priceBadgeSession(
 export function liveRefreshSubtitle(session: MarketSession): string {
   switch (session) {
     case 'regular':
-      return 'Live prices'
+      return `Live prices · refreshes every 15s`
     case 'pre':
       return 'Pre-market prices'
     case 'post':
