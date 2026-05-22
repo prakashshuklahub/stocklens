@@ -13,7 +13,7 @@ import { auth, getSessionUserId } from '@/lib/auth'
 import { loadFundamentalsCacheFirst, refreshFundamentalsForTickers } from '@/lib/load-fundamentals'
 import { ensureLogosForTickers } from '@/lib/stock-logo-cache'
 import { fetchLivePricesForTickers } from '@/lib/live-prices'
-import { isUSMarketOpen } from '@/lib/market-hours'
+import { isPriceRefreshActive, isUSMarketOpen } from '@/lib/market-hours'
 import { createServerClient } from '@/lib/supabase'
 import { fetchNewsForTicker } from '@/lib/news'
 import { generateNarrative, isLLMEnabled } from '@/lib/llm'
@@ -38,6 +38,16 @@ const MAX_PICKS = 10
 const NO_CACHE_HEADERS = { 'Cache-Control': 'private, no-store, max-age=0' } as const
 const LOG_PREFIX = 'picks'
 
+function latestIso(dates: string[]): string | null {
+  if (!dates.length) return null
+  return dates.reduce((a, b) => (a > b ? a : b))
+}
+
+function emptyPicksResponse(): PicksResponse {
+  const now = new Date().toISOString()
+  return { picks: [], scores_at: now, narratives_at: null, llm_enabled: isLLMEnabled() }
+}
+
 // ── Route ────────────────────────────────────────────────────────────────────
 export async function GET(req: NextRequest) {
   const marketOpen = isUSMarketOpen()
@@ -55,7 +65,7 @@ export async function GET(req: NextRequest) {
 
   const watchlist = (watchlistResult.data ?? []) as WatchlistStock[]
   if (!watchlist.length) {
-    const empty: PicksResponse = { picks: [], generated_at: new Date().toISOString(), llm_enabled: isLLMEnabled() }
+    const empty = emptyPicksResponse()
     return NextResponse.json(empty, { headers: NO_CACHE_HEADERS })
   }
 
@@ -64,7 +74,7 @@ export async function GET(req: NextRequest) {
   const logoTickers = [...new Set([...tickers, ...portfolio.map((h) => h.ticker)])]
   void ensureLogosForTickers(supabase, logoTickers).catch(() => {})
 
-  const forceRefresh = req.nextUrl.searchParams.get('refresh') === '1' && marketOpen
+  const forceRefresh = req.nextUrl.searchParams.get('refresh') === '1' && isPriceRefreshActive()
   const fundamentalsByTicker = new Map<string, StockFundamentals>()
   let fundamentalsCachedCount = 0
   let staleCount = 0
@@ -154,12 +164,9 @@ export async function GET(req: NextRequest) {
   }
 
   const top = rankPicks(scored, MAX_PICKS)
+  const scoresAt = new Date().toISOString()
   if (!top.length) {
-    const empty: PicksResponse = {
-      picks: [],
-      generated_at: new Date().toISOString(),
-      llm_enabled: isLLMEnabled(),
-    }
+    const empty = emptyPicksResponse()
     if (process.env.NODE_ENV !== 'production') {
       return NextResponse.json({ ...empty, debug }, { headers: NO_CACHE_HEADERS })
     }
@@ -173,6 +180,7 @@ export async function GET(req: NextRequest) {
     thesis: string
     main_risk: string
     model: string | null
+    generated_at: string
   }>(supabase, 'pick_narratives', topTickers, LOG_PREFIX)
 
   // ── 6. Narratives — cached LLM first; mechanical on miss; LLM generated in background ──
@@ -279,11 +287,15 @@ export async function GET(req: NextRequest) {
   const generatedByTicker = new Map<string, GenResult>()
   for (const g of generated) generatedByTicker.set(g.ticker, g)
 
+  const narrativeTimes: string[] = []
   const picks: Pick[] = top.map((p) => {
     const key = p.ticker.toUpperCase()
     const cached = cachedByTicker.get(key)
     const fresh = generatedByTicker.get(p.ticker)
     const narrative = cached ?? fresh
+    if (cached?.generated_at) narrativeTimes.push(cached.generated_at)
+    else if (fresh) narrativeTimes.push(scoresAt)
+
     return {
       ...p,
       thesis: narrative?.thesis ?? null,
@@ -295,7 +307,8 @@ export async function GET(req: NextRequest) {
 
   const response: PicksResponse = {
     picks,
-    generated_at: new Date().toISOString(),
+    scores_at: scoresAt,
+    narratives_at: latestIso(narrativeTimes),
     llm_enabled: llmEnabled,
   }
   return NextResponse.json(response, { headers: NO_CACHE_HEADERS })

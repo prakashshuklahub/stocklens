@@ -25,10 +25,25 @@ import {
 import { cn } from '@/lib/utils'
 import type { Pick, PicksResponse, PickFactor } from '@/types'
 
+function picksFingerprint(picks: Pick[]): string {
+  return picks.map((p) => `${p.ticker}:${p.score}:${p.current_price}:${p.upside_pct}`).join('|')
+}
+
+const scoresFingerprintRef = { current: '' }
+const stableScoresAtRef = { current: null as string | null }
+
 const fetcher = async (u: string): Promise<PicksResponse> => {
   const res = await fetch(u, { cache: 'no-store' })
   if (!res.ok) throw new Error('Failed to load picks')
-  return res.json()
+  const fresh = (await res.json()) as PicksResponse
+  const fp = picksFingerprint(fresh.picks)
+  if (fp && fp === scoresFingerprintRef.current && stableScoresAtRef.current) {
+    fresh.scores_at = stableScoresAtRef.current
+  } else {
+    scoresFingerprintRef.current = fp
+    stableScoresAtRef.current = fresh.scores_at
+  }
+  return fresh
 }
 
 function fmt(n: number, digits = 2): string {
@@ -309,6 +324,8 @@ export default function PicksPage() {
       const fresh = await fetch('/api/picks?refresh=1', { cache: 'no-store' })
       if (!fresh.ok) throw new Error('refresh failed')
       const json = (await fresh.json()) as PicksResponse
+      scoresFingerprintRef.current = picksFingerprint(json.picks)
+      stableScoresAtRef.current = json.scores_at
       await mutate(json, { revalidate: false })
     } catch {
       await mutate(undefined, { revalidate: true })
@@ -331,15 +348,13 @@ export default function PicksPage() {
             <Sparkles className="w-5 h-5 text-blue-400 mb-1" aria-hidden="true" />
           </div>
           <p className="page-subtitle">Top buy candidates from your watchlist</p>
-          {data?.generated_at && (
+          {data?.scores_at && (
             <div className="flex items-center gap-1.5 mt-1.5">
               <div className="w-1.5 h-1.5 rounded-full bg-emerald-500 shrink-0" />
               <p className="text-xs text-zinc-400 font-medium">
-                Updated <span className="text-zinc-300">{timeAgo(data.generated_at)}</span>
+                Prices &amp; scores ·{' '}
+                <span className="text-zinc-300">{timeAgo(data.scores_at)}</span>
               </p>
-              {data.llm_enabled && (
-                <span className="text-[10px] text-blue-400/80 font-semibold uppercase tracking-wide ml-1">· AI</span>
-              )}
             </div>
           )}
         </div>

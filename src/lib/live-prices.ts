@@ -1,20 +1,85 @@
+import type { MarketSession } from '@/lib/market-hours'
+import { getUSMarketSession } from '@/lib/market-hours'
 import type { StockSnapshot } from '@/types'
-import { isUSMarketOpen } from '@/lib/market-hours'
 
 export type LivePriceSnapshot = {
   price: number
   change_1d_pct: number
+  session: MarketSession
   as_of?: number | null
 }
 
 const YAHOO_UA = 'Mozilla/5.0'
-/** Yahoo v7 quote supports many symbols per request; chunk to stay safe. */
 const QUOTE_CHUNK = 50
 
 function yahooTimeToMs(raw: unknown): number | null {
   if (typeof raw !== 'number' || !Number.isFinite(raw)) return null
-  // Yahoo returns seconds; values above 1e12 are already ms
   return raw > 1e12 ? raw : raw * 1000
+}
+
+function pctChange(price: number, base: number | null | undefined): number {
+  if (base == null || base <= 0) return 0
+  return ((price - base) / base) * 100
+}
+
+function parseYahooQuote(q: Record<string, unknown>): LivePriceSnapshot | null {
+  const sym = String(q.symbol ?? '').toUpperCase()
+  if (!sym) return null
+
+  const state = String(q.marketState ?? '').toUpperCase()
+  const prevClose = (q.regularMarketPreviousClose ?? q.previousClose) as number | undefined
+
+  if (state === 'PRE' && typeof q.preMarketPrice === 'number') {
+    const price = q.preMarketPrice
+    const change_1d_pct =
+      typeof q.preMarketChangePercent === 'number'
+        ? q.preMarketChangePercent
+        : pctChange(price, prevClose)
+    return {
+      price,
+      change_1d_pct,
+      session: 'pre',
+      as_of: yahooTimeToMs(q.preMarketTime),
+    }
+  }
+
+  if (state === 'POST' && typeof q.postMarketPrice === 'number') {
+    const price = q.postMarketPrice
+    const change_1d_pct =
+      typeof q.postMarketChangePercent === 'number'
+        ? q.postMarketChangePercent
+        : pctChange(price, prevClose)
+    return {
+      price,
+      change_1d_pct,
+      session: 'post',
+      as_of: yahooTimeToMs(q.postMarketTime),
+    }
+  }
+
+  if (typeof q.regularMarketPrice !== 'number') return null
+
+  const price = q.regularMarketPrice
+  const change_1d_pct =
+    typeof q.regularMarketChangePercent === 'number'
+      ? q.regularMarketChangePercent
+      : pctChange(price, prevClose)
+
+  if (state === 'REGULAR') {
+    return {
+      price,
+      change_1d_pct,
+      session: 'regular',
+      as_of: yahooTimeToMs(q.regularMarketTime),
+    }
+  }
+
+  return {
+    price,
+    change_1d_pct,
+    session: 'closed',
+    as_of: yahooTimeToMs(q.regularMarketTime),
+  }
 }
 
 async function fetchLivePriceChunk(symbols: string[]): Promise<Map<string, LivePriceSnapshot>> {
@@ -31,16 +96,8 @@ async function fetchLivePriceChunk(symbols: string[]): Promise<Map<string, LiveP
 
     const data = await res.json()
     for (const q of data?.quoteResponse?.result ?? []) {
-      const sym = String(q.symbol ?? '').toUpperCase()
-      const price = q.regularMarketPrice
-      if (!sym || typeof price !== 'number') continue
-      const prevClose: number = q.regularMarketPreviousClose ?? q.previousClose ?? price
-      const change_1d_pct = prevClose ? ((price - prevClose) / prevClose) * 100 : 0
-      map.set(sym, {
-        price,
-        change_1d_pct,
-        as_of: yahooTimeToMs(q.regularMarketTime),
-      })
+      const snap = parseYahooQuote(q as Record<string, unknown>)
+      if (snap) map.set(String(q.symbol).toUpperCase(), snap)
     }
   } catch {
     // fall through — caller may retry per-ticker
@@ -49,11 +106,7 @@ async function fetchLivePriceChunk(symbols: string[]): Promise<Map<string, LiveP
   return map
 }
 
-export async function fetchLivePriceForTicker(ticker: string): Promise<LivePriceSnapshot | null> {
-  const sym = ticker.toUpperCase()
-  const batch = await fetchLivePriceChunk([sym])
-  if (batch.has(sym)) return batch.get(sym)!
-
+async function fetchChartFallback(sym: string): Promise<LivePriceSnapshot | null> {
   try {
     const res = await fetch(
       `https://query1.finance.yahoo.com/v8/finance/chart/${sym}?interval=1d&range=1d`,
@@ -65,15 +118,23 @@ export async function fetchLivePriceForTicker(ticker: string): Promise<LivePrice
     if (!meta?.regularMarketPrice) return null
     const price: number = meta.regularMarketPrice
     const prevClose: number = meta.chartPreviousClose ?? meta.previousClose ?? price
-    const change_1d_pct = prevClose ? ((price - prevClose) / prevClose) * 100 : 0
+    const session = getUSMarketSession()
     return {
       price,
-      change_1d_pct,
+      change_1d_pct: pctChange(price, prevClose),
+      session: session === 'closed' ? 'closed' : session,
       as_of: yahooTimeToMs(meta.regularMarketTime),
     }
   } catch {
     return null
   }
+}
+
+export async function fetchLivePriceForTicker(ticker: string): Promise<LivePriceSnapshot | null> {
+  const sym = ticker.toUpperCase()
+  const batch = await fetchLivePriceChunk([sym])
+  if (batch.has(sym)) return batch.get(sym)!
+  return fetchChartFallback(sym)
 }
 
 export async function fetchLivePricesForTickers(
@@ -95,7 +156,7 @@ export async function fetchLivePricesForTickers(
 
   const missing = syms.filter((sym) => !map.has(sym))
   if (missing.length) {
-    const fallbacks = await Promise.all(missing.map((sym) => fetchLivePriceForTicker(sym)))
+    const fallbacks = await Promise.all(missing.map((sym) => fetchChartFallback(sym)))
     missing.forEach((sym, i) => {
       const snap = fallbacks[i]
       if (snap) map.set(sym, snap)
@@ -105,24 +166,24 @@ export async function fetchLivePricesForTickers(
   return map
 }
 
-export function toStockSnapshot(snap: LivePriceSnapshot, isLive: boolean): StockSnapshot {
+export function toStockSnapshot(snap: LivePriceSnapshot): StockSnapshot {
   return {
     price: snap.price,
     change_1d_pct: snap.change_1d_pct,
-    is_live: isLive,
+    session: snap.session,
+    is_live: snap.session !== 'closed',
     as_of: snap.as_of ?? null,
   }
 }
 
-/** Fetch regular-session price (live when open, last close when closed). */
+/** Fetch price for current session (pre / regular / post / close) via Yahoo v7 quote. */
 export async function fetchStockSnapshotsForTickers(
   tickers: string[],
-  isLive = isUSMarketOpen(),
 ): Promise<Map<string, StockSnapshot>> {
   const raw = await fetchLivePricesForTickers(tickers)
   const map = new Map<string, StockSnapshot>()
   for (const [sym, snap] of raw) {
-    map.set(sym, toStockSnapshot(snap, isLive))
+    map.set(sym, toStockSnapshot(snap))
   }
   return map
 }

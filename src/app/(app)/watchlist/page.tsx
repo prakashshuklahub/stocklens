@@ -1,20 +1,22 @@
 'use client'
 
-import { useState, useEffect, useMemo } from 'react'
+import { useCallback, useState, useEffect, useMemo } from 'react'
 import useSWR from 'swr'
 import { TrendingUp, ChevronDown } from 'lucide-react'
 import WatchlistCard, { type WatchlistStock } from '@/components/watchlist/WatchlistCard'
 import StockSearchInput, { type StockResult } from '@/components/watchlist/StockSearchInput'
 import WatchlistSuggestions from '@/components/watchlist/WatchlistSuggestions'
 import AppNav from '@/components/AppNav'
-import LiveRefreshHeader, { LIVE_REFRESH_SEC, RefreshCountdown } from '@/components/LiveRefreshHeader'
-import { useMarketOpen } from '@/hooks/useMarketOpen'
+import LiveRefreshHeader from '@/components/LiveRefreshHeader'
+import { useMarketOpen, useMarketSession } from '@/hooks/useMarketOpen'
+import { useBackgroundPriceRefresh } from '@/hooks/useBackgroundPriceRefresh'
 import { createMarketAwareFetcher } from '@/lib/swr-market-fetcher'
 import {
   computeTargetUpsidePct,
   hasDisplayTargetPrice,
 } from '@/lib/target-price-display'
 import { cn } from '@/lib/utils'
+import type { MarketSession } from '@/lib/market-hours'
 import type { StockFundamentals } from '@/types'
 
 // Deterministic sector order
@@ -134,11 +136,13 @@ function WatchlistSortBar({
 function StockList({
   stocks,
   onRemove,
+  marketSession,
   fundamentalsByTicker,
   fundamentalsLoading,
 }: {
   stocks: WatchlistStock[]
   onRemove: (ticker: string) => void
+  marketSession: MarketSession
   fundamentalsByTicker: Record<string, StockFundamentals>
   fundamentalsLoading: boolean
 }) {
@@ -149,6 +153,7 @@ function StockList({
           <WatchlistCard
             stock={stock}
             onRemove={onRemove}
+            marketSession={marketSession}
             fundamentals={fundamentalsByTicker[stock.ticker] ?? null}
             fundamentalsLoading={fundamentalsLoading}
           />
@@ -183,6 +188,7 @@ function SectorGroup({
   sector,
   stocks,
   onRemove,
+  marketSession,
   fundamentalsByTicker,
   fundamentalsLoading,
   defaultOpen = true,
@@ -190,6 +196,7 @@ function SectorGroup({
   sector: string
   stocks: WatchlistStock[]
   onRemove: (ticker: string) => void
+  marketSession: MarketSession
   fundamentalsByTicker: Record<string, StockFundamentals>
   fundamentalsLoading: boolean
   defaultOpen?: boolean
@@ -231,6 +238,7 @@ function SectorGroup({
               <WatchlistCard
                 stock={stock}
                 onRemove={onRemove}
+                marketSession={marketSession}
                 fundamentals={fundamentalsByTicker[stock.ticker] ?? null}
                 fundamentalsLoading={fundamentalsLoading}
               />
@@ -281,10 +289,9 @@ async function fundamentalsBatchFetcher(url: string): Promise<{
   return { fundamentals, refreshing }
 }
 
-const REFRESH_SEC = LIVE_REFRESH_SEC
-
 export default function WatchlistPage() {
   const marketOpen = useMarketOpen()
+  const marketSession = useMarketSession()
 
   const { data: stocks = [], isLoading, isValidating, mutate } = useSWR<WatchlistStock[]>(
     '/api/watchlist',
@@ -314,11 +321,17 @@ export default function WatchlistPage() {
   const fundamentalsByTicker = fundamentalsBatch?.fundamentals ?? {}
   const [adding, setAdding] = useState(false)
   const [error, setError] = useState('')
-  const [countdown, setCountdown] = useState(REFRESH_SEC)
   const [suggestionsRefresh, setSuggestionsRefresh] = useState(0)
   const [sortMode, setSortMode] = useState<WatchlistSort>('sector')
 
   const refreshing = isValidating && !isLoading
+
+  const refreshPrices = useCallback(() => {
+    void mutate()
+    void mutateFundamentals()
+  }, [mutate, mutateFundamentals])
+
+  useBackgroundPriceRefresh(marketOpen && stocks.length > 0, refreshPrices)
 
   useEffect(() => {
     setSortMode(loadSortMode())
@@ -343,30 +356,6 @@ export default function WatchlistPage() {
     }
     return { type: 'flat' as const, stocks: sortAlphabetical(stocks) }
   }, [stocks, sortMode, fundamentalsByTicker])
-
-  useEffect(() => {
-    if (!stocks.length || !marketOpen) {
-      setCountdown(REFRESH_SEC)
-      return
-    }
-    let secs = REFRESH_SEC
-    setCountdown(secs)
-    const tick = setInterval(() => {
-      secs -= 1
-      if (secs <= 0) {
-        mutate()
-        void mutateFundamentals()
-        secs = REFRESH_SEC
-      }
-      setCountdown(secs)
-    }, 1000)
-    return () => clearInterval(tick)
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [stocks.length > 0, marketOpen])
-
-  useEffect(() => {
-    if (!refreshing) setCountdown(REFRESH_SEC)
-  }, [refreshing])
 
   async function handleAdd(result: StockResult) {
     setError('')
@@ -412,12 +401,8 @@ export default function WatchlistPage() {
       <div className="min-h-screen bg-zinc-950">
         <AppNav
           onRefresh={() => {
-            void mutateFundamentals()
-            if (marketOpen) {
-              mutate()
-              setSuggestionsRefresh((n) => n + 1)
-            }
-            setCountdown(REFRESH_SEC)
+            refreshPrices()
+            if (marketOpen) setSuggestionsRefresh((n) => n + 1)
           }}
           refreshing={refreshing}
           marketOpen={marketOpen}
@@ -446,16 +431,6 @@ export default function WatchlistPage() {
             )}
           </div>
 
-          {!isLoading && stocks.length > 0 && (
-            <div className="flex justify-end mb-2">
-              <RefreshCountdown
-                seconds={countdown}
-                refreshing={refreshing}
-                marketOpen={marketOpen}
-              />
-            </div>
-          )}
-
           <WatchlistSuggestions
             ownedTickers={ownedTickers}
             onAdd={handleAdd}
@@ -483,10 +458,8 @@ export default function WatchlistPage() {
             <div>
               <LiveRefreshHeader
                 title="Your watchlist"
-                seconds={countdown}
                 refreshing={refreshing}
-                marketOpen={marketOpen}
-                showCountdown={false}
+                session={marketSession}
                 footer={
                   <WatchlistSortBar value={sortMode} onChange={setSortMode} />
                 }
@@ -499,6 +472,7 @@ export default function WatchlistPage() {
                     sector={sector}
                     stocks={sectorStocks}
                     onRemove={handleRemove}
+                    marketSession={marketSession}
                     fundamentalsByTicker={fundamentalsByTicker}
                     fundamentalsLoading={fundamentalsLoading}
                     defaultOpen
@@ -508,6 +482,7 @@ export default function WatchlistPage() {
                 <StockList
                   stocks={layout.stocks}
                   onRemove={handleRemove}
+                  marketSession={marketSession}
                   fundamentalsByTicker={fundamentalsByTicker}
                   fundamentalsLoading={fundamentalsLoading}
                 />

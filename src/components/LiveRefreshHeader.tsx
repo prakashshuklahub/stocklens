@@ -1,86 +1,33 @@
 'use client'
 
 import { RefreshCw } from 'lucide-react'
-import { liveRefreshSubtitle } from '@/lib/market-hours'
+import { liveRefreshSubtitle, type MarketSession } from '@/lib/market-hours'
 import { cn } from '@/lib/utils'
 
+/** Picks LLM polling — watchlist/portfolio use PRICE_REFRESH_MS instead. */
 export const LIVE_REFRESH_SEC = 15
-
-export function RefreshCountdown({
-  seconds,
-  refreshing,
-  marketOpen = true,
-  intervalSec = LIVE_REFRESH_SEC,
-}: {
-  seconds: number
-  refreshing: boolean
-  marketOpen?: boolean
-  intervalSec?: number
-}) {
-  const pct = marketOpen ? ((intervalSec - seconds) / intervalSec) * 100 : 0
-  return (
-    <div
-      className="flex items-center gap-2 shrink-0"
-      aria-live="polite"
-      aria-label={
-        !marketOpen
-          ? 'Market closed — showing prices from the last session'
-          : refreshing
-            ? 'Updating prices'
-            : `Prices refresh in ${seconds} seconds`
-      }
-    >
-      <div className="w-14 h-1 rounded-full bg-zinc-800 overflow-hidden">
-        <div
-          className={cn(
-            'h-full rounded-full transition-all duration-1000 ease-linear',
-            marketOpen ? 'bg-blue-500/60' : 'bg-zinc-600/40',
-          )}
-          style={{ width: `${pct}%` }}
-        />
-      </div>
-      <span className="text-xs tabular-nums text-zinc-500 min-w-[3.5rem] text-right">
-        {!marketOpen ? (
-          'Closed'
-        ) : refreshing ? (
-          <span className="inline-flex items-center gap-1">
-            <RefreshCw className="w-3 h-3 animate-spin" aria-hidden="true" />
-            Live
-          </span>
-        ) : (
-          `${seconds}s`
-        )}
-      </span>
-    </div>
-  )
-}
 
 interface LiveRefreshHeaderProps {
   title: string
   subtitle?: string
-  seconds: number
-  refreshing: boolean
-  marketOpen?: boolean
-  /** Show divider above (e.g. after another block) */
+  refreshing?: boolean
+  session?: MarketSession
   bordered?: boolean
   className?: string
-  /** Subtle row under subtitle (e.g. sort controls) */
   footer?: React.ReactNode
-  /** Show countdown on the right (default true) */
-  showCountdown?: boolean
 }
 
 export default function LiveRefreshHeader({
   title,
   subtitle,
-  seconds,
-  refreshing,
-  marketOpen = true,
+  refreshing = false,
+  session = 'regular',
   bordered = true,
   className,
   footer,
-  showCountdown = true,
 }: LiveRefreshHeaderProps) {
+  const priceLive = session !== 'closed'
+
   return (
     <div
       className={cn(
@@ -91,14 +38,18 @@ export default function LiveRefreshHeader({
     >
       <div className="min-w-0">
         <h2 className="section-label">{title}</h2>
-        <p className="text-xs text-zinc-600 mt-1">
-          {subtitle ?? liveRefreshSubtitle(LIVE_REFRESH_SEC, marketOpen)}
+        <p className="text-xs text-zinc-600 mt-1" aria-live="polite">
+          {refreshing && priceLive ? (
+            <span className="inline-flex items-center gap-1">
+              <RefreshCw className="w-3 h-3 animate-spin" aria-hidden="true" />
+              Updating prices…
+            </span>
+          ) : (
+            subtitle ?? liveRefreshSubtitle(session)
+          )}
         </p>
         {footer}
       </div>
-      {showCountdown && (
-        <RefreshCountdown seconds={seconds} refreshing={refreshing} marketOpen={marketOpen} />
-      )}
     </div>
   )
 }

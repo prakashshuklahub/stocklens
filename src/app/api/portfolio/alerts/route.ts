@@ -1,7 +1,7 @@
 import { auth, getSessionUserId } from '@/lib/auth'
 import { loadFundamentalsForTickers } from '@/lib/load-fundamentals'
 import { fetchLivePricesForTickers } from '@/lib/live-prices'
-import { isUSMarketOpen } from '@/lib/market-hours'
+import { isPriceRefreshActive, isUSMarketOpen } from '@/lib/market-hours'
 import { generateSellReview, isLLMEnabled } from '@/lib/llm'
 import {
   loadFreshNarratives,
@@ -30,7 +30,7 @@ const LOG_PREFIX = 'portfolio/alerts'
 
 export async function GET(req: NextRequest) {
   const marketOpen = isUSMarketOpen()
-  const forceRefresh = req.nextUrl.searchParams.get('refresh') === '1' && marketOpen
+  const forceRefresh = req.nextUrl.searchParams.get('refresh') === '1' && isPriceRefreshActive()
   const session = await auth()
   const userId = getSessionUserId(session)
   if (!userId) return NextResponse.json({ error: 'Session invalid — please sign in again' }, { status: 401 })

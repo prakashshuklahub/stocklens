@@ -4,6 +4,7 @@ import { useState, useRef, useEffect } from 'react'
 import { MoreVertical, Trash2, ChevronDown } from 'lucide-react'
 import useSWR from 'swr'
 import StockLogo from '@/components/StockLogo'
+import SessionPriceBadge from '@/components/SessionPriceBadge'
 import Week52Range from '@/components/Week52Range'
 import {
   computeTargetUpsidePct,
@@ -13,6 +14,7 @@ import {
   hasDisplayTargetPrice,
   targetPriceSubline,
 } from '@/lib/target-price-display'
+import { priceBadgeSession, type MarketSession } from '@/lib/market-hours'
 import { cn } from '@/lib/utils'
 import type { StockFundamentals, StockSnapshot } from '@/types'
 
@@ -42,6 +44,8 @@ export interface WatchlistStock {
 interface Props {
   stock: WatchlistStock
   onRemove: (ticker: string) => void
+  /** Client clock session — fallback for Closed / Pre-market badges. */
+  marketSession?: MarketSession
   /** When provided (watchlist batch load), skips per-card fundamentals fetch. */
   fundamentals?: StockFundamentals | null
   fundamentalsLoading?: boolean
@@ -263,6 +267,7 @@ function CollapsedSummary({
 export default function WatchlistCard({
   stock,
   onRemove,
+  marketSession = 'regular',
   fundamentals: fundamentalsProp,
   fundamentalsLoading: fundamentalsLoadingProp,
 }: Props) {
@@ -308,6 +313,7 @@ export default function WatchlistCard({
   const pct = fmtPct(snap?.change_1d_pct)
   const isUp = (snap?.change_1d_pct ?? 0) >= 0
   const currentPrice = snap?.price ?? null
+  const badgeSession = priceBadgeSession(snap?.session, marketSession)
 
   if (confirming) {
     return (
@@ -361,7 +367,12 @@ export default function WatchlistCard({
           <div className="text-right shrink-0">
             {price ? (
               <>
-                <p className="text-lg font-bold text-white tabular-nums leading-tight">{price}</p>
+                <div className="flex items-center justify-end gap-1.5">
+                  <p className="text-lg font-bold text-white tabular-nums leading-tight">{price}</p>
+                  {badgeSession && (
+                    <SessionPriceBadge session={badgeSession} />
+                  )}
+                </div>
                 {pct && (
                   <p className={cn('text-sm font-semibold tabular-nums mt-0.5', isUp ? 'text-emerald-400' : 'text-red-400')}>
                     {pct}

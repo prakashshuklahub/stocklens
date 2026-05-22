@@ -1,6 +1,6 @@
 import { auth, getSessionUserId } from '@/lib/auth'
 import { fetchStockSnapshotsForTickers } from '@/lib/live-prices'
-import { isUSMarketOpen } from '@/lib/market-hours'
+import { isPriceRefreshActive } from '@/lib/market-hours'
 import { resolveSectorForTicker } from '@/lib/sectors'
 import { ensureLogosForTickers } from '@/lib/stock-logo-cache'
 import { createServerClient } from '@/lib/supabase'
@@ -24,8 +24,8 @@ export async function GET() {
   if (!stocks?.length) return NextResponse.json([])
 
   const tickers = stocks.map((s) => s.ticker)
-  const marketOpen = isUSMarketOpen()
-  const prices = await fetchStockSnapshotsForTickers(tickers, marketOpen)
+  const priceLive = isPriceRefreshActive()
+  const prices = await fetchStockSnapshotsForTickers(tickers)
 
   const enriched = stocks.map((s) => ({
     ...s,
@@ -38,8 +38,8 @@ export async function GET() {
 
   return NextResponse.json(enriched, {
     headers: {
-      'X-Market-Open': marketOpen ? '1' : '0',
-      'Cache-Control': marketOpen ? 'private, no-store' : 'private, max-age=3600',
+      'X-Market-Open': priceLive ? '1' : '0',
+      'Cache-Control': priceLive ? 'private, no-store' : 'private, max-age=3600',
     },
   })
 }

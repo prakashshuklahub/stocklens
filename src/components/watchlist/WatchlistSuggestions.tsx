@@ -4,7 +4,7 @@ import { useMemo, useState } from 'react'
 import useSWR from 'swr'
 import { ChevronDown, Flame, Plus } from 'lucide-react'
 import StockLogo from '@/components/StockLogo'
-import { LIVE_REFRESH_SEC } from '@/components/LiveRefreshHeader'
+import { PRICE_REFRESH_MS } from '@/lib/market-hours'
 import { cn } from '@/lib/utils'
 import type { WatchlistSuggestionsResponse } from '@/types'
 import type { StockResult } from '@/components/watchlist/StockSearchInput'
@@ -45,7 +45,7 @@ export default function WatchlistSuggestions({
   const { data, isLoading, error } = useSWR<WatchlistSuggestionsResponse>(url, fetcher, {
     revalidateOnFocus: false,
     dedupingInterval: 0,
-    refreshInterval: marketOpen ? LIVE_REFRESH_SEC * 1000 : 0,
+    refreshInterval: marketOpen ? PRICE_REFRESH_MS : 0,
   })
 
   const [open, setOpen] = useState(false)
@@ -177,7 +177,7 @@ export default function WatchlistSuggestions({
                 )}
               >
                 <Plus className="w-4 h-4" aria-hidden="true" />
-                {s.sector && s.sector !== 'Other' ? `Add to ${s.sector}` : 'Add to watchlist'}
+                Add to watchlist
               </button>
             </li>
             )
@@ -187,7 +187,7 @@ export default function WatchlistSuggestions({
 
       {data?.generated_at && !isLoading && visible.length > 0 && (
         <p className="text-xs text-zinc-600 mt-3 leading-relaxed">
-          Prices refresh every {LIVE_REFRESH_SEC}s when market is open
+          Prices update during pre-market, regular, and after-hours
           {data.scanned_count > 0 && ` · ${data.scanned_count} screened`}
           {' · '}picks rescan every 3h
           {data.llm_enabled ? ' · AI blurbs' : ''}

@@ -1,6 +1,6 @@
 'use client'
 
-import { useCallback, useEffect, useRef, useState } from 'react'
+import { useCallback, useRef, useState } from 'react'
 import useSWR from 'swr'
 import * as XLSX from 'xlsx'
 import {
@@ -16,12 +16,15 @@ import {
   Eye,
 } from 'lucide-react'
 import AppNav from '@/components/AppNav'
+import SessionPriceBadge from '@/components/SessionPriceBadge'
 import StockLogo from '@/components/StockLogo'
-import LiveRefreshHeader, { LIVE_REFRESH_SEC } from '@/components/LiveRefreshHeader'
-import { useMarketOpen } from '@/hooks/useMarketOpen'
+import LiveRefreshHeader from '@/components/LiveRefreshHeader'
+import { useMarketOpen, useMarketSession } from '@/hooks/useMarketOpen'
+import { useBackgroundPriceRefresh } from '@/hooks/useBackgroundPriceRefresh'
 import { PORTFOLIO_ALERT_DEMO } from '@/lib/portfolio-alerts'
 import { createMarketAwareFetcher } from '@/lib/swr-market-fetcher'
-import { formatSnapshotAsOfET } from '@/lib/market-hours'
+import type { MarketSession } from '@/lib/market-hours'
+import { formatSnapshotAsOfET, priceBadgeSession } from '@/lib/market-hours'
 import { cn } from '@/lib/utils'
 import type {
   PortfolioAlert,
@@ -38,7 +41,6 @@ const fetcher = async (url: string) => {
   if (!res.ok) throw new Error('Request failed')
   return res.json()
 }
-const REFRESH_SEC = LIVE_REFRESH_SEC
 
 function fmt(n: number, decimals = 2) {
   return n.toLocaleString('en-US', { minimumFractionDigits: decimals, maximumFractionDigits: decimals })
@@ -75,10 +77,10 @@ function parseVestedXlsx(file: File): Promise<VestedRow[]> {
 // ── Summary card ──────────────────────────────────────────────────────────────
 function SummaryBar({
   holdings,
-  marketOpen,
+  session,
 }: {
   holdings: PortfolioHoldingWithPrice[]
-  marketOpen: boolean
+  session: MarketSession
 }) {
   let totalInvested = 0
   let totalCurrent = 0
@@ -97,7 +99,8 @@ function SummaryBar({
   const pnl = totalCurrent - totalInvested
   const pnlPct = totalInvested ? (pnl / totalInvested) * 100 : 0
   const isPos = pnl >= 0
-  const asOfLabel = !marketOpen ? formatSnapshotAsOfET(latestAsOf) : null
+  const asOfLabel = session === 'closed' ? formatSnapshotAsOfET(latestAsOf) : null
+  const sessionBadge = session !== 'regular' ? session : null
 
   return (
     <div className="card-surface px-4 py-3 mb-4">
@@ -105,8 +108,11 @@ function SummaryBar({
       <div className="flex items-end justify-between gap-2">
         <div>
           <p className="text-2xl font-black text-white tabular-nums leading-none">${fmt(totalCurrent)}</p>
-          {asOfLabel && (
-            <p className="text-[10px] text-zinc-600 mt-1">{asOfLabel}</p>
+          {(sessionBadge || asOfLabel) && (
+            <p className="text-[10px] text-zinc-600 mt-1 flex items-center gap-1.5 flex-wrap">
+              {sessionBadge && <SessionPriceBadge session={sessionBadge} />}
+              {asOfLabel && <span>{asOfLabel}</span>}
+            </p>
           )}
         </div>
         <span className={cn(
@@ -139,7 +145,13 @@ function SummaryBar({
 }
 
 // ── Holding card ──────────────────────────────────────────────────────────────
-function HoldingCard({ h }: { h: PortfolioHoldingWithPrice }) {
+function HoldingCard({
+  h,
+  marketSession,
+}: {
+  h: PortfolioHoldingWithPrice
+  marketSession: MarketSession
+}) {
   const price = h.snapshot?.price ?? null
   const currentValue = price != null ? price * h.quantity : null
   const invested = h.avg_cost_basis * h.quantity
@@ -147,6 +159,7 @@ function HoldingCard({ h }: { h: PortfolioHoldingWithPrice }) {
   const pnlPct = invested && pnl != null ? (pnl / invested) * 100 : null
   const isPos = pnl != null ? pnl >= 0 : null
   const change1d = h.snapshot?.change_1d_pct ?? null
+  const badgeSession = priceBadgeSession(h.snapshot?.session, marketSession)
 
   return (
     <div className="card-surface px-5 py-4 flex items-center gap-3 active:scale-[0.99] active:brightness-95 transition-all duration-100">
@@ -168,6 +181,9 @@ function HoldingCard({ h }: { h: PortfolioHoldingWithPrice }) {
           <span className="text-[15px] font-bold text-white tabular-nums">
             {price != null ? `$${fmt(price)}` : '—'}
           </span>
+          {badgeSession && price != null && (
+            <SessionPriceBadge session={badgeSession} />
+          )}
         </div>
         {change1d != null && (
           <p className={cn('text-xs tabular-nums font-semibold mt-0.5', change1d >= 0 ? 'text-emerald-400' : 'text-red-400')}>
@@ -449,11 +465,11 @@ export default function PortfolioPage() {
   const [parseError, setParseError] = useState('')
   const [saving, setSaving] = useState(false)
   const [savedAt, setSavedAt] = useState<string | null>(null)
-  const [countdown, setCountdown] = useState(REFRESH_SEC)
   const [showPreview, setShowPreview] = useState(false)
   const [manualRefresh, setManualRefresh] = useState(false)
 
   const marketOpen = useMarketOpen()
+  const marketSession = useMarketSession()
 
   const {
     data: holdings = [],
@@ -482,7 +498,6 @@ export default function PortfolioPage() {
   const handleRefresh = useCallback(async () => {
     if (!marketOpen) return
     setManualRefresh(true)
-    setCountdown(REFRESH_SEC)
     try {
       await mutate()
       if (holdings.length > 0) {
@@ -499,31 +514,12 @@ export default function PortfolioPage() {
     }
   }, [holdings.length, marketOpen, mutate, mutateAlerts])
 
-  // 15-second countdown that triggers a price refresh
-  useEffect(() => {
-    if (!holdings.length || !marketOpen) {
-      setCountdown(REFRESH_SEC)
-      return
-    }
-    let secs = REFRESH_SEC
-    setCountdown(secs)
-    const tick = setInterval(() => {
-      secs -= 1
-      if (secs <= 0) {
-        mutate()
-        if (holdings.length > 0) mutateAlerts()
-        secs = REFRESH_SEC
-      }
-      setCountdown(secs)
-    }, 1000)
-    return () => clearInterval(tick)
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [holdings.length > 0, marketOpen])
+  const refreshPrices = useCallback(() => {
+    void mutate()
+    if (holdings.length > 0) void mutateAlerts()
+  }, [holdings.length, mutate, mutateAlerts])
 
-  // Reset timer to full when a refresh completes
-  useEffect(() => {
-    if (!refreshing) setCountdown(REFRESH_SEC)
-  }, [refreshing])
+  useBackgroundPriceRefresh(marketOpen && holdings.length > 0, refreshPrices)
 
   async function handleFileChange(e: React.ChangeEvent<HTMLInputElement>) {
     const file = e.target.files?.[0]
@@ -701,7 +697,7 @@ export default function PortfolioPage() {
             </div>
           ) : (
             <>
-              <SummaryBar holdings={holdings} marketOpen={marketOpen} />
+              <SummaryBar holdings={holdings} session={marketSession} />
 
               <AlertsSection
                 alerts={alertsData?.alerts ?? []}
@@ -713,14 +709,13 @@ export default function PortfolioPage() {
 
               <LiveRefreshHeader
                 title="Your holdings"
-                seconds={countdown}
                 refreshing={refreshing}
-                marketOpen={marketOpen}
+                session={marketSession}
               />
 
               <div className="space-y-2">
                 {holdings.map((h) => (
-                  <HoldingCard key={h.id} h={h} />
+                  <HoldingCard key={h.id} h={h} marketSession={marketSession} />
                 ))}
               </div>
             </>

@@ -1,3 +1,7 @@
+import type { MarketSession } from '@/lib/market-hours'
+
+export type { MarketSession }
+
 export interface User {
   id: string
   email: string
@@ -24,9 +28,11 @@ export interface WatchlistStock {
 export interface StockSnapshot {
   price: number | null
   change_1d_pct: number | null
-  /** true during US regular session (9:30 AM–4:00 PM ET) */
+  /** pre | regular | post | closed — from Yahoo marketState */
+  session?: MarketSession
+  /** @deprecated use session !== 'closed' */
   is_live?: boolean
-  /** Unix ms when price was last set (Yahoo regularMarketTime) */
+  /** Unix ms when price was last set */
   as_of?: number | null
 }
 
@@ -162,7 +168,10 @@ export interface Pick {
 
 export interface PicksResponse {
   picks: Pick[]
-  generated_at: string
+  /** When prices, scores, and ranking were last computed */
+  scores_at: string
+  /** When pick summaries were last generated (3h narrative cache) */
+  narratives_at: string | null
   llm_enabled: boolean
 }
 

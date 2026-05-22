@@ -1,7 +1,7 @@
 import { auth, getSessionUserId } from '@/lib/auth'
 import { fetchStockFundamentals, mapPool } from '@/lib/fundamentals-fetch'
 import { fetchLivePricesForTickers } from '@/lib/live-prices'
-import { isUSMarketOpen } from '@/lib/market-hours'
+import { isPriceRefreshActive } from '@/lib/market-hours'
 import { ensureLogosForTickers } from '@/lib/stock-logo-cache'
 import { fetchYahooSector } from '@/lib/sectors'
 import { fetchMarketMovers } from '@/lib/market-movers'
@@ -289,7 +289,7 @@ export async function GET(req: NextRequest) {
   return NextResponse.json(response, {
     headers: {
       ...NO_CACHE,
-      'X-Market-Open': isUSMarketOpen() ? '1' : '0',
+      'X-Market-Open': isPriceRefreshActive() ? '1' : '0',
     },
   })
 }

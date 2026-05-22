@@ -17,11 +17,19 @@ interface AppNavProps {
   onRefresh?: () => void
   refreshing?: boolean
   showRefresh?: boolean
-  /** When false, manual refresh is disabled (outside US regular session). */
-  marketOpen?: boolean
+  /** When false, manual refresh is disabled (overnight / weekend). */
+  priceRefreshActive?: boolean
 }
 
-export default function AppNav({ onRefresh, refreshing, showRefresh, marketOpen = true }: AppNavProps) {
+export default function AppNav({
+  onRefresh,
+  refreshing,
+  showRefresh,
+  priceRefreshActive = true,
+  /** @deprecated use priceRefreshActive */
+  marketOpen,
+}: AppNavProps & { marketOpen?: boolean }) {
+  const canRefresh = priceRefreshActive ?? marketOpen ?? true
   const { data: session } = useSession()
   const pathname = usePathname()
   const user = session?.user
@@ -47,12 +55,12 @@ export default function AppNav({ onRefresh, refreshing, showRefresh, marketOpen 
             {showRefresh && (
               <button
                 onClick={onRefresh}
-                disabled={refreshing || !marketOpen}
-                aria-label={marketOpen ? 'Refresh data' : 'Refresh unavailable — US market closed'}
-                title={marketOpen ? undefined : 'Refreshes during market hours (9:30 AM–4:00 PM ET)'}
+                disabled={refreshing || !canRefresh}
+                aria-label={canRefresh ? 'Refresh data' : 'Refresh unavailable — market closed'}
+                title={canRefresh ? undefined : 'Refreshes during pre-market, regular, and after-hours (4 AM–8 PM ET)'}
                 className={cn(
                   'w-11 h-11 flex items-center justify-center rounded-xl transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-zinc-500 [touch-action:manipulation]',
-                  marketOpen
+                  canRefresh
                     ? 'text-zinc-500 hover:text-zinc-300 active:bg-zinc-800/80'
                     : 'text-zinc-700 cursor-not-allowed opacity-50',
                 )}
