@@ -188,7 +188,7 @@ function PickCardHeroStats({
       <div className="h-px bg-blue-500/10" />
       <div className="flex flex-wrap items-center justify-between gap-2">
         <div className="flex items-baseline gap-2">
-          <span className="text-[10px] font-bold uppercase tracking-wide text-blue-400/55">Room</span>
+          <span className="text-[10px] font-bold uppercase tracking-wide text-blue-400/55">Room to grow</span>
           <span className={cn(
             'text-base font-black tabular-nums',
             upsidePct == null ? 'text-zinc-500' : isPos ? 'text-emerald-400' : 'text-red-400',
