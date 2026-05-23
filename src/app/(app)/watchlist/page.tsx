@@ -103,17 +103,22 @@ function WatchlistSortBar({
   const options: { id: WatchlistSort; label: string }[] = [
     { id: 'sector', label: 'Sector' },
     { id: 'day_change', label: 'Day %' },
-    { id: 'vs_sector', label: 'Sector strength' },
+    { id: 'vs_sector', label: 'Vs sector' },
     { id: 'target_upside', label: 'Room to grow' },
     { id: 'alphabetical', label: 'A–Z' },
   ]
 
   return (
     <div
-      className="flex items-center flex-nowrap gap-x-0 mt-2.5"
+      className={cn(
+        '-mx-[var(--page-px)] px-[var(--page-px)] mt-2.5',
+        'overflow-x-auto overscroll-x-contain',
+        '[scrollbar-width:none] [-ms-overflow-style:none] [&::-webkit-scrollbar]:hidden',
+      )}
       role="group"
       aria-label="Sort watchlist"
     >
+      <div className="flex items-center flex-nowrap w-max min-w-full pb-0.5">
       {options.map((opt, i) => {
         const active = value === opt.id
         return (
@@ -128,18 +133,26 @@ function WatchlistSortBar({
               aria-pressed={active}
               onClick={() => onChange(opt.id)}
               className={cn(
-                'relative min-h-[44px] px-1.5 text-base sm:text-sm transition-colors [touch-action:manipulation]',
-                'after:absolute after:left-1.5 after:right-1.5 after:bottom-2 after:h-0.5 after:rounded-full after:transition-opacity',
+                'relative min-h-[44px] px-1 sm:px-1.5 whitespace-nowrap text-sm sm:text-sm transition-colors [touch-action:manipulation]',
+                'after:absolute after:left-1 after:right-1 sm:after:left-1.5 sm:after:right-1.5 after:bottom-2 after:h-0.5 after:rounded-full after:transition-opacity',
                 active
                   ? 'text-zinc-300 font-semibold after:bg-zinc-500/80 after:opacity-100'
                   : 'text-zinc-500 after:opacity-0 active:text-zinc-400',
               )}
             >
-              {opt.label}
+              {opt.id === 'target_upside' ? (
+                <>
+                  <span className="sm:hidden">Room</span>
+                  <span className="hidden sm:inline">Room to grow</span>
+                </>
+              ) : (
+                opt.label
+              )}
             </button>
           </span>
         )
       })}
+      </div>
     </div>
   )
 }

@@ -3,13 +3,11 @@
 import type { MarketSession } from '@/lib/market-hours'
 import {
   computeLiveD1Window,
-  computeRsScoreWithD1,
   d1VsSectorFootnote,
   d1VsSectorLabel,
   regularSessionChange1d,
-  relativeStrengthUserCopy,
-  sectorEtfSubtitle,
   vsSectorBadgeLabel,
+  sectorEtfSubtitle,
 } from '@/lib/sector-relative-strength'
 import { isBenchmarkableSector, normalizeWatchlistSector } from '@/lib/sector-relative-strength-scoring'
 import { cn } from '@/lib/utils'
@@ -74,8 +72,7 @@ export function vsSectorCollapsedPreview(
     return `${badge} · ${dir} ${fmtPct(Math.abs(delta), false)}`
   }
   if (badge) return badge
-  const rsCopy = vsSector.rs_score != null ? relativeStrengthUserCopy(vsSector.rs_score) : null
-  return rsCopy?.tier ?? 'Sector comparison'
+  return 'Sector comparison'
 }
 
 export default function VsSectorPanel({
@@ -117,22 +114,12 @@ export default function VsSectorPanel({
     regularChange1dPct ??
     regularSessionChange1d(stockChange1d, snapshotSession)
   const d1Window = computeLiveD1Window(stockRegular1d, sectorBenchmark ?? null)
-  const rsScore =
-    d1Window != null
-      ? computeRsScoreWithD1({
-          d1: d1Window,
-          d7: vsSector.windows.d7,
-          d14: vsSector.windows.d14,
-          d30: vsSector.windows.d30,
-        })
-      : vsSector.rs_score
 
   const primaryDelta = vsSector.windows.d7?.delta ?? vsSector.windows.d30?.delta ?? null
   const badgeLabel = vsSectorBadgeLabel(vsSector.badge)
   const etf = vsSector.benchmark_ticker ?? sectorBenchmark?.benchmark_ticker
   const d1Label = d1VsSectorLabel(marketSession)
   const d1Footnote = d1VsSectorFootnote(marketSession)
-  const strengthCopy = rsScore != null ? relativeStrengthUserCopy(rsScore) : null
 
   return (
     <div className="rounded-lg bg-zinc-900/60 px-3 py-2.5 space-y-2 border border-white/[0.04]">
@@ -177,16 +164,6 @@ export default function VsSectorPanel({
       <VsSectorWindowRow label="Past month" window={vsSector.windows.d30} />
       {d1Window && (
         <VsSectorWindowRow label={d1Label} window={d1Window} />
-      )}
-
-      {strengthCopy && (
-        <div className="pt-2 border-t border-white/[0.04] space-y-0.5">
-          <p className="type-meta font-medium text-zinc-400">{strengthCopy.title}</p>
-          <p className="text-sm font-bold text-zinc-200 tabular-nums">{strengthCopy.tier}</p>
-          <p className="type-meta text-zinc-500 leading-relaxed [text-wrap:pretty]">
-            {strengthCopy.hint}
-          </p>
-        </div>
       )}
 
       {d1Footnote && (

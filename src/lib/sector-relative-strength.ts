@@ -259,7 +259,7 @@ export function relativeStrengthUserCopy(score: number): {
   }
   return {
     title: 'Compared to its sector',
-    tier: `${tier} · ${score}/100`,
+    tier,
     hint,
   }
 }
