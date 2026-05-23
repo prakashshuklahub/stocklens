@@ -89,7 +89,7 @@ function sourceStyles(source: PickSourceTag): string {
   }
 }
 
-function ConfidenceBadge({ level, compact = false }: { level: 'high' | 'medium' | 'low'; compact?: boolean }) {
+function ConfidenceBadge({ level }: { level: 'high' | 'medium' | 'low' }) {
   const config = {
     high: { label: 'High confidence', styles: 'bg-emerald-500/15 text-emerald-300' },
     medium: { label: 'Medium confidence', styles: 'bg-yellow-500/15 text-yellow-300' },
@@ -99,12 +99,12 @@ function ConfidenceBadge({ level, compact = false }: { level: 'high' | 'medium' 
     <span
       aria-label={`${config.label} confidence`}
       className={cn(
-        'shrink-0 whitespace-nowrap font-bold uppercase tracking-wide rounded-full',
-        compact ? 'text-[9px] px-2 py-1' : 'text-xs px-3 py-1.5',
+        'shrink-0 whitespace-nowrap text-xs font-bold uppercase tracking-wide',
+        'px-3 py-1.5 rounded-full',
         config.styles,
       )}
     >
-      {compact ? config.label.replace(' confidence', '') : config.label}
+      {config.label}
     </span>
   )
 }
@@ -124,11 +124,11 @@ function FactorChip({ factor }: { factor: PickFactor }) {
 
 function MomentumStrip({ pick }: { pick: Pick }) {
   return (
-    <div className="grid grid-cols-3 gap-3 pt-3 border-t border-white/[0.06]">
+    <div className="grid grid-cols-3 gap-2 pt-2 border-t border-white/[0.04]">
       <div>
         <p className="text-[10px] font-semibold text-zinc-500 uppercase tracking-wide">Today</p>
         <p className={cn(
-          'text-base font-bold tabular-nums mt-0.5',
+          'text-sm font-bold tabular-nums',
           pick.change_1d_pct == null ? 'text-zinc-500' :
           pick.change_1d_pct >= 0 ? 'text-emerald-400' : 'text-red-400',
         )}>
@@ -136,12 +136,9 @@ function MomentumStrip({ pick }: { pick: Pick }) {
         </p>
       </div>
       <div className="text-center">
-        <p className="text-[10px] font-semibold text-zinc-500 uppercase tracking-wide">
-          <span className="sm:hidden">2 wk</span>
-          <span className="hidden sm:inline">Past 2 weeks</span>
-        </p>
+        <p className="text-[10px] font-semibold text-zinc-500 uppercase tracking-wide">Past 2 weeks</p>
         <p className={cn(
-          'text-base font-bold tabular-nums mt-0.5',
+          'text-sm font-bold tabular-nums',
           pick.change_14d_pct == null ? 'text-zinc-500' :
           pick.change_14d_pct >= 0 ? 'text-emerald-400' : 'text-red-400',
         )}>
@@ -149,12 +146,9 @@ function MomentumStrip({ pick }: { pick: Pick }) {
         </p>
       </div>
       <div className="text-right">
-        <p className="text-[10px] font-semibold text-zinc-500 uppercase tracking-wide">
-          <span className="sm:hidden">1 mo</span>
-          <span className="hidden sm:inline">Past month</span>
-        </p>
+        <p className="text-[10px] font-semibold text-zinc-500 uppercase tracking-wide">Past month</p>
         <p className={cn(
-          'text-base font-bold tabular-nums mt-0.5',
+          'text-sm font-bold tabular-nums',
           pick.change_30d_pct == null ? 'text-zinc-500' :
           pick.change_30d_pct >= 0 ? 'text-emerald-400' : 'text-red-400',
         )}>
@@ -176,7 +170,7 @@ function VsSectorPanel({ pick }: { pick: Pick }) {
   const sectorName = pick.sector ?? 'sector'
 
   return (
-    <div className="rounded-xl bg-zinc-900/80 border border-white/[0.04] px-4 py-3.5 mt-3">
+    <div className="rounded-xl bg-zinc-900/80 border border-white/[0.04] px-3.5 py-3">
       <div className="flex items-start justify-between gap-2">
         <div className="min-w-0">
           <p className="text-[10px] font-semibold text-zinc-500 uppercase tracking-wide mb-1">
@@ -224,6 +218,7 @@ function PickCard({ pick, rank }: { pick: Pick; rank: number }) {
   const upsidePct = showTarget ? pick.upside_pct : null
   const isPos = upsidePct != null && upsidePct >= 0
   const targetCopy = pickDisplayCopy(pick.target_label)
+  const subline = showTarget ? targetCopy.targetSub : null
   const showAnalystRange =
     showTarget &&
     pick.target_low != null &&
@@ -236,80 +231,95 @@ function PickCard({ pick, rank }: { pick: Pick; rank: number }) {
         type="button"
         onClick={() => setOpen((o) => !o)}
         aria-expanded={open}
-        className="w-full text-left px-4 py-3.5 active:bg-zinc-800/60 transition-colors [touch-action:manipulation]"
+        className="w-full text-left px-5 py-4 active:bg-zinc-800/60 transition-colors [touch-action:manipulation]"
       >
-        <div className="mb-3 space-y-2">
-          <div className="flex items-start gap-2.5 min-w-0">
-            <span className="text-[11px] font-bold text-zinc-500 tabular-nums w-5 pt-0.5">#{rank}</span>
+        <div className="flex items-start justify-between gap-2 mb-3">
+          <div className="flex items-center gap-2.5 min-w-0 flex-1">
+            <span className="text-[11px] font-bold text-zinc-500 tabular-nums w-5">#{rank}</span>
             <StockLogo ticker={pick.ticker} size="sm" />
-            <div className="min-w-0 flex-1">
-              <div className="flex items-baseline gap-2">
+            <div className="min-w-0">
+              <div className="flex items-baseline gap-2 flex-wrap">
                 <span className="text-base font-bold text-white tracking-tight" translate="no">
                   {pick.ticker}
                 </span>
-                <span className="text-xs text-zinc-500 truncate min-w-0">{pick.company_name}</span>
+                <span className="text-xs text-zinc-500 truncate">{pick.company_name}</span>
+              </div>
+              <div className="flex items-center gap-1.5 mt-1 flex-wrap">
+                <span className="text-[11px] text-zinc-600">{pick.sector ?? 'Unknown'}</span>
+                <span className="text-[11px] text-zinc-600 tabular-nums">
+                  · {pick.analyst_total} analyst{pick.analyst_total === 1 ? '' : 's'}
+                </span>
+                <span className={cn('text-[10px] font-bold uppercase tracking-wide px-2 py-0.5 rounded-full', sourceStyles(pick.source))}>
+                  {sourceLabel(pick.source)}
+                </span>
               </div>
             </div>
           </div>
-          <div className="flex items-center justify-between gap-2 pl-[2.125rem]">
-            <div className="flex items-center gap-1.5 flex-wrap min-w-0">
-              <span className="text-[11px] text-zinc-600">{pick.sector ?? 'Unknown'}</span>
-              <span className="text-[11px] text-zinc-600 tabular-nums">
-                · {pick.analyst_total} analyst{pick.analyst_total === 1 ? '' : 's'}
-              </span>
-              <span className={cn('text-[10px] font-bold uppercase tracking-wide px-2 py-0.5 rounded-full', sourceStyles(pick.source))}>
-                {sourceLabel(pick.source)}
-              </span>
-            </div>
-            <ConfidenceBadge level={pick.confidence} compact />
-          </div>
+          <ConfidenceBadge level={pick.confidence} />
         </div>
 
-        <div className="bg-zinc-800/50 rounded-xl px-4 py-3.5 space-y-3">
-          <div className="flex items-end justify-between gap-4">
-            <div className="min-w-0">
-              <p className="text-[10px] font-semibold text-zinc-500 uppercase tracking-wide">Current</p>
-              <p className="text-xl font-bold text-white tabular-nums leading-tight mt-0.5">
-                ${fmt(pick.current_price)}
+        <div className="bg-zinc-800/50 rounded-xl px-3.5 py-3 space-y-2.5">
+          <div className="grid grid-cols-2 gap-y-2.5 gap-x-3">
+            <div>
+              <p className="text-[10px] font-semibold text-zinc-500 uppercase tracking-wide">Price to buy</p>
+              <p className="text-sm font-bold text-white tabular-nums leading-tight">
+                ${fmt(pick.entry_low)} – ${fmt(pick.entry_high)}
               </p>
-              <p className="text-[11px] text-zinc-500 tabular-nums mt-1 leading-snug">
-                Buy zone ${fmt(pick.entry_low)} – ${fmt(pick.entry_high)}
-              </p>
+              <p className="text-[11px] text-zinc-500 tabular-nums">Current ${fmt(pick.current_price)}</p>
             </div>
-            <div className="text-right shrink-0">
-              <p className="text-[10px] font-semibold text-zinc-500 uppercase tracking-wide">Upside</p>
+            <div className="text-right">
+              <p className="text-[10px] font-semibold text-zinc-500 uppercase tracking-wide">
+                {targetCopy.targetHeading}
+              </p>
               <p className={cn(
-                'text-xl font-bold tabular-nums leading-tight mt-0.5',
+                'text-sm font-bold tabular-nums leading-tight',
+                showTarget ? 'text-white' : 'text-zinc-500',
+              )}>
+                {showTarget ? formatTargetPrice(pick.target_mean) : TARGET_UNAVAILABLE}
+              </p>
+              {subline && <p className="text-[11px] text-zinc-500">{subline}</p>}
+              {showAnalystRange && (
+                <p className="text-[10px] text-zinc-600 tabular-nums mt-0.5">
+                  Range ${fmt(pick.target_low!)} – ${fmt(pick.target_high!)}
+                </p>
+              )}
+            </div>
+            <div>
+              <p className="text-[10px] font-semibold text-zinc-500 uppercase tracking-wide">Room to grow</p>
+              <p className={cn(
+                'text-sm font-bold tabular-nums leading-tight',
                 upsidePct == null ? 'text-zinc-500' : isPos ? 'text-emerald-400' : 'text-red-400',
               )}>
                 {formatUpsidePct(upsidePct)}
               </p>
-              {showTarget ? (
-                <p className="text-[11px] text-zinc-500 tabular-nums mt-1 leading-snug">
-                  {formatUpsideDollar(pick.target_mean, pick.current_price)} to {formatTargetPrice(pick.target_mean)}
-                </p>
-              ) : (
-                <p className="text-[11px] text-zinc-500 mt-1">{TARGET_UNAVAILABLE}</p>
-              )}
+              <p className="text-[11px] text-zinc-500 tabular-nums">
+                {showTarget
+                  ? `${formatUpsideDollar(pick.target_mean, pick.current_price)} ${targetCopy.upsideSub}`
+                  : TARGET_UNAVAILABLE}
+              </p>
+            </div>
+            <div className="text-right">
+              <p className="text-[10px] font-semibold text-zinc-500 uppercase tracking-wide">Analyst views</p>
+              <p className="text-sm font-bold text-white tabular-nums leading-tight">
+                {pick.analyst_buy} say buy
+              </p>
+              <p className="text-[11px] text-zinc-500 tabular-nums">
+                out of {pick.analyst_total}
+              </p>
             </div>
           </div>
-
-          <p className="text-xs text-zinc-400 tabular-nums">
-            <span className="text-zinc-200 font-semibold">{pick.analyst_buy}</span>
-            {' '}of {pick.analyst_total} analysts say buy
-          </p>
 
           <MomentumStrip pick={pick} />
 
           {(pick.volume_ratio != null && pick.volume_ratio >= 1.3) && (
-            <div className="flex items-center gap-2 text-[11px] pt-0.5">
+            <div className="flex items-center gap-2 text-[11px]">
               <BarChart3 className="w-3.5 h-3.5 text-amber-400 shrink-0" aria-hidden="true" />
-              <span className="text-zinc-400 leading-snug">
-                Volume{' '}
+              <span className="text-zinc-400">
+                Trading volume is{' '}
                 <span className="text-amber-300 font-semibold tabular-nums">
                   {pick.volume_ratio.toFixed(1)}×
                 </span>
-                {' '}usual
+                {' '}the usual daily average
               </span>
             </div>
           )}
@@ -326,25 +336,28 @@ function PickCard({ pick, rank }: { pick: Pick; rank: number }) {
         </div>
 
         {pick.ownership && (
-          <div className="flex items-center gap-1.5 mt-3">
-            <Briefcase className="w-3.5 h-3.5 text-zinc-500 shrink-0" aria-hidden="true" />
-            <p className="text-[11px] text-zinc-400 leading-snug">
+          <div className="flex items-center gap-1.5 mt-2.5">
+            <Briefcase className="w-3.5 h-3.5 text-zinc-500" aria-hidden="true" />
+            <p className="text-[11px] text-zinc-400">
               You own <span className="text-zinc-200 font-semibold tabular-nums">{fmt(pick.ownership.shares, 0)}</span> shares
-              <span className="text-zinc-600"> · avg ${fmt(pick.ownership.avg_cost_basis)}</span>
+              <span className="text-zinc-600"> · paid avg ${fmt(pick.ownership.avg_cost_basis)}</span>
             </p>
           </div>
         )}
 
         {pick.factors.length > 0 && (
-          <div className="flex flex-wrap gap-2 mt-3.5">
-            {pick.factors.map((f, i) => (
+          <div className="flex flex-wrap gap-1.5 mt-3">
+            {pick.factors.slice(0, 5).map((f, i) => (
               <FactorChip key={i} factor={f} />
             ))}
+            {pick.factors.length > 5 && (
+              <span className="text-[11px] text-zinc-600 self-center">+{pick.factors.length - 5} more</span>
+            )}
           </div>
         )}
 
-        <div className="flex items-center justify-between mt-3.5 pt-3 border-t border-white/[0.06]">
-          <span className="text-xs text-zinc-500 font-medium">
+        <div className="flex items-center justify-between mt-3 pt-2 border-t border-white/[0.04]">
+          <span className="text-[11px] text-zinc-500 font-medium">
             {open ? 'Hide details' : 'See why we picked this'}
           </span>
           <CollapseChevron open={open} className="text-zinc-600" />
@@ -352,8 +365,8 @@ function PickCard({ pick, rank }: { pick: Pick; rank: number }) {
       </button>
 
       {open && (
-        <div className="px-4 pb-4 pt-0 space-y-4 border-t border-white/[0.04]">
-          <div className="pt-4">
+        <div className="px-4 pb-4 pt-1 space-y-4">
+          <div>
             <p className="text-[11px] font-semibold text-zinc-500 uppercase tracking-wide mb-2">
               What analysts say ({pick.analyst_total})
             </p>
@@ -362,14 +375,6 @@ function PickCard({ pick, rank }: { pick: Pick; rank: number }) {
               <Mini label="Hold" value={pick.analyst_hold} tone="zinc" />
               <Mini label="Sell" value={pick.analyst_sell} tone="red" />
             </div>
-            {showAnalystRange && (
-              <p className="text-[11px] text-zinc-500 tabular-nums mt-2">
-                Target range ${fmt(pick.target_low!)} – ${fmt(pick.target_high!)}
-              </p>
-            )}
-            {pick.target_label !== 'analyst' && showTarget && targetCopy.targetSub && (
-              <p className="text-[11px] text-zinc-600 mt-1">{targetCopy.targetSub}</p>
-            )}
           </div>
 
           {pick.thesis && (
@@ -389,6 +394,19 @@ function PickCard({ pick, rank }: { pick: Pick; rank: number }) {
                 <p className="text-[11px] font-bold text-yellow-400 uppercase tracking-wide">Main thing to watch</p>
               </div>
               <p className="text-sm text-zinc-300 leading-relaxed">{pick.main_risk}</p>
+            </div>
+          )}
+
+          {pick.factors.length > 5 && (
+            <div>
+              <p className="text-[11px] font-semibold text-zinc-500 uppercase tracking-wide mb-2">
+                All signals
+              </p>
+              <div className="flex flex-wrap gap-1.5">
+                {pick.factors.map((f, i) => (
+                  <FactorChip key={i} factor={f} />
+                ))}
+              </div>
             </div>
           )}
 
