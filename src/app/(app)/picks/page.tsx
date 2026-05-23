@@ -235,8 +235,8 @@ function PickCard({ pick, rank }: { pick: Pick; rank: number }) {
       >
         <div className="flex items-start justify-between gap-2 mb-3">
           <div className="flex items-center gap-2.5 min-w-0 flex-1">
-            <span className="text-[11px] font-bold text-zinc-500 tabular-nums w-5">#{rank}</span>
-            <StockLogo ticker={pick.ticker} size="sm" />
+            <span className="text-[11px] font-bold text-zinc-500 tabular-nums w-5 shrink-0">#{rank}</span>
+            <StockLogo ticker={pick.ticker} size="sm" inset />
             <div className="min-w-0">
               <div className="flex items-baseline gap-2 flex-wrap">
                 <span className="text-base font-bold text-white tracking-tight" translate="no">
