@@ -232,11 +232,12 @@ async function overlayLivePrices(
   return suggestions.map((s) => {
     const snap = live.get(s.ticker)
     if (!snap) return s
+    const buyRatio = s.analyst_total > 0 ? s.analyst_buy / s.analyst_total : 0
     return {
       ...s,
       current_price: snap.price,
       change_1d_pct: snap.change_1d_pct,
-      headline: trendingHeadline(snap.change_1d_pct),
+      headline: trendingHeadline(snap.change_1d_pct, buyRatio),
     }
   })
 }

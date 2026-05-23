@@ -50,7 +50,9 @@ export default function WatchlistSuggestions({
 
   const [open, setOpen] = useState(false)
 
-  const visible = (data?.suggestions ?? []).filter((s) => !ownedTickers.has(s.ticker))
+  const visible = (data?.suggestions ?? []).filter(
+    (s) => !ownedTickers.has(s.ticker.toUpperCase()),
+  )
   const showEmpty = !isLoading && !error && visible.length === 0
 
   const subtitle = isLoading

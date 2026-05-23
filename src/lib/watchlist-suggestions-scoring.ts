@@ -12,15 +12,24 @@ import type { StockFundamentals } from '@/types'
 // ── Tunable constants ─────────────────────────────────────────────────────────
 
 export const TRENDING_MIN_SCORE = 24
+export const TRENDING_MAX_SCORE = 60
+export const TRENDING_STRONG_SCORE = 35
+export const TRENDING_STRONG_MIN_SLOTS = 5
 export const TRENDING_MIN_PRICE = 5
 
 export const TRENDING_SCORING_RULES = {
-  analyst: { minCount: 5, minBuyRatio: 0.45 },
-  dayMove: { minPct: 3, tiers: [{ min: 8, points: 25 }, { min: 5, points: 18 }, { min: 3, points: 10 }] },
+  analyst: { minCount: 5, minBuyRatio: 0.45, weakBuyPenalty: 8 },
+  dayMove: {
+    tiers: [
+      { min: 8, points: 25 },
+      { min: 5, points: 18 },
+      { min: 3, points: 10 },
+    ],
+  },
   monthTrend: { strongMin: 15, strongPoints: 15, moderateMin: 8, moderatePoints: 8 },
-  buyConsensus: { strongRatio: 0.65, strongPoints: 18, moderateRatio: 0.5, moderatePoints: 12 },
+  buyConsensus: { strongRatio: 0.65, strongPoints: 22, moderateRatio: 0.5, moderatePoints: 14 },
   news: { minSentiment: 0.25, points: 10 },
-  near52wHigh: { proximityRatio: 0.97, offsetPoints: 12 },
+  near52wHigh: { proximityRatio: 0.97, points: 10 },
 } as const
 
 /** Max ranked rows stored in the global trending cache. */
@@ -40,7 +49,7 @@ export interface ScoredSuggestion {
   current_price: number
   change_1d_pct: number
   change_30d_pct: number | null
-  upside_pct: number
+  upside_pct: number | null
   analyst_buy: number
   analyst_hold: number
   analyst_sell: number
@@ -57,21 +66,20 @@ export interface ScoredSuggestion {
 function resolveUpsideTarget(
   price: number,
   fundamentals: StockFundamentals | null,
-  d1: number,
-  d30: number | null,
-): number {
-  if (fundamentals?.target_price && fundamentals.target_price > price) return fundamentals.target_price
+): number | null {
   if (fundamentals?.target_mean && fundamentals.target_mean > price) return fundamentals.target_mean
-  if (fundamentals?.week52_high && fundamentals.week52_high > price) return fundamentals.week52_high
-  return price * (1 + Math.min(d30 ?? d1, 35) / 100)
+  if (fundamentals?.target_price && fundamentals.target_price > price) return fundamentals.target_price
+  return null
 }
 
 /** Card headline from day change — updated again when live prices overlay. */
-export function trendingHeadline(change_1d_pct: number): string {
-  if (change_1d_pct >= 8) return `Hot momentum — +${change_1d_pct.toFixed(0)}% today`
-  if (change_1d_pct >= 3) return `Strong day — +${change_1d_pct.toFixed(0)}% with buy ratings`
+export function trendingHeadline(change_1d_pct: number, buyRatio: number): string {
+  const momentum = change_1d_pct >= 8 ? 'Hot momentum' : 'Strong day'
+  const consensus =
+    buyRatio >= 0.65 ? 'strong buy consensus' : buyRatio >= 0.45 ? 'buy ratings' : 'mixed ratings'
   const sign = change_1d_pct >= 0 ? '+' : ''
-  return `${sign}${change_1d_pct.toFixed(1)}% today with buy ratings`
+  const pct = change_1d_pct >= 8 ? change_1d_pct.toFixed(0) : change_1d_pct.toFixed(1)
+  return `${momentum} — ${sign}${pct}% · ${consensus}`
 }
 
 // ── Scoring ───────────────────────────────────────────────────────────────────
@@ -90,15 +98,18 @@ export function scoreTrendingCandidate(input: TrendingScoreInput): ScoredSuggest
   if (total < rules.analyst.minCount) return null
 
   const buyRatio = buy / total
-  if (buyRatio < rules.analyst.minBuyRatio) return null
-
-  let score = 0
   const d1 = mover.change_1d_pct
   const d30 = f?.change_30d_pct ?? null
 
+  // Trending cards are bullish-only — negative movers are out of scope.
+  if (d1 < 0) return null
+
   const dayTier = rules.dayMove.tiers.find((t) => d1 >= t.min)
-  if (!dayTier || d1 < rules.dayMove.minPct) return null
-  score += dayTier.points
+  if (!dayTier) return null
+
+  let score: number = dayTier.points
+
+  if (buyRatio < rules.analyst.minBuyRatio) score -= rules.analyst.weakBuyPenalty
 
   if (d30 != null && d30 > rules.monthTrend.strongMin) score += rules.monthTrend.strongPoints
   else if (d30 != null && d30 > rules.monthTrend.moderateMin) score += rules.monthTrend.moderatePoints
@@ -111,12 +122,14 @@ export function scoreTrendingCandidate(input: TrendingScoreInput): ScoredSuggest
   }
 
   const near_52w_high = Boolean(f?.week52_high && price >= f.week52_high * rules.near52wHigh.proximityRatio)
-  if (near_52w_high) score -= rules.near52wHigh.offsetPoints
+  if (near_52w_high) score += rules.near52wHigh.points
+
+  score = Math.min(score, TRENDING_MAX_SCORE)
 
   if (score < TRENDING_MIN_SCORE) return null
 
-  const target = resolveUpsideTarget(price, f, d1, d30)
-  const upside_pct = ((target - price) / price) * 100
+  const target = resolveUpsideTarget(price, f)
+  const upside_pct = target != null ? ((target - price) / price) * 100 : null
 
   return {
     ticker: mover.ticker,
@@ -132,7 +145,7 @@ export function scoreTrendingCandidate(input: TrendingScoreInput): ScoredSuggest
     analyst_total: total,
     score,
     source: mover.source,
-    headline: trendingHeadline(d1),
+    headline: trendingHeadline(d1, buyRatio),
     news_sentiment: f?.news_sentiment ?? null,
     near_52w_high,
   }
@@ -142,5 +155,30 @@ export function rankTrendingSuggestions(
   scored: ScoredSuggestion[],
   limit = TRENDING_GLOBAL_RANK_LIMIT,
 ): ScoredSuggestion[] {
-  return [...scored].sort((a, b) => b.score - a.score).slice(0, limit)
+  const sorted = [...scored].sort(
+    (a, b) => b.score - a.score || b.change_1d_pct - a.change_1d_pct || a.ticker.localeCompare(b.ticker),
+  )
+
+  const strong = sorted.filter((s) => s.score >= TRENDING_STRONG_SCORE)
+  const rest = sorted.filter((s) => s.score < TRENDING_STRONG_SCORE)
+
+  const maxWeakSlots =
+    strong.length >= TRENDING_STRONG_MIN_SLOTS
+      ? Math.max(0, limit - TRENDING_STRONG_MIN_SLOTS)
+      : limit
+
+  const picked: ScoredSuggestion[] = []
+  for (const s of strong) {
+    if (picked.length >= limit) break
+    picked.push(s)
+  }
+  let weakAdded = 0
+  for (const s of rest) {
+    if (picked.length >= limit) break
+    if (weakAdded >= maxWeakSlots) break
+    picked.push(s)
+    weakAdded += 1
+  }
+
+  return picked
 }

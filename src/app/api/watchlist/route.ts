@@ -39,7 +39,7 @@ export async function GET() {
   return NextResponse.json(enriched, {
     headers: {
       'X-Market-Open': priceLive ? '1' : '0',
-      'Cache-Control': priceLive ? 'private, no-store' : 'private, max-age=3600',
+      'Cache-Control': 'private, no-store, max-age=0',
     },
   })
 }

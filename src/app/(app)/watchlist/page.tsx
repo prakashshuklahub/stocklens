@@ -396,13 +396,20 @@ export default function WatchlistPage() {
       return
     }
     await mutate(
-      (current) => (current ?? []).filter((s) => s.ticker.toUpperCase() !== sym),
+      async () => {
+        const listRes = await fetch('/api/watchlist', { cache: 'no-store' })
+        if (!listRes.ok) throw new Error('Failed to refresh watchlist')
+        return (await listRes.json()) as WatchlistStock[]
+      },
       { revalidate: false },
     )
     void mutateFundamentals()
   }
 
-  const ownedTickers = new Set(stocks.map((s) => s.ticker.toUpperCase()))
+  const ownedTickers = useMemo(
+    () => new Set(stocks.map((s) => s.ticker.toUpperCase())),
+    [stocks],
+  )
 
   return (
     <>

@@ -6,7 +6,7 @@ export function createMarketAwareFetcher<T extends WithTicker>() {
   let lastWithSnapshots: T[] | null = null
 
   return async (url: string): Promise<T[]> => {
-    const res = await fetch(url)
+    const res = await fetch(url, { cache: 'no-store' })
     const data = (await res.json()) as T[]
     const marketOpen = res.headers.get('X-Market-Open') === '1'
 

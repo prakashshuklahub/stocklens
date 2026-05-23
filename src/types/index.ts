@@ -221,7 +221,7 @@ export interface WatchlistSuggestion {
   current_price: number
   change_1d_pct: number
   change_30d_pct: number | null
-  upside_pct: number
+  upside_pct: number | null
   analyst_buy: number
   analyst_total: number
   score: number
