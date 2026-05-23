@@ -34,7 +34,7 @@ export function pickDisplayCopy(label: Pick['target_label']) {
     case 'analyst':
       return {
         targetHeading: 'Price target',
-        targetSub: 'Average analyst estimate · ~1 year',
+        targetSub: '',
         upsideSub: 'to target',
         thesisTarget: (price: number) => `an average analyst target of $${price.toFixed(2)}`,
         defaultRisk:
