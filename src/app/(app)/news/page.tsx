@@ -1,8 +1,9 @@
 'use client'
 
 import useSWR from 'swr'
-import { useEffect, useState } from 'react'
+import { useCallback, useEffect, useState, type ReactNode } from 'react'
 import AppNav from '@/components/AppNav'
+import CollapseChevron from '@/components/CollapseChevron'
 import StockLogo from '@/components/StockLogo'
 import { useMarketOpen } from '@/hooks/useMarketOpen'
 import {
@@ -11,7 +12,8 @@ import {
   Volume2,
   VolumeX,
   ExternalLink,
-  ChevronDown,
+  Zap,
+  Newspaper,
 } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import type { Signal, SignalReason, SignalsResponse, SignalNewsItem } from '@/types'
@@ -28,7 +30,77 @@ function timeAgo(iso: string): string {
   return `${Math.floor(h / 24)}d ago`
 }
 
-// ── Reason chip ───────────────────────────────────────────────────────────────
+function truncatePreview(text: string, max = 72): string {
+  const t = text.trim()
+  if (t.length <= max) return t
+  return `${t.slice(0, max - 1).trim()}…`
+}
+
+function fmtPct(n: number | null | undefined): string {
+  if (n == null) return '—'
+  return `${n >= 0 ? '+' : ''}${n.toFixed(2)}%`
+}
+
+function fmtPrice(n: number | null | undefined): string {
+  if (n == null) return '—'
+  return `$${n.toFixed(2)}`
+}
+
+function headlinesBorderClass(bias: Signal['bias']): string {
+  if (bias === 'bullish') return 'border-emerald-500/10'
+  if (bias === 'bearish') return 'border-red-500/10'
+  return 'border-white/[0.04]'
+}
+
+function signalCardShellClass(bias: Signal['bias']): string {
+  return cn(
+    'signal-card-b overflow-hidden',
+    bias === 'bullish' && 'signal-card-b--bullish',
+    bias === 'bearish' && 'signal-card-b--bearish',
+    bias === 'quiet' && 'signal-card-b--quiet',
+  )
+}
+
+function SignalHeroHeader({ signal }: { signal: Signal }) {
+  const isUp = (signal.change_1d_pct ?? 0) >= 0
+
+  return (
+    <div className="flex items-start justify-between gap-2">
+      <div className="flex items-start gap-3 min-w-0 flex-1">
+        <StockLogo ticker={signal.ticker} size="md" />
+        <div className="min-w-0 pt-0.5">
+          <div className="flex items-baseline gap-2 flex-wrap">
+            <span className="text-lg font-bold text-white tracking-tight" translate="no">
+              {signal.ticker}
+            </span>
+          </div>
+          <p className="text-sm text-zinc-400 truncate leading-snug">{signal.company_name}</p>
+          {signal.sector && (
+            <p className="text-[11px] text-zinc-500 mt-1">
+              {signal.sector} · watchlist
+            </p>
+          )}
+        </div>
+      </div>
+      {signal.price != null && (
+        <div className="text-right shrink-0">
+          <p className="text-base font-bold text-white tabular-nums leading-tight">
+            {fmtPrice(signal.price)}
+          </p>
+          {signal.change_1d_pct != null && (
+            <p className={cn(
+              'text-xs font-semibold tabular-nums mt-0.5',
+              isUp ? 'text-emerald-400' : 'text-red-400',
+            )}>
+              {fmtPct(signal.change_1d_pct)}
+            </p>
+          )}
+        </div>
+      )}
+    </div>
+  )
+}
+
 function ReasonChip({ reason }: { reason: SignalReason }) {
   const styles =
     reason.tone === 'bullish' ? 'bg-emerald-500/10 text-emerald-300' :
@@ -41,93 +113,91 @@ function ReasonChip({ reason }: { reason: SignalReason }) {
   )
 }
 
-// ── Signal card (collapsible) ─────────────────────────────────────────────────
-function SignalCard({ signal }: { signal: Signal }) {
+function SignalReasonChips({ signal }: { signal: Signal }) {
+  if (!signal.reasons.length) return null
+  return (
+    <div className="flex flex-wrap gap-1.5 mt-3">
+      {signal.reasons.map((r, i) => (
+        <ReasonChip key={i} reason={r} />
+      ))}
+    </div>
+  )
+}
+
+function headlinesPreview(signal: Signal): string {
+  const top = signal.news[0]
+  if (top) return truncatePreview(top.title)
+  return 'No headlines right now'
+}
+
+function SignalHeadlinesRow({ signal, cardId }: { signal: Signal; cardId: string }) {
   const [open, setOpen] = useState(false)
-  const isUp = (signal.change_1d_pct ?? 0) >= 0
   const hasNews = signal.news.length > 0
-  const topNews = signal.news[0]
+  const preview = headlinesPreview(signal)
 
   return (
-    <div className="card-surface overflow-hidden">
-      {/* Tappable header */}
+    <div className={cn('border-t bg-zinc-950/35', headlinesBorderClass(signal.bias))}>
       <button
         type="button"
-        onClick={() => setOpen((o) => !o)}
+        id={`${cardId}-headlines-trigger`}
         aria-expanded={open}
-        className="w-full text-left px-5 py-4 active:bg-zinc-800/60 transition-colors [touch-action:manipulation]"
+        aria-controls={`${cardId}-headlines-panel`}
+        onClick={() => setOpen((o) => !o)}
+        className={cn(
+          'w-full text-left px-4 py-3 min-h-[48px]',
+          'active:bg-zinc-800/50 transition-colors [touch-action:manipulation]',
+          'focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-blue-500/40',
+        )}
       >
-        {/* Top row: ticker + name | price + change */}
-        <div className="flex items-start justify-between gap-3 mb-2.5">
-          <div className="flex items-start gap-3 flex-1 min-w-0">
-            <StockLogo ticker={signal.ticker} size="md" />
+        <div className="flex items-start justify-between gap-2">
           <div className="min-w-0 flex-1">
-            <div className="flex items-baseline gap-2 flex-wrap">
-              <span className="text-base font-bold text-white tracking-tight" translate="no">
-                {signal.ticker}
-              </span>
-              <span className="text-xs text-zinc-500 truncate">{signal.company_name}</span>
+            <div className="flex items-center gap-1.5">
+              <Newspaper className="w-3.5 h-3.5 text-zinc-500 shrink-0" aria-hidden="true" />
+              <span className="text-[11px] font-semibold text-zinc-300">Headlines</span>
             </div>
-            {signal.sector && (
-              <p className="text-[11px] text-zinc-600 mt-0.5">
-                {signal.sector} · watchlist
-              </p>
+            {!open && (
+              <p className="text-[11px] text-zinc-600 mt-1 leading-snug truncate">{preview}</p>
             )}
           </div>
-          </div>
-          {signal.price != null && (
-            <div className="text-right shrink-0">
-              <p className="text-base font-bold text-white tabular-nums leading-tight">
-                ${signal.price.toFixed(2)}
-              </p>
-              {signal.change_1d_pct != null && (
-                <p className={cn(
-                  'text-xs font-semibold tabular-nums mt-0.5',
-                  isUp ? 'text-emerald-400' : 'text-red-400'
-                )}>
-                  {isUp ? '+' : ''}{signal.change_1d_pct.toFixed(2)}%
-                </p>
-              )}
-            </div>
-          )}
-        </div>
-
-        {/* Reason chips */}
-        {signal.reasons.length > 0 && (
-          <div className="flex flex-wrap gap-1.5 mb-1">
-            {signal.reasons.map((r, i) => (
-              <ReasonChip key={i} reason={r} />
-            ))}
-          </div>
-        )}
-
-        {/* Top news preview (collapsed) + expand affordance */}
-        <div className="flex items-center justify-between gap-2 mt-2">
-          {topNews && !open ? (
-            <p className="text-xs text-zinc-400 truncate flex-1 min-w-0">
-              <span className="text-zinc-600 mr-1.5">●</span>
-              {topNews.title}
-            </p>
-          ) : (
-            <span className="text-[11px] text-zinc-600">
-              {hasNews ? `${signal.news.length} ${signal.news.length === 1 ? 'headline' : 'headlines'}` : 'No news'}
-            </span>
-          )}
-          <ChevronDown
-            className={cn('w-4 h-4 text-zinc-600 shrink-0 transition-transform duration-200', open ? 'rotate-180' : '')}
-            aria-hidden="true"
-          />
+          <CollapseChevron open={open} className="text-zinc-600 shrink-0 mt-0.5" />
         </div>
       </button>
-
-      {/* Expanded news list */}
-      {open && hasNews && (
-        <div className="px-4 pb-3 pt-1 border-t border-white/[0.04] space-y-2">
-          {signal.news.map((n, i) => (
-            <NewsRow key={i} item={n} />
-          ))}
+      {open && (
+        <div
+          id={`${cardId}-headlines-panel`}
+          role="region"
+          aria-labelledby={`${cardId}-headlines-trigger`}
+          className="px-4 pb-3.5 pt-0 space-y-2"
+        >
+          {hasNews ? (
+            signal.news.map((n, i) => (
+              <NewsRow key={i} item={n} />
+            ))
+          ) : (
+            <p className="text-xs text-zinc-600 px-1 py-2">No headlines for this stock right now.</p>
+          )}
         </div>
       )}
+    </div>
+  )
+}
+
+function SignalCardHero({ signal }: { signal: Signal }) {
+  return (
+    <div className="signal-card-b-hero relative px-4 pt-5 pb-3">
+      <SignalHeroHeader signal={signal} />
+      <SignalReasonChips signal={signal} />
+    </div>
+  )
+}
+
+function SignalCard({ signal }: { signal: Signal }) {
+  const cardId = `signal-${signal.ticker}-${signal.bias}`
+
+  return (
+    <div className={signalCardShellClass(signal.bias)}>
+      <SignalCardHero signal={signal} />
+      <SignalHeadlinesRow signal={signal} cardId={cardId} />
     </div>
   )
 }
@@ -144,7 +214,7 @@ function NewsRow({ item }: { item: SignalNewsItem }) {
         <div
           className={cn(
             'w-1 self-stretch rounded-full mt-0.5 shrink-0',
-            item.sentiment === 'bullish' ? 'bg-emerald-500/60' : 'bg-red-500/60'
+            item.sentiment === 'bullish' ? 'bg-emerald-500/60' : 'bg-red-500/60',
           )}
           aria-hidden="true"
         />
@@ -162,7 +232,28 @@ function NewsRow({ item }: { item: SignalNewsItem }) {
   )
 }
 
-// ── Collapsible section header (Bullish / Bearish / Quiet) ────────────────────
+function SignalList({
+  signals,
+  emptyMsg,
+}: {
+  signals: Signal[]
+  emptyMsg?: string
+}) {
+  if (!signals.length) {
+    return emptyMsg ? <p className="text-xs text-zinc-600 px-1 py-1">{emptyMsg}</p> : null
+  }
+
+  return (
+    <ul className="space-y-3">
+      {signals.map((s) => (
+        <li key={s.ticker}>
+          <SignalCard signal={s} />
+        </li>
+      ))}
+    </ul>
+  )
+}
+
 function CollapsibleSection({
   title,
   icon,
@@ -174,34 +265,36 @@ function CollapsibleSection({
   children,
 }: {
   title: string
-  icon: React.ReactNode
+  icon: ReactNode
   count: number
   titleClass: string
   countClass: string
   defaultOpen: boolean
   hideWhenEmpty?: boolean
-  children: React.ReactNode
+  children: ReactNode
 }) {
   const [open, setOpen] = useState(defaultOpen)
   if (hideWhenEmpty && count === 0) return null
 
   return (
-    <section>
+    <section className="mb-5">
       <button
         type="button"
         onClick={() => setOpen((o) => !o)}
         aria-expanded={open}
-        className="w-full min-h-[48px] flex items-center justify-between card-surface px-5 py-4 active:bg-zinc-800/60 transition-colors [touch-action:manipulation]"
+        className={cn(
+          'w-full min-h-[48px] flex items-center justify-between rounded-2xl px-4 py-3',
+          'border border-white/[0.06] bg-zinc-900/40',
+          'active:bg-zinc-800/50 transition-colors [touch-action:manipulation]',
+          'focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500/40',
+        )}
       >
         <div className="flex items-center gap-2.5 min-w-0">
           <span aria-hidden="true" className="shrink-0">{icon}</span>
-          <span className={cn('text-base font-semibold', titleClass)}>{title}</span>
-          <span className={cn('text-xs tabular-nums', countClass)}>{count}</span>
+          <span className={cn('text-sm font-bold', titleClass)}>{title}</span>
+          <span className={cn('text-xs font-semibold tabular-nums', countClass)}>({count})</span>
         </div>
-        <ChevronDown
-          className={cn('w-4 h-4 shrink-0 transition-transform duration-200', countClass, open ? 'rotate-180' : '')}
-          aria-hidden="true"
-        />
+        <CollapseChevron open={open} className={countClass} />
       </button>
       {open && <div className="mt-2">{children}</div>}
     </section>
@@ -218,7 +311,7 @@ function BullishBearishSection({
   defaultOpen,
 }: {
   title: string
-  icon: React.ReactNode
+  icon: ReactNode
   signals: Signal[]
   emptyMsg: string
   titleClass: string
@@ -234,17 +327,7 @@ function BullishBearishSection({
       countClass={countClass}
       defaultOpen={defaultOpen}
     >
-      {signals.length === 0 ? (
-        <p className="text-xs text-zinc-600 px-1 py-1">{emptyMsg}</p>
-      ) : (
-        <ul className="space-y-2.5">
-          {signals.map((s) => (
-            <li key={s.ticker}>
-              <SignalCard signal={s} />
-            </li>
-          ))}
-        </ul>
-      )}
+      <SignalList signals={signals} emptyMsg={emptyMsg} />
     </CollapsibleSection>
   )
 }
@@ -260,24 +343,21 @@ function QuietSection({ quiet }: { quiet: Signal[] }) {
       defaultOpen={false}
       hideWhenEmpty
     >
-      <ul className="space-y-2.5">
-        {quiet.map((s) => (
-          <li key={s.ticker}>
-            <SignalCard signal={s} />
-          </li>
-        ))}
-      </ul>
+      <SignalList signals={quiet} />
     </CollapsibleSection>
   )
 }
 
-// ── Page ──────────────────────────────────────────────────────────────────────
 export default function NewsPage() {
   const marketOpen = useMarketOpen()
   const { data, isLoading, isValidating, mutate } = useSWR<SignalsResponse>('/api/signals', fetcher, {
     revalidateOnFocus: false,
   })
   const refreshing = isValidating && !isLoading
+
+  const handleRefresh = useCallback(() => {
+    void mutate()
+  }, [mutate])
 
   useEffect(() => {
     if (!marketOpen) return
@@ -291,26 +371,30 @@ export default function NewsPage() {
 
   return (
     <div className="min-h-screen bg-zinc-950">
-      <AppNav onRefresh={() => mutate()} refreshing={refreshing} marketOpen={marketOpen} showRefresh />
+      <AppNav onRefresh={handleRefresh} refreshing={refreshing} marketOpen={marketOpen} showRefresh />
 
-      <main id="main" className="page-shell">
-          <div className="mb-7">
-            <h1 className="page-title">Signals</h1>
-            <p className="page-subtitle">From your watchlist</p>
-            {data?.generated_at && (
-              <div className="flex items-center gap-1.5 mt-1.5">
-                <div className="w-1.5 h-1.5 rounded-full bg-emerald-500 shrink-0" />
-                <p className="text-xs text-zinc-400 font-medium">
-                  Updated <span className="text-zinc-300">{timeAgo(data.generated_at)}</span>
-                </p>
-              </div>
-            )}
+      <main id="main" className="page-shell !pt-3">
+        <div className="mb-3 flex items-center justify-between gap-3">
+          <div className="flex items-center gap-1.5 min-w-0">
+            <h1 className="text-xl font-bold text-white tracking-tight">Signals</h1>
+            <Zap className="w-4 h-4 text-emerald-400 shrink-0" aria-hidden="true" />
           </div>
+          {data?.generated_at && !isLoading && (
+            <p className="text-[11px] text-zinc-500 tabular-nums shrink-0">
+              Updated {timeAgo(data.generated_at)}
+            </p>
+          )}
+        </div>
+        <p className="text-xs text-zinc-500 mb-4 -mt-1">From your watchlist</p>
 
         {isLoading ? (
           <div className="space-y-3" aria-busy="true">
             {[1, 2, 3, 4].map((n) => (
-              <div key={n} className="h-[120px] rounded-2xl bg-zinc-900 animate-pulse" style={{ animationDelay: `${n * 80}ms` }} />
+              <div
+                key={n}
+                className="signal-card-b h-[160px] animate-pulse opacity-60"
+                style={{ animationDelay: `${n * 80}ms` }}
+              />
             ))}
           </div>
         ) : !data ? (
@@ -324,7 +408,7 @@ export default function NewsPage() {
             <p className="text-zinc-500 text-sm max-w-[220px] mx-auto">Add stocks to your watchlist to see daily signals here.</p>
           </div>
         ) : (
-          <div className="space-y-7">
+          <>
             <BullishBearishSection
               title="Bullish"
               icon={<TrendingUp className="w-4 h-4 text-emerald-400" aria-hidden="true" />}
@@ -344,7 +428,7 @@ export default function NewsPage() {
               defaultOpen
             />
             <QuietSection quiet={data.quiet} />
-          </div>
+          </>
         )}
       </main>
     </div>
