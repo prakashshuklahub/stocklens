@@ -9,10 +9,10 @@ import Week52Range from '@/components/Week52Range'
 import {
   computeTargetUpsidePct,
   formatDisplayTargetPrice,
+  formatDisplayUpsideDollar,
   formatDisplayUpsidePct,
   formatTargetPrice,
   hasDisplayTargetPrice,
-  targetPriceSubline,
 } from '@/lib/target-price-display'
 import { priceBadgeSession, type MarketSession } from '@/lib/market-hours'
 import {
@@ -161,7 +161,6 @@ function TargetPrice({
   const showTarget = hasDisplayTargetPrice(targetPrice, targetSource)
   const upside = showTarget ? computeTargetUpsidePct(targetPrice, current) : null
   const isPos = upside != null && upside >= 0
-  const subline = showTarget ? targetPriceSubline(targetSource) : null
 
   const showRange =
     showTarget &&
@@ -171,35 +170,26 @@ function TargetPrice({
 
   return (
     <div className="rounded-xl bg-zinc-800/80 px-3 py-2.5 space-y-1">
-      <div className="flex items-start justify-between gap-3">
-        <div className="min-w-0">
-          <p className="text-[10px] font-bold text-zinc-500 uppercase tracking-wider">Target price</p>
-          <p
-            className={cn(
-              'text-lg font-black tabular-nums leading-none mt-0.5',
-              showTarget ? 'text-white' : 'text-zinc-500',
-            )}
-          >
+      <div>
+        <p className="text-[10px] font-bold text-zinc-500 uppercase tracking-wider">Room to grow</p>
+        <p
+          className={cn(
+            'text-lg font-black tabular-nums leading-none mt-0.5',
+            !showTarget || upside == null
+              ? 'text-zinc-500'
+              : isPos
+                ? 'text-emerald-400'
+                : 'text-red-400',
+          )}
+        >
+          {formatDisplayUpsidePct(targetPrice, current, targetSource)}
+        </p>
+        {showTarget && (
+          <p className="text-[10px] text-zinc-500 tabular-nums mt-1">
+            {formatDisplayUpsideDollar(targetPrice, current, targetSource)} to{' '}
             {formatDisplayTargetPrice(targetPrice, targetSource)}
           </p>
-          {subline && <p className="text-[10px] text-zinc-500 mt-1">{subline}</p>}
-        </div>
-        <div className="text-right shrink-0">
-          <p className="text-[10px] font-bold text-zinc-500 uppercase tracking-wider">Upside to target</p>
-          <p
-            className={cn(
-              'text-lg font-black tabular-nums leading-none mt-0.5',
-              !showTarget || upside == null
-                ? 'text-zinc-500'
-                : isPos
-                  ? 'text-emerald-400'
-                  : 'text-red-400',
-            )}
-          >
-            {formatDisplayUpsidePct(targetPrice, current, targetSource)}
-          </p>
-          <p className="text-[10px] text-zinc-600 mt-1">vs current price</p>
-        </div>
+        )}
       </div>
       {showRange && (
         <p className="text-[10px] text-zinc-600 tabular-nums pt-0.5">
@@ -448,11 +438,11 @@ function CollapsedSummary({
       )}
       {showTarget && upside && upside !== '—' ? (
         <span className="text-xs font-semibold tabular-nums px-2 py-0.5 rounded-full bg-zinc-800 text-zinc-300">
-          Target upside {upside}
+          Room to grow {upside}
         </span>
       ) : (
         <span className="text-xs font-medium px-2 py-0.5 rounded-full bg-zinc-800/80 text-zinc-500">
-          No analyst target
+          No target
         </span>
       )}
     </div>

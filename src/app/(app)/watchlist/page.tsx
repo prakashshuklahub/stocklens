@@ -105,7 +105,7 @@ function WatchlistSortBar({
     { id: 'sector', label: 'Sector' },
     { id: 'day_change', label: 'Day %' },
     { id: 'vs_sector', label: 'Sector strength' },
-    { id: 'target_upside', label: 'Target upside' },
+    { id: 'target_upside', label: 'Room to grow' },
     { id: 'alphabetical', label: 'A–Z' },
   ]
 
