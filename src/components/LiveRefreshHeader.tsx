@@ -36,7 +36,7 @@ export function RefreshCountdown({
           style={{ width: `${pct}%` }}
         />
       </div>
-      <span className="text-xs tabular-nums text-zinc-500 min-w-[2.5rem] text-right">
+      <span className="type-caption tabular-nums text-zinc-500 min-w-[2.5rem] text-right">
         {refreshing ? (
           <span className="inline-flex items-center gap-1">
             <RefreshCw className="w-3 h-3 animate-spin" aria-hidden="true" />
@@ -84,7 +84,7 @@ export default function LiveRefreshHeader({
       <div className="flex items-start justify-between gap-4">
         <div className="min-w-0">
           <h2 className="section-label">{title}</h2>
-          <p className="text-xs text-zinc-600 mt-1" aria-live="polite">
+          <p className="type-caption text-zinc-600 mt-1" aria-live="polite">
             {subtitle ?? liveRefreshSubtitle(session)}
           </p>
         </div>

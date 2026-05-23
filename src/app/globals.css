@@ -109,6 +109,13 @@ body {
 
   .pick-card-stat-label {
     color: rgb(251 191 36 / 0.55);
+    font-size: 0.6875rem;
+  }
+
+  @media (min-width: 640px) {
+    .pick-card-stat-label {
+      font-size: 0.625rem;
+    }
   }
 
   /* Signals tab — dedicated signal card shell */
@@ -181,11 +188,49 @@ body {
   }
 
   .section-label {
-    font-size: 0.75rem;
+    font-size: 0.875rem;
     font-weight: 700;
     letter-spacing: 0.12em;
     text-transform: uppercase;
     color: #71717a;
+  }
+
+  @media (min-width: 640px) {
+    .section-label {
+      font-size: 0.75rem;
+    }
+  }
+}
+
+@layer utilities {
+  /* Readable on phone; compact on sm+ (matches prior web sizes). */
+  .type-micro {
+    font-size: 0.6875rem;
+    line-height: 1.35;
+  }
+
+  .type-meta {
+    font-size: 0.8125rem;
+    line-height: 1.4;
+  }
+
+  .type-caption {
+    font-size: 0.875rem;
+    line-height: 1.45;
+  }
+
+  @media (min-width: 640px) {
+    .type-micro {
+      font-size: 0.625rem;
+    }
+
+    .type-meta {
+      font-size: 0.6875rem;
+    }
+
+    .type-caption {
+      font-size: 0.75rem;
+    }
   }
 }
 

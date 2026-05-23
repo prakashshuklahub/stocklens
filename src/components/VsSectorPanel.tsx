@@ -103,7 +103,7 @@ export default function VsSectorPanel({
   if (!vsSector?.windows) {
     return (
       <div className="rounded-lg bg-zinc-900/60 px-3 py-2.5 border border-white/[0.04]">
-        <p className="text-[11px] font-semibold text-zinc-400 uppercase tracking-wide">
+        <p className="type-meta font-semibold text-zinc-400 uppercase tracking-wide">
           Compared to {sectorLabel}
         </p>
         <p className="text-xs text-zinc-500 mt-2" aria-live="polite">
@@ -138,11 +138,11 @@ export default function VsSectorPanel({
     <div className="rounded-lg bg-zinc-900/60 px-3 py-2.5 space-y-2 border border-white/[0.04]">
       <div className="flex items-start justify-between gap-2">
         <div>
-          <p className="text-[11px] font-semibold text-zinc-400 uppercase tracking-wide">
+          <p className="type-meta font-semibold text-zinc-400 uppercase tracking-wide">
             Compared to {vsSector.sector}
           </p>
           {etf && (
-            <p className="text-[11px] text-zinc-600 mt-0.5 leading-snug">
+            <p className="type-meta text-zinc-600 mt-0.5 leading-snug">
               {sectorEtfSubtitle(etf, vsSector.sector)}
               {primaryDelta != null && (
                 <>
@@ -160,7 +160,7 @@ export default function VsSectorPanel({
         {badgeLabel && (
           <span
             className={cn(
-              'shrink-0 text-[10px] font-bold uppercase tracking-wide px-2 py-1 rounded-full',
+              'shrink-0 type-micro font-bold uppercase tracking-wide px-2 py-1 rounded-full',
               vsSector.badge === 'leader' && 'bg-emerald-500/15 text-emerald-300',
               vsSector.badge === 'lagger' && 'bg-red-500/15 text-red-300',
               vsSector.badge === 'inline' && 'bg-zinc-700/50 text-zinc-400',
@@ -181,16 +181,16 @@ export default function VsSectorPanel({
 
       {strengthCopy && (
         <div className="pt-2 border-t border-white/[0.04] space-y-0.5">
-          <p className="text-[11px] font-medium text-zinc-400">{strengthCopy.title}</p>
+          <p className="type-meta font-medium text-zinc-400">{strengthCopy.title}</p>
           <p className="text-sm font-bold text-zinc-200 tabular-nums">{strengthCopy.tier}</p>
-          <p className="text-[11px] text-zinc-500 leading-relaxed [text-wrap:pretty]">
+          <p className="type-meta text-zinc-500 leading-relaxed [text-wrap:pretty]">
             {strengthCopy.hint}
           </p>
         </div>
       )}
 
       {d1Footnote && (
-        <p className="text-[10px] text-zinc-600 leading-relaxed [text-wrap:pretty]">
+        <p className="type-micro text-zinc-600 leading-relaxed [text-wrap:pretty]">
           {d1Footnote}
           {refreshing ? ' · Updating…' : ''}
         </p>

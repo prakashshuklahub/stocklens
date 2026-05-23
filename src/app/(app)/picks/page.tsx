@@ -104,7 +104,7 @@ function ConfidenceBadge({ level }: { level: 'high' | 'medium' | 'low' }) {
     <span
       aria-label={`${config.label} confidence`}
       className={cn(
-        'shrink-0 whitespace-nowrap text-[10px] font-bold uppercase tracking-wide',
+        'shrink-0 whitespace-nowrap type-micro font-bold uppercase tracking-wide',
         'px-2.5 py-1 rounded-full',
         config.styles,
       )}
@@ -136,7 +136,7 @@ function PickRankBadge({ rank }: { rank: number }) {
       />
       <span
         className={cn(
-          'text-[11px] font-black tabular-nums leading-none',
+          'type-meta font-black tabular-nums leading-none',
           isTop ? 'text-amber-100' : rank <= 3 ? 'text-violet-100' : 'text-zinc-300',
         )}
       >
@@ -158,7 +158,7 @@ function PickOwnershipRow({ pick }: { pick: Pick }) {
   return (
     <div className="flex items-center gap-1.5 mt-3 px-2 py-2 rounded-lg bg-black/20 border border-white/[0.04]">
       <Briefcase className="w-3.5 h-3.5 shrink-0 text-amber-400/70" aria-hidden="true" />
-      <p className="text-[11px] text-zinc-400">
+      <p className="type-meta text-zinc-400">
         You own <span className="text-zinc-200 font-semibold tabular-nums">{fmt(pick.ownership.shares, 0)}</span> shares
         <span className="text-zinc-600"> · paid avg ${fmt(pick.ownership.avg_cost_basis)}</span>
       </p>
@@ -178,17 +178,17 @@ function PickCardHeroStats({
   return (
     <div className="pick-card-stats rounded-xl px-3 py-2.5 space-y-2">
       <div className="flex flex-wrap items-baseline gap-x-2 gap-y-1 text-sm">
-        <span className="text-[10px] font-bold uppercase tracking-wide text-blue-400/55 shrink-0">Buy</span>
+        <span className="type-micro font-bold uppercase tracking-wide text-blue-400/55 shrink-0">Buy</span>
         <span className="font-bold text-white tabular-nums">
           ${fmt(pick.entry_low)} – ${fmt(pick.entry_high)}
         </span>
         <span className="text-zinc-600">·</span>
-        <span className="text-[11px] text-zinc-500 tabular-nums">Now ${fmt(pick.current_price)}</span>
+        <span className="type-meta text-zinc-500 tabular-nums">Now ${fmt(pick.current_price)}</span>
       </div>
       <div className="h-px bg-blue-500/10" />
       <div className="flex flex-wrap items-center justify-between gap-2">
         <div className="flex items-baseline gap-2">
-          <span className="text-[10px] font-bold uppercase tracking-wide text-blue-400/55">Room to grow</span>
+          <span className="type-micro font-bold uppercase tracking-wide text-blue-400/55">Room to grow</span>
           <span className={cn(
             'text-base font-black tabular-nums',
             upsidePct == null ? 'text-zinc-500' : isPos ? 'text-emerald-400' : 'text-red-400',
@@ -197,11 +197,11 @@ function PickCardHeroStats({
           </span>
         </div>
         <div className="flex items-baseline gap-2">
-          <span className="text-[10px] font-bold uppercase tracking-wide text-blue-400/55">Analysts</span>
+          <span className="type-micro font-bold uppercase tracking-wide text-blue-400/55">Analysts</span>
           <span className="text-sm font-bold text-white tabular-nums">
             {pick.analyst_buy} buy
           </span>
-          <span className="text-[11px] text-zinc-500 tabular-nums">/ {pick.analyst_total}</span>
+          <span className="type-meta text-zinc-500 tabular-nums">/ {pick.analyst_total}</span>
         </div>
       </div>
     </div>
@@ -226,18 +226,18 @@ function PickCardHero({ pick, rank, upsidePct, isPos }: PickHeroContentProps) {
                 {pick.ticker}
               </span>
               {rank === 1 && (
-                <span className="text-[10px] font-bold uppercase tracking-wide text-amber-300/90">
+                <span className="type-micro font-bold uppercase tracking-wide text-amber-300/90">
                   Top pick
                 </span>
               )}
             </div>
             <p className="text-sm text-zinc-400 truncate leading-snug">{pick.company_name}</p>
             <div className="flex items-center gap-1.5 mt-1.5 flex-wrap">
-              <span className="text-[11px] text-zinc-500">{pick.sector ?? 'Unknown'}</span>
-              <span className="text-[11px] text-zinc-600 tabular-nums">
+              <span className="type-meta text-zinc-500">{pick.sector ?? 'Unknown'}</span>
+              <span className="type-meta text-zinc-600 tabular-nums">
                 · {pick.analyst_total} analyst{pick.analyst_total === 1 ? '' : 's'}
               </span>
-              <span className={cn('text-[10px] font-bold uppercase tracking-wide px-2 py-0.5 rounded-full', sourceStyles(pick.source))}>
+              <span className={cn('type-micro font-bold uppercase tracking-wide px-2 py-0.5 rounded-full', sourceStyles(pick.source))}>
                 {sourceLabel(pick.source)}
               </span>
             </div>
@@ -258,7 +258,7 @@ function FactorChip({ factor }: { factor: PickFactor }) {
     factor.tone === 'negative' ? 'bg-red-500/10 text-red-300' :
     'bg-zinc-800 text-zinc-400'
   return (
-    <span className={cn('text-xs font-semibold px-2.5 py-1 rounded-full whitespace-nowrap', tone)}>
+    <span className={cn('text-sm sm:text-xs font-semibold px-2.5 py-1 rounded-full whitespace-nowrap', tone)}>
       {factor.label}
       {factor.value && <span className="opacity-70 ml-1 font-normal">· {factor.value}</span>}
     </span>
@@ -352,10 +352,10 @@ function PickAccordionRow({
           <div className="min-w-0 flex-1">
             <div className="flex items-center gap-1.5">
               <Icon className="w-3.5 h-3.5 text-zinc-500 shrink-0" aria-hidden="true" />
-              <span className="text-[11px] font-semibold text-zinc-300">{label}</span>
+              <span className="type-meta font-semibold text-zinc-300">{label}</span>
             </div>
             {!open && (
-              <p className="text-[11px] text-zinc-600 mt-1 leading-snug truncate">{preview}</p>
+              <p className="type-meta text-zinc-600 mt-1 leading-snug truncate">{preview}</p>
             )}
           </div>
           <CollapseChevron open={open} className="text-zinc-600 shrink-0 mt-0.5" />
@@ -426,14 +426,14 @@ function PickCard({
         <div className="space-y-3 rounded-xl bg-zinc-900/60 border border-white/[0.04] px-3 py-3">
           <div className="grid grid-cols-2 gap-3">
             <div>
-              <p className="text-[10px] font-semibold text-zinc-500 uppercase tracking-wide">Price to buy</p>
+              <p className="type-micro font-semibold text-zinc-500 uppercase tracking-wide">Price to buy</p>
               <p className="text-sm font-bold text-white tabular-nums leading-tight">
                 ${fmt(pick.entry_low)} – ${fmt(pick.entry_high)}
               </p>
-              <p className="text-[11px] text-zinc-500 tabular-nums">Current ${fmt(pick.current_price)}</p>
+              <p className="type-meta text-zinc-500 tabular-nums">Current ${fmt(pick.current_price)}</p>
             </div>
             <div className="text-right">
-              <p className="text-[10px] font-semibold text-zinc-500 uppercase tracking-wide">
+              <p className="type-micro font-semibold text-zinc-500 uppercase tracking-wide">
                 {targetCopy.targetHeading}
               </p>
               <p className={cn(
@@ -442,9 +442,9 @@ function PickCard({
               )}>
                 {showTarget ? formatTargetPrice(pick.target_mean) : TARGET_UNAVAILABLE}
               </p>
-              {subline && <p className="text-[11px] text-zinc-500">{subline}</p>}
+              {subline && <p className="type-meta text-zinc-500">{subline}</p>}
               {showAnalystRange && (
-                <p className="text-[10px] text-zinc-600 tabular-nums mt-0.5">
+                <p className="type-micro text-zinc-600 tabular-nums mt-0.5">
                   Range ${fmt(pick.target_low!)} – ${fmt(pick.target_high!)}
                 </p>
               )}
@@ -523,7 +523,7 @@ function PickCard({
             <div>
               <div className="flex items-center gap-1.5 mb-1.5">
                 <TrendingUp className="w-3.5 h-3.5 text-emerald-400" aria-hidden="true" />
-                <p className="text-[11px] font-bold text-emerald-400 uppercase tracking-wide">Why it looks good</p>
+                <p className="type-meta font-bold text-emerald-400 uppercase tracking-wide">Why it looks good</p>
               </div>
               <p className="text-sm text-zinc-200 leading-relaxed">{pick.thesis}</p>
             </div>
@@ -533,13 +533,13 @@ function PickCard({
             <div>
               <div className="flex items-center gap-1.5 mb-1.5">
                 <AlertTriangle className="w-3.5 h-3.5 text-yellow-400" aria-hidden="true" />
-                <p className="text-[11px] font-bold text-yellow-400 uppercase tracking-wide">Main thing to watch</p>
+                <p className="type-meta font-bold text-yellow-400 uppercase tracking-wide">Main thing to watch</p>
               </div>
               <p className="text-sm text-zinc-300 leading-relaxed">{pick.main_risk}</p>
             </div>
           )}
 
-          <p className="text-[10px] text-zinc-600 pt-1">
+          <p className="type-micro text-zinc-600 pt-1">
             {pick.narrative_source === 'llm'
               ? 'Summary written by AI · prices and ratings from public data'
               : llmEnabled
@@ -702,17 +702,17 @@ function SectionHeader({
     <>
       <div className={cn('flex items-center gap-2 min-w-0', showSubtitle && 'mb-0.5')}>
         <Icon className="w-3.5 h-3.5 text-blue-400 shrink-0" aria-hidden="true" />
-        <h2 id={id} className="text-sm font-bold text-white truncate">
+        <h2 id={id} className="text-base sm:text-sm font-bold text-white truncate">
           {title}
         </h2>
         {count != null && count > 0 && (
-          <span className="shrink-0 text-[10px] font-semibold tabular-nums text-zinc-500 bg-zinc-800/80 px-1.5 py-0.5 rounded-full">
+          <span className="shrink-0 type-micro font-semibold tabular-nums text-zinc-500 bg-zinc-800/80 px-1.5 py-0.5 rounded-full">
             {count}
           </span>
         )}
       </div>
       {showSubtitle && (
-        <p className={cn('text-xs text-zinc-600 leading-snug', collapsible && 'text-left')}>
+        <p className={cn('type-caption text-zinc-600 leading-snug', collapsible && 'text-left')}>
           {subtitleText}
         </p>
       )}
@@ -779,11 +779,11 @@ export default function PicksPage() {
       <main id="main" className="page-shell !pt-3">
         <div className="mb-3 flex items-center justify-between gap-3">
           <div className="flex items-center gap-1.5 min-w-0">
-            <h1 className="text-xl font-bold text-white tracking-tight">Picks</h1>
+            <h1 className="text-2xl sm:text-xl font-bold text-white tracking-tight">Picks</h1>
             <Sparkles className="w-4 h-4 text-blue-400 shrink-0" aria-hidden="true" />
           </div>
           {data?.scores_at && !isLoading && (
-            <p className="text-[11px] text-zinc-500 tabular-nums shrink-0">
+            <p className="type-meta text-zinc-500 tabular-nums shrink-0">
               Updated {timeAgo(data.scores_at)}
             </p>
           )}
@@ -840,7 +840,7 @@ export default function PicksPage() {
 
             <div className="mt-2 flex items-start gap-2 px-1">
               <ShieldCheck className="w-3.5 h-3.5 text-zinc-600 shrink-0 mt-0.5" aria-hidden="true" />
-              <p className="text-[11px] text-zinc-600 leading-relaxed">
+              <p className="type-meta text-zinc-600 leading-relaxed">
                 Not financial advice. Price targets are estimates to help you compare — not promises.
                 Always do your own research before buying.
               </p>

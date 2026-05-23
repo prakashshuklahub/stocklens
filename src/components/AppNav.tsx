@@ -135,7 +135,7 @@ export default function AppNav({
                 />
                 <span
                   className={cn(
-                    'text-xs font-semibold leading-none',
+                    'text-sm sm:text-xs font-semibold leading-none',
                     active ? 'text-white' : 'text-zinc-500',
                   )}
                 >

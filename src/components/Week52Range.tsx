@@ -14,11 +14,11 @@ export default function Week52Range({
   return (
     <div className="space-y-1.5">
       <div className="flex items-center justify-between">
-        <span className="text-[11px] text-zinc-500 font-medium">52-week range</span>
-        <span className="text-[10px] text-zinc-600">dot = today</span>
+        <span className="type-meta text-zinc-500 font-medium">52-week range</span>
+        <span className="type-micro text-zinc-600">dot = today</span>
       </div>
       <div className="flex items-center gap-2">
-        <span className="text-[11px] text-zinc-500 tabular-nums shrink-0">${low.toFixed(0)}</span>
+        <span className="type-meta text-zinc-500 tabular-nums shrink-0">${low.toFixed(0)}</span>
         <div className="flex-1 h-1.5 rounded-full bg-zinc-700/50 relative">
           <div
             className="absolute top-1/2 -translate-y-1/2 w-2.5 h-2.5 rounded-full bg-white shadow-sm shadow-black/30"
@@ -26,7 +26,7 @@ export default function Week52Range({
             aria-label="Current price in 52-week range"
           />
         </div>
-        <span className="text-[11px] text-zinc-500 tabular-nums shrink-0">${high.toFixed(0)}</span>
+        <span className="type-meta text-zinc-500 tabular-nums shrink-0">${high.toFixed(0)}</span>
       </div>
     </div>
   )

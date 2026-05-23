@@ -7,7 +7,6 @@ import WatchlistCard, { type WatchlistStock } from '@/components/watchlist/Watch
 import StockSearchInput, { type StockResult } from '@/components/watchlist/StockSearchInput'
 import WatchlistSuggestions from '@/components/watchlist/WatchlistSuggestions'
 import AppNav from '@/components/AppNav'
-import LiveRefreshHeader from '@/components/LiveRefreshHeader'
 import { useMarketOpen, useMarketSession } from '@/hooks/useMarketOpen'
 import { useLivePriceRefresh } from '@/hooks/useLivePriceRefresh'
 import { createMarketAwareFetcher } from '@/lib/swr-market-fetcher'
@@ -129,7 +128,7 @@ function WatchlistSortBar({
               aria-pressed={active}
               onClick={() => onChange(opt.id)}
               className={cn(
-                'relative min-h-[44px] px-1.5 text-sm transition-colors [touch-action:manipulation]',
+                'relative min-h-[44px] px-1.5 text-base sm:text-sm transition-colors [touch-action:manipulation]',
                 'after:absolute after:left-1.5 after:right-1.5 after:bottom-2 after:h-0.5 after:rounded-full after:transition-opacity',
                 active
                   ? 'text-zinc-300 font-semibold after:bg-zinc-500/80 after:opacity-100'
@@ -394,7 +393,7 @@ export default function WatchlistPage() {
     void mutateFundamentals()
   }, [mutate, mutateFundamentals])
 
-  const countdown = useLivePriceRefresh(
+  useLivePriceRefresh(
     marketSession,
     marketOpen && stocks.length > 0,
     refreshPrices,
@@ -504,11 +503,11 @@ export default function WatchlistPage() {
         <main id="main" className="page-shell !pt-3">
           <div className="flex items-center justify-between gap-3 mb-4">
             <div className="flex items-center gap-1.5 min-w-0">
-              <h1 className="text-xl font-bold text-white tracking-tight">Watchlist</h1>
+              <h1 className="text-2xl sm:text-xl font-bold text-white tracking-tight">Watchlist</h1>
               <BarChart2 className="w-4 h-4 text-blue-400 shrink-0" aria-hidden="true" />
             </div>
             {!isLoading && stocks.length > 0 && (
-              <p className="text-[11px] text-zinc-500 tabular-nums shrink-0" aria-live="polite">
+              <p className="type-meta text-zinc-500 tabular-nums shrink-0" aria-live="polite">
                 {stocks.length} stocks
               </p>
             )}
@@ -550,15 +549,9 @@ export default function WatchlistPage() {
             </div>
           ) : (
             <div>
-              <LiveRefreshHeader
-                title="Your watchlist"
-                seconds={countdown}
-                refreshing={refreshing}
-                session={marketSession}
-                footer={
-                  <WatchlistSortBar value={sortMode} onChange={setSortMode} />
-                }
-              />
+              <div className="mb-3">
+                <WatchlistSortBar value={sortMode} onChange={setSortMode} />
+              </div>
 
               {layout.type === 'sector' ? (
                 layout.groups.map(([sector, sectorStocks]) => (

@@ -116,7 +116,7 @@ function TargetPrice({
   return (
     <div className="rounded-xl bg-zinc-800/80 px-3 py-2.5 space-y-1">
       <div>
-        <p className="text-[10px] font-bold text-zinc-500 uppercase tracking-wider">Room to grow</p>
+        <p className="type-micro font-bold text-zinc-500 uppercase tracking-wider">Room to grow</p>
         <p
           className={cn(
             'text-lg font-black tabular-nums leading-none mt-0.5',
@@ -130,14 +130,14 @@ function TargetPrice({
           {formatDisplayUpsidePct(targetPrice, current, targetSource)}
         </p>
         {showTarget && (
-          <p className="text-[10px] text-zinc-500 tabular-nums mt-1">
+          <p className="type-micro text-zinc-500 tabular-nums mt-1">
             {formatDisplayUpsideDollar(targetPrice, current, targetSource)} to{' '}
             {formatDisplayTargetPrice(targetPrice, targetSource)}
           </p>
         )}
       </div>
       {showRange && (
-        <p className="text-[10px] text-zinc-600 tabular-nums pt-0.5">
+        <p className="type-micro text-zinc-600 tabular-nums pt-0.5">
           Analyst range {formatTargetPrice(targetLow)} – {formatTargetPrice(targetHigh)}
         </p>
       )}
@@ -189,7 +189,7 @@ function CollapsedSummary({
       {badgeLabel && vsSector?.sector !== 'Other' && (
         <span
           className={cn(
-            'text-xs font-semibold px-2 py-0.5 rounded-full',
+            'text-sm sm:text-xs font-semibold px-2 py-0.5 rounded-full',
             vsSector?.badge === 'leader' && 'bg-emerald-500/10 text-emerald-400',
             vsSector?.badge === 'lagger' && 'bg-red-500/10 text-red-400',
             vsSector?.badge === 'inline' && 'bg-zinc-800 text-zinc-400',
@@ -202,7 +202,7 @@ function CollapsedSummary({
       {fundamentals?.change_7d_pct != null && (
         <span
           className={cn(
-            'text-xs font-semibold tabular-nums px-2 py-0.5 rounded-full',
+            'text-sm sm:text-xs font-semibold tabular-nums px-2 py-0.5 rounded-full',
             fundamentals.change_7d_pct >= 0
               ? 'bg-emerald-500/10 text-emerald-400'
               : 'bg-red-500/10 text-red-400',
@@ -214,7 +214,7 @@ function CollapsedSummary({
       {fundamentals?.change_30d_pct != null && (
         <span
           className={cn(
-            'text-xs font-semibold tabular-nums px-2 py-0.5 rounded-full',
+            'text-sm sm:text-xs font-semibold tabular-nums px-2 py-0.5 rounded-full',
             fundamentals.change_30d_pct >= 0
               ? 'bg-emerald-500/10 text-emerald-400'
               : 'bg-red-500/10 text-red-400',
@@ -224,11 +224,11 @@ function CollapsedSummary({
         </span>
       )}
       {showTarget && upside && upside !== '—' ? (
-        <span className="text-xs font-semibold tabular-nums px-2 py-0.5 rounded-full bg-zinc-800 text-zinc-300">
+        <span className="text-sm sm:text-xs font-semibold tabular-nums px-2 py-0.5 rounded-full bg-zinc-800 text-zinc-300">
           Room to grow {upside}
         </span>
       ) : (
-        <span className="text-xs font-medium px-2 py-0.5 rounded-full bg-zinc-800/80 text-zinc-500">
+        <span className="text-sm sm:text-xs font-medium px-2 py-0.5 rounded-full bg-zinc-800/80 text-zinc-500">
           No target
         </span>
       )}
@@ -329,10 +329,10 @@ function WatchlistAccordionRow({
           <div className="min-w-0 flex-1">
             <div className="flex items-center gap-1.5">
               <Icon className="w-3.5 h-3.5 text-zinc-500 shrink-0" aria-hidden="true" />
-              <span className="text-[11px] font-semibold text-zinc-300">{label}</span>
+              <span className="type-meta font-semibold text-zinc-300">{label}</span>
             </div>
             {!open && (
-              <p className="text-[11px] text-zinc-600 mt-1 leading-snug truncate">{preview}</p>
+              <p className="type-meta text-zinc-600 mt-1 leading-snug truncate">{preview}</p>
             )}
           </div>
           <CollapseChevron open={open} className="text-zinc-600 shrink-0 mt-0.5" />

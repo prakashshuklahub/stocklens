@@ -84,10 +84,10 @@ export default function WatchlistSuggestions({
           <p className="text-sm text-zinc-500 mt-0.5 truncate">{subtitle}</p>
         </div>
         {data?.llm_enabled && !isLoading && visible.length > 0 && (
-          <span className="text-[10px] font-bold text-blue-400/80 uppercase tracking-wide shrink-0">AI</span>
+          <span className="type-micro font-bold text-blue-400/80 uppercase tracking-wide shrink-0">AI</span>
         )}
         {!isLoading && visible.length > 0 && (
-          <span className="text-[11px] font-bold text-orange-400/90 tabular-nums shrink-0">
+          <span className="type-meta font-bold text-orange-400/90 tabular-nums shrink-0">
             {visible.length}
           </span>
         )}
@@ -121,11 +121,11 @@ export default function WatchlistSuggestions({
               <div className="flex items-start justify-between gap-2">
                 <div className="min-w-0 flex-1">
                   <div className="flex items-center gap-2 flex-wrap">
-                    <span className="text-[11px] font-bold text-orange-400/90">#{i + 1}</span>
+                    <span className="type-meta font-bold text-orange-400/90">#{i + 1}</span>
                     <StockLogo ticker={s.ticker} size="sm" />
                     <span className="text-lg font-bold text-white">{s.ticker}</span>
                     {s.sector && s.sector !== 'Other' && (
-                      <span className="text-[10px] font-semibold text-orange-300/90 px-1.5 py-0.5 rounded-md bg-orange-500/10">
+                      <span className="type-micro font-semibold text-orange-300/90 px-1.5 py-0.5 rounded-md bg-orange-500/10">
                         {s.sector}
                       </span>
                     )}

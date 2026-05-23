@@ -19,7 +19,7 @@ export default function SessionPriceBadge({
   return (
     <span
       className={cn(
-        'text-[10px] font-semibold uppercase tracking-wide text-zinc-500 px-1.5 py-0.5 rounded bg-zinc-800/80',
+        'type-micro font-semibold uppercase tracking-wide text-zinc-500 px-1.5 py-0.5 rounded bg-zinc-800/80',
         className,
       )}
     >

@@ -76,7 +76,7 @@ function SignalHeroHeader({ signal }: { signal: Signal }) {
           </div>
           <p className="text-sm text-zinc-400 truncate leading-snug">{signal.company_name}</p>
           {signal.sector && (
-            <p className="text-[11px] text-zinc-500 mt-1">
+            <p className="type-meta text-zinc-500 mt-1">
               {signal.sector} · watchlist
             </p>
           )}
@@ -107,7 +107,7 @@ function ReasonChip({ reason }: { reason: SignalReason }) {
     reason.tone === 'bearish' ? 'bg-red-500/10 text-red-300' :
     'bg-zinc-800 text-zinc-400'
   return (
-    <span className={cn('text-xs font-semibold px-2.5 py-1 rounded-full whitespace-nowrap', styles)}>
+    <span className={cn('text-sm sm:text-xs font-semibold px-2.5 py-1 rounded-full whitespace-nowrap', styles)}>
       {reason.label}
     </span>
   )
@@ -153,10 +153,10 @@ function SignalHeadlinesRow({ signal, cardId }: { signal: Signal; cardId: string
           <div className="min-w-0 flex-1">
             <div className="flex items-center gap-1.5">
               <Newspaper className="w-3.5 h-3.5 text-zinc-500 shrink-0" aria-hidden="true" />
-              <span className="text-[11px] font-semibold text-zinc-300">Headlines</span>
+              <span className="type-meta font-semibold text-zinc-300">Headlines</span>
             </div>
             {!open && (
-              <p className="text-[11px] text-zinc-600 mt-1 leading-snug truncate">{preview}</p>
+              <p className="type-meta text-zinc-600 mt-1 leading-snug truncate">{preview}</p>
             )}
           </div>
           <CollapseChevron open={open} className="text-zinc-600 shrink-0 mt-0.5" />
@@ -221,9 +221,9 @@ function NewsRow({ item }: { item: SignalNewsItem }) {
         <div className="flex-1 min-w-0">
           <p className="text-sm text-zinc-200 leading-snug">{item.title}</p>
           <div className="flex items-center gap-2 mt-1">
-            <span className="text-[11px] text-zinc-500">{item.source}</span>
-            <span className="text-[11px] text-zinc-600">·</span>
-            <span className="text-[11px] text-zinc-600">{timeAgo(item.published_at)}</span>
+            <span className="type-meta text-zinc-500">{item.source}</span>
+            <span className="type-meta text-zinc-600">·</span>
+            <span className="type-meta text-zinc-600">{timeAgo(item.published_at)}</span>
           </div>
         </div>
         <ExternalLink className="w-3.5 h-3.5 text-zinc-600 shrink-0 mt-0.5" aria-hidden="true" />
@@ -291,8 +291,8 @@ function CollapsibleSection({
       >
         <div className="flex items-center gap-2.5 min-w-0">
           <span aria-hidden="true" className="shrink-0">{icon}</span>
-          <span className={cn('text-sm font-bold', titleClass)}>{title}</span>
-          <span className={cn('text-xs font-semibold tabular-nums', countClass)}>({count})</span>
+          <span className={cn('text-base sm:text-sm font-bold', titleClass)}>{title}</span>
+          <span className={cn('type-caption font-semibold tabular-nums', countClass)}>({count})</span>
         </div>
         <CollapseChevron open={open} className={countClass} />
       </button>
@@ -376,16 +376,16 @@ export default function NewsPage() {
       <main id="main" className="page-shell !pt-3">
         <div className="mb-3 flex items-center justify-between gap-3">
           <div className="flex items-center gap-1.5 min-w-0">
-            <h1 className="text-xl font-bold text-white tracking-tight">Signals</h1>
+            <h1 className="text-2xl sm:text-xl font-bold text-white tracking-tight">Signals</h1>
             <Zap className="w-4 h-4 text-emerald-400 shrink-0" aria-hidden="true" />
           </div>
           {data?.generated_at && !isLoading && (
-            <p className="text-[11px] text-zinc-500 tabular-nums shrink-0">
+            <p className="type-meta text-zinc-500 tabular-nums shrink-0">
               Updated {timeAgo(data.generated_at)}
             </p>
           )}
         </div>
-        <p className="text-xs text-zinc-500 mb-4 -mt-1">From your watchlist</p>
+        <p className="type-caption text-zinc-500 mb-4 -mt-1">From your watchlist</p>
 
         {isLoading ? (
           <div className="space-y-3" aria-busy="true">

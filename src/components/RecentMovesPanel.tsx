@@ -10,7 +10,7 @@ function PctBadge({ value, label }: { value: number | null; label: string }) {
   if (value == null) {
     return (
       <div className="flex flex-col items-center gap-1">
-        <span className="text-[11px] text-zinc-500">{label}</span>
+        <span className="type-meta text-zinc-500">{label}</span>
         <div className="h-3 w-10 rounded bg-zinc-700/60 animate-pulse" />
       </div>
     )
@@ -18,7 +18,7 @@ function PctBadge({ value, label }: { value: number | null; label: string }) {
   const isPos = value >= 0
   return (
     <div className="flex flex-col items-center gap-0.5">
-      <span className="text-[11px] text-zinc-500 font-medium">{label}</span>
+      <span className="type-meta text-zinc-500 font-medium">{label}</span>
       <span className={cn('text-sm font-bold tabular-nums', isPos ? 'text-emerald-400' : 'text-red-400')}>
         {fmtPct(value)}
       </span>
@@ -67,7 +67,7 @@ export default function RecentMovesPanel({
         <PctBadge value={change30d} label="30d" />
       </div>
       {volumeRatio != null && volumeRatio >= 1.3 && (
-        <div className="flex items-center gap-2 text-[11px] pt-2.5 mt-2.5 border-t border-white/[0.04]">
+        <div className="flex items-center gap-2 type-meta pt-2.5 mt-2.5 border-t border-white/[0.04]">
           <BarChart3 className="w-3.5 h-3.5 text-amber-400 shrink-0" aria-hidden="true" />
           <span className="text-zinc-400">
             Trading volume is{' '}

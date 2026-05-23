@@ -109,12 +109,12 @@ function SummaryBar({
   return (
     <div className="portfolio-summary mb-4">
       <div className="portfolio-summary-inner px-4 py-3">
-        <p className="text-[10px] font-semibold text-blue-400/55 uppercase tracking-[0.1em] mb-1">Portfolio Value</p>
+        <p className="type-micro font-semibold text-blue-400/55 uppercase tracking-[0.1em] mb-1">Portfolio Value</p>
         <div className="flex items-end justify-between gap-2">
           <div>
             <p className="text-2xl font-black text-white tabular-nums leading-none">${fmt(totalCurrent)}</p>
             {asOfLabel && (
-              <p className="text-[10px] text-zinc-600 mt-1">{asOfLabel}</p>
+              <p className="type-micro text-zinc-600 mt-1">{asOfLabel}</p>
             )}
           </div>
           <span className={cn(
@@ -127,11 +127,11 @@ function SummaryBar({
 
         <div className="mt-2 flex items-center justify-between pt-2 border-t border-white/[0.06] gap-3">
           <div>
-            <p className="text-[10px] text-zinc-500">Invested</p>
+            <p className="type-micro text-zinc-500">Invested</p>
             <p className="text-sm font-bold text-zinc-200 tabular-nums leading-tight">${fmt(totalInvested)}</p>
           </div>
           <div className="text-right">
-            <p className="text-[10px] text-zinc-500">Total P&L</p>
+            <p className="type-micro text-zinc-500">Total P&L</p>
             <div className="flex items-center justify-end gap-1">
               {isPos
                 ? <TrendingUp className="w-3 h-3 text-emerald-400" />
@@ -165,7 +165,7 @@ function HoldingCard({ h }: { h: PortfolioHoldingWithPrice }) {
         {h.company_name && (
           <p className="text-sm text-zinc-400 truncate leading-snug">{h.company_name}</p>
         )}
-        <p className="text-[11px] text-zinc-500 mt-1 tabular-nums">
+        <p className="type-meta text-zinc-500 mt-1 tabular-nums">
           {fmt(h.quantity, 0)} shares · avg ${fmt(h.avg_cost_basis)} · inv ${fmt(invested)}
         </p>
       </div>
@@ -196,7 +196,7 @@ function AlertFactorChip({ factor }: { factor: PickFactor }) {
     factor.tone === 'positive' ? 'bg-emerald-500/10 text-emerald-300' :
     'bg-zinc-800 text-zinc-400'
   return (
-    <span className={cn('text-[11px] font-semibold px-2 py-1 rounded-full whitespace-nowrap', tone)}>
+    <span className={cn('type-meta font-semibold px-2 py-1 rounded-full whitespace-nowrap', tone)}>
       {factor.label}
       {factor.value && <span className="opacity-70 ml-1 font-normal">· {factor.value}</span>}
     </span>
@@ -240,10 +240,10 @@ function AlertReviewRow({
           <div className="min-w-0 flex-1">
             <div className="flex items-center gap-1.5">
               <Eye className="w-3.5 h-3.5 text-zinc-500 shrink-0" aria-hidden="true" />
-              <span className="text-[11px] font-semibold text-zinc-300">Why review this holding?</span>
+              <span className="type-meta font-semibold text-zinc-300">Why review this holding?</span>
             </div>
             {!open && (
-              <p className="text-[11px] text-zinc-600 mt-1 leading-snug truncate">{previewText}</p>
+              <p className="type-meta text-zinc-600 mt-1 leading-snug truncate">{previewText}</p>
             )}
           </div>
           <CollapseChevron open={open} className="text-zinc-600 shrink-0 mt-0.5" />
@@ -264,7 +264,7 @@ function AlertReviewRow({
               {alert.caveat}
             </p>
           )}
-          <p className="text-[10px] text-zinc-600">
+          <p className="type-micro text-zinc-600">
             {preview
               ? 'Sample card for UI preview'
               : alert.narrative_source === 'llm'
@@ -299,7 +299,7 @@ function AlertCard({ alert, preview }: { alert: PortfolioAlert; preview?: boolea
             <div className="min-w-0 flex-1">
               <div className="flex items-baseline gap-2">
                 <span className="text-base font-bold text-white">{alert.ticker}</span>
-                <span className="text-xs text-zinc-500 truncate">{alert.company_name ?? ''}</span>
+                <span className="type-caption text-zinc-500 truncate">{alert.company_name ?? ''}</span>
               </div>
               <p className={cn('text-xs mt-0.5 leading-snug', isRed ? 'text-red-200/90' : 'text-amber-200/80')}>
                 {alert.headline}
@@ -308,7 +308,7 @@ function AlertCard({ alert, preview }: { alert: PortfolioAlert; preview?: boolea
           </div>
           <span
             className={cn(
-              'shrink-0 whitespace-nowrap text-[11px] font-bold uppercase tracking-wide px-2.5 py-1.5 rounded-full',
+              'shrink-0 whitespace-nowrap type-meta font-bold uppercase tracking-wide px-2.5 py-1.5 rounded-full',
               isRed ? 'bg-red-500/20 text-red-300' : 'bg-amber-500/15 text-amber-300',
             )}
           >
@@ -318,16 +318,16 @@ function AlertCard({ alert, preview }: { alert: PortfolioAlert; preview?: boolea
 
         <div className="grid grid-cols-2 gap-2 bg-black/20 rounded-xl px-3 py-2.5">
           <div>
-            <p className="text-[10px] font-semibold text-zinc-500 uppercase tracking-wide">Your P&L</p>
+            <p className="type-micro font-semibold text-zinc-500 uppercase tracking-wide">Your P&L</p>
             <p className={cn('text-sm font-bold tabular-nums', isPos ? 'text-emerald-400' : 'text-red-400')}>
               {isPos ? '+' : ''}{pnl.toFixed(1)}%
             </p>
-            <p className="text-[11px] text-zinc-500 tabular-nums">avg ${fmt(alert.holding.avg_cost_basis)}</p>
+            <p className="type-meta text-zinc-500 tabular-nums">avg ${fmt(alert.holding.avg_cost_basis)}</p>
           </div>
           <div className="text-right">
-            <p className="text-[10px] font-semibold text-zinc-500 uppercase tracking-wide">Now</p>
+            <p className="type-micro font-semibold text-zinc-500 uppercase tracking-wide">Now</p>
             <p className="text-sm font-bold text-white tabular-nums">${fmt(alert.holding.current_price)}</p>
-            <p className="text-[11px] text-zinc-500 tabular-nums">{fmt(alert.holding.quantity, 0)} shares</p>
+            <p className="type-meta text-zinc-500 tabular-nums">{fmt(alert.holding.quantity, 0)} shares</p>
           </div>
         </div>
 
@@ -401,12 +401,12 @@ function AlertsSection({
       >
         <div className="flex items-center gap-2.5 min-w-0">
           <Eye className="w-4 h-4 text-amber-400 shrink-0" aria-hidden="true" />
-          <span className="text-sm font-bold text-white">Portfolio review</span>
-          <span className="text-xs font-semibold tabular-nums text-zinc-500">({sectionCount})</span>
+          <span className="text-base sm:text-sm font-bold text-white">Portfolio review</span>
+          <span className="type-caption font-semibold tabular-nums text-zinc-500">({sectionCount})</span>
         </div>
         <div className="flex items-center gap-2 shrink-0">
           {!preview && !loading && clearCount > 0 && alerts.length > 0 && (
-            <span className="text-[11px] text-emerald-400/90 font-semibold">
+            <span className="type-meta text-emerald-400/90 font-semibold">
               {clearCount} OK
             </span>
           )}
@@ -416,10 +416,10 @@ function AlertsSection({
 
       {open && (
         <div className="mt-2">
-          <p className="text-xs text-zinc-500 mb-2 px-0.5">{subtitle}</p>
+          <p className="type-caption text-zinc-500 mb-2 px-0.5">{subtitle}</p>
 
           {preview && (
-            <p className="text-[11px] text-amber-400/80 mb-2 px-0.5">
+            <p className="type-meta text-amber-400/80 mb-2 px-0.5">
               Preview only — sync Vested to scan your real holdings.
             </p>
           )}
@@ -442,7 +442,7 @@ function AlertsSection({
               <CheckCircle className="w-5 h-5 text-emerald-400 shrink-0 mt-0.5" aria-hidden="true" />
               <div className="min-w-0 text-left">
                 <p className="text-sm font-semibold text-emerald-300/90 leading-tight">All clear for now</p>
-                <p className="text-[11px] text-zinc-500 mt-0.5 leading-snug">
+                <p className="type-meta text-zinc-500 mt-0.5 leading-snug">
                   No holdings need review—we flag only when several weak signals line up.
                 </p>
               </div>
@@ -450,7 +450,7 @@ function AlertsSection({
           ) : null}
 
           {!preview && !loading && holdingCount > 0 && (
-            <p className="text-[10px] text-zinc-600 mt-2 leading-snug px-0.5">
+            <p className="type-micro text-zinc-600 mt-2 leading-snug px-0.5">
               Tap ↻ to rescan.{llmEnabled ? ' AI summaries when available.' : ''}
             </p>
           )}
@@ -490,8 +490,8 @@ function HoldingsSection({
       >
         <div className="flex items-center gap-2.5 min-w-0">
           <PieChart className="w-4 h-4 text-blue-400 shrink-0" aria-hidden="true" />
-          <span className="text-sm font-bold text-white">Your holdings</span>
-          <span className="text-xs font-semibold tabular-nums text-zinc-500">({holdings.length})</span>
+          <span className="text-base sm:text-sm font-bold text-white">Your holdings</span>
+          <span className="type-caption font-semibold tabular-nums text-zinc-500">({holdings.length})</span>
         </div>
         <div className="flex items-center gap-2 shrink-0">
           {isLive && (
@@ -503,7 +503,7 @@ function HoldingsSection({
 
       {open && (
         <div className="mt-2">
-          <p className="text-xs text-zinc-500 mb-2 px-0.5" aria-live="polite">
+          <p className="type-caption text-zinc-500 mb-2 px-0.5" aria-live="polite">
             {subtitle}
           </p>
           <div className="space-y-3">
@@ -728,12 +728,12 @@ export default function PortfolioPage() {
         <main id="main" className="page-shell !pt-3">
           <div className="flex items-center justify-between gap-3 mb-4">
             <div className="flex items-center gap-1.5 min-w-0">
-              <h1 className="text-xl font-bold text-white tracking-tight">Portfolio</h1>
+              <h1 className="text-2xl sm:text-xl font-bold text-white tracking-tight">Portfolio</h1>
               <PieChart className="w-4 h-4 text-blue-400 shrink-0" aria-hidden="true" />
             </div>
             <div className="flex items-center gap-2 shrink-0">
               {syncedLabel && (
-                <p className="text-[11px] text-zinc-500 tabular-nums hidden sm:block">
+                <p className="type-meta text-zinc-500 tabular-nums hidden sm:block">
                   Synced {syncedLabel}
                 </p>
               )}
@@ -754,9 +754,9 @@ export default function PortfolioPage() {
             />
           </div>
           {syncedLabel ? (
-            <p className="text-xs text-zinc-500 mb-4 -mt-2 sm:hidden">Synced {syncedLabel}</p>
+            <p className="type-caption text-zinc-500 mb-4 -mt-2 sm:hidden">Synced {syncedLabel}</p>
           ) : (
-            <p className="text-xs text-zinc-600 mb-4 -mt-2">No holdings synced yet</p>
+            <p className="type-caption text-zinc-600 mb-4 -mt-2">No holdings synced yet</p>
           )}
 
           {parseError && (

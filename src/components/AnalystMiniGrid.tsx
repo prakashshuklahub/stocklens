@@ -9,7 +9,7 @@ function Mini({ label, value, tone }: { label: string; value: number; tone: 'eme
   return (
     <div className={cn('flex-1 rounded-xl py-2 text-center', styles)}>
       <p className="text-base font-bold tabular-nums leading-tight">{value}</p>
-      <p className="text-[10px] uppercase tracking-wide opacity-80">{label}</p>
+      <p className="type-micro uppercase tracking-wide opacity-80">{label}</p>
     </div>
   )
 }
@@ -44,7 +44,7 @@ export default function AnalystMiniGrid({
 
   return (
     <div>
-      <p className="text-[11px] font-semibold text-zinc-500 uppercase tracking-wide mb-2">
+      <p className="type-meta font-semibold text-zinc-500 uppercase tracking-wide mb-2">
         What analysts say ({total})
       </p>
       <div className="flex gap-2">
