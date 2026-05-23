@@ -1,9 +1,10 @@
 'use client'
 
 import useSWR from 'swr'
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 import AppNav from '@/components/AppNav'
 import StockLogo from '@/components/StockLogo'
+import { useMarketOpen } from '@/hooks/useMarketOpen'
 import {
   TrendingUp,
   TrendingDown,
@@ -272,16 +273,25 @@ function QuietSection({ quiet }: { quiet: Signal[] }) {
 
 // ── Page ──────────────────────────────────────────────────────────────────────
 export default function NewsPage() {
+  const marketOpen = useMarketOpen()
   const { data, isLoading, isValidating, mutate } = useSWR<SignalsResponse>('/api/signals', fetcher, {
     revalidateOnFocus: false,
   })
   const refreshing = isValidating && !isLoading
 
+  useEffect(() => {
+    if (!marketOpen) return
+    const id = setInterval(() => {
+      void mutate()
+    }, 60_000)
+    return () => clearInterval(id)
+  }, [marketOpen, mutate])
+
   const hasAnySignal = (data?.bullish.length ?? 0) + (data?.bearish.length ?? 0) > 0
 
   return (
     <div className="min-h-screen bg-zinc-950">
-      <AppNav onRefresh={() => mutate()} refreshing={refreshing} showRefresh />
+      <AppNav onRefresh={() => mutate()} refreshing={refreshing} marketOpen={marketOpen} showRefresh />
 
       <main id="main" className="page-shell">
           <div className="mb-7">

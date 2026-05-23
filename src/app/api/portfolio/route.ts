@@ -1,5 +1,5 @@
 import { auth, getSessionUserId } from '@/lib/auth'
-import { fetchStockSnapshotsForTickers } from '@/lib/live-prices'
+import { fetchRegularSnapshotsForTickers } from '@/lib/live-prices'
 import { isPriceRefreshActive } from '@/lib/market-hours'
 import { ensureLogosForTickers } from '@/lib/stock-logo-cache'
 import { createServerClient } from '@/lib/supabase'
@@ -22,7 +22,7 @@ export async function GET() {
 
   const tickers = holdings.map((h) => h.ticker)
   const priceLive = isPriceRefreshActive()
-  const prices = await fetchStockSnapshotsForTickers(tickers)
+  const prices = await fetchRegularSnapshotsForTickers(tickers)
   const enriched = holdings.map((h) => ({
     ...h,
     snapshot: prices.get(h.ticker.toUpperCase()) ?? null,

@@ -12,15 +12,24 @@ export async function DELETE(
     return NextResponse.json({ error: 'Session invalid — please sign in again' }, { status: 401 })
   }
 
-  const { ticker } = await params
+  const { ticker: raw } = await params
+  const sym = decodeURIComponent(raw).toUpperCase().trim()
+  if (!sym || !/^[A-Z]{1,5}$/.test(sym)) {
+    return NextResponse.json({ error: 'Invalid ticker' }, { status: 400 })
+  }
+
   const supabase = createServerClient()
 
-  const { error } = await supabase
+  const { data, error } = await supabase
     .from('watchlist_stocks')
     .delete()
     .eq('user_id', userId)
-    .eq('ticker', ticker.toUpperCase())
+    .eq('ticker', sym)
+    .select('ticker')
 
   if (error) return NextResponse.json({ error: error.message }, { status: 500 })
-  return NextResponse.json({ success: true })
+  if (!data?.length) {
+    return NextResponse.json({ error: `${sym} is not on your watchlist` }, { status: 404 })
+  }
+  return NextResponse.json({ success: true, ticker: sym })
 }

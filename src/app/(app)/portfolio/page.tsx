@@ -16,7 +16,6 @@ import {
   Eye,
 } from 'lucide-react'
 import AppNav from '@/components/AppNav'
-import SessionPriceBadge from '@/components/SessionPriceBadge'
 import StockLogo from '@/components/StockLogo'
 import LiveRefreshHeader from '@/components/LiveRefreshHeader'
 import { useMarketOpen, useMarketSession } from '@/hooks/useMarketOpen'
@@ -24,7 +23,7 @@ import { useLivePriceRefresh } from '@/hooks/useLivePriceRefresh'
 import { PORTFOLIO_ALERT_DEMO } from '@/lib/portfolio-alerts'
 import { createMarketAwareFetcher } from '@/lib/swr-market-fetcher'
 import type { MarketSession } from '@/lib/market-hours'
-import { formatSnapshotAsOfET, priceBadgeSession } from '@/lib/market-hours'
+import { formatSnapshotAsOfET } from '@/lib/market-hours'
 import { cn } from '@/lib/utils'
 import type {
   PortfolioAlert,
@@ -100,7 +99,6 @@ function SummaryBar({
   const pnlPct = totalInvested ? (pnl / totalInvested) * 100 : 0
   const isPos = pnl >= 0
   const asOfLabel = session === 'closed' ? formatSnapshotAsOfET(latestAsOf) : null
-  const sessionBadge = session !== 'regular' ? session : null
 
   return (
     <div className="card-surface px-4 py-3 mb-4">
@@ -108,11 +106,8 @@ function SummaryBar({
       <div className="flex items-end justify-between gap-2">
         <div>
           <p className="text-2xl font-black text-white tabular-nums leading-none">${fmt(totalCurrent)}</p>
-          {(sessionBadge || asOfLabel) && (
-            <p className="text-[10px] text-zinc-600 mt-1 flex items-center gap-1.5 flex-wrap">
-              {sessionBadge && <SessionPriceBadge session={sessionBadge} />}
-              {asOfLabel && <span>{asOfLabel}</span>}
-            </p>
+          {asOfLabel && (
+            <p className="text-[10px] text-zinc-600 mt-1">{asOfLabel}</p>
           )}
         </div>
         <span className={cn(
@@ -145,13 +140,7 @@ function SummaryBar({
 }
 
 // ── Holding card ──────────────────────────────────────────────────────────────
-function HoldingCard({
-  h,
-  marketSession,
-}: {
-  h: PortfolioHoldingWithPrice
-  marketSession: MarketSession
-}) {
+function HoldingCard({ h }: { h: PortfolioHoldingWithPrice }) {
   const price = h.snapshot?.price ?? null
   const currentValue = price != null ? price * h.quantity : null
   const invested = h.avg_cost_basis * h.quantity
@@ -159,7 +148,6 @@ function HoldingCard({
   const pnlPct = invested && pnl != null ? (pnl / invested) * 100 : null
   const isPos = pnl != null ? pnl >= 0 : null
   const change1d = h.snapshot?.change_1d_pct ?? null
-  const badgeSession = priceBadgeSession(h.snapshot?.session, marketSession)
 
   return (
     <div className="card-surface px-5 py-4 flex items-center gap-3 active:scale-[0.99] active:brightness-95 transition-all duration-100">
@@ -181,9 +169,6 @@ function HoldingCard({
           <span className="text-[15px] font-bold text-white tabular-nums">
             {price != null ? `$${fmt(price)}` : '—'}
           </span>
-          {badgeSession && price != null && (
-            <SessionPriceBadge session={badgeSession} />
-          )}
         </div>
         {change1d != null && (
           <p className={cn('text-xs tabular-nums font-semibold mt-0.5', change1d >= 0 ? 'text-emerald-400' : 'text-red-400')}>
@@ -720,7 +705,7 @@ export default function PortfolioPage() {
 
               <div className="space-y-2">
                 {holdings.map((h) => (
-                  <HoldingCard key={h.id} h={h} marketSession={marketSession} />
+                  <HoldingCard key={h.id} h={h} />
                 ))}
               </div>
             </>

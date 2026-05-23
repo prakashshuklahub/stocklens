@@ -1,29 +1,38 @@
+// GET /api/watchlist/suggestions — trending cards ("not on your list").
+//
+// Candidate source: Yahoo market movers only (see trending-candidates.ts).
+// Scoring: watchlist-suggestions-scoring.ts (no watchlist awareness).
+// Per-user filter: drop tickers already on the user's watchlist — only filter here.
+
 import { auth, getSessionUserId } from '@/lib/auth'
 import { fetchStockFundamentals, mapPool } from '@/lib/fundamentals-fetch'
 import { fetchLivePricesForTickers } from '@/lib/live-prices'
 import { isPriceRefreshActive } from '@/lib/market-hours'
 import { ensureLogosForTickers } from '@/lib/stock-logo-cache'
 import { fetchYahooSector } from '@/lib/sectors'
-import { fetchMarketMovers } from '@/lib/market-movers'
+import { fetchTrendingCandidates } from '@/lib/trending-candidates'
 import { generateSuggestionBlurb, isLLMEnabled } from '@/lib/llm'
 import { NARRATIVE_TTL_HOURS } from '@/lib/narrative-cache'
 import {
+  rankTrendingSuggestions,
+  scoreTrendingCandidate,
+  trendingHeadline,
+  TRENDING_GLOBAL_RANK_LIMIT,
+  type ScoredSuggestion,
+} from '@/lib/watchlist-suggestions-scoring'
+import {
   isRedundantBlurb,
   mechanicalReason,
-  rankSuggestions,
-  scoreSuggestion,
   suggestionBlurbContext,
-  suggestionHeadline,
-  type ScoredSuggestion,
 } from '@/lib/watchlist-suggestions'
 import { createServerClient } from '@/lib/supabase'
 import { NextRequest, NextResponse } from 'next/server'
 import type { StockFundamentals, WatchlistSuggestion, WatchlistSuggestionsResponse } from '@/types'
 
-const CACHE_HOURS = NARRATIVE_TTL_HOURS
+const TRENDING_CACHE_HOURS = NARRATIVE_TTL_HOURS
 const CANDIDATE_POOL = 40
-const GLOBAL_TOP = 15
-const USER_TOP = 3
+/** Max cards returned to one user (after excluding their watchlist). */
+const USER_TRENDING_LIMIT = 3
 const LLM_BLURB_COUNT = 3
 const LLM_BLURB_DELAY_MS = 500
 const NO_CACHE = { 'Cache-Control': 'private, no-store, max-age=0' } as const
@@ -71,7 +80,7 @@ async function loadStoredPayload(
 }
 
 function isPayloadFresh(generatedAt: string): boolean {
-  const cutoff = Date.now() - CACHE_HOURS * 3600 * 1000
+  const cutoff = Date.now() - TRENDING_CACHE_HOURS * 3600 * 1000
   return new Date(generatedAt).getTime() >= cutoff
 }
 
@@ -83,7 +92,6 @@ async function enrichWithBlurbs(
   const llmEnabled = isLLMEnabled()
   const targets = ranked.slice(0, LLM_BLURB_COUNT)
 
-  // Sequential calls — avoids Gemini 429 when Picks/Signals run at the same time
   for (let i = 0; i < targets.length; i++) {
     const s = targets[i]
     const key = s.ticker.toUpperCase()
@@ -113,8 +121,8 @@ async function buildGlobalRanked(
   supabase: ReturnType<typeof createServerClient>,
   existingReasons: Record<string, CachedReason>,
 ): Promise<CachedPayload> {
-  const movers = await fetchMarketMovers(CANDIDATE_POOL)
-  const tickers = movers.map((m) => m.ticker)
+  const candidates = await fetchTrendingCandidates(CANDIDATE_POOL)
+  const tickers = candidates.map((m) => m.ticker)
 
   const { data: rows } = await supabase.from('stock_fundamentals').select('*').in('ticker', tickers)
 
@@ -136,12 +144,15 @@ async function buildGlobalRanked(
   }
 
   const scored: ScoredSuggestion[] = []
-  for (const mover of movers) {
-    const s = scoreSuggestion(mover, fundamentalsByTicker.get(mover.ticker) ?? null)
-    if (s) scored.push(s)
+  for (const mover of candidates) {
+    const row = scoreTrendingCandidate({
+      mover,
+      fundamentals: fundamentalsByTicker.get(mover.ticker) ?? null,
+    })
+    if (row) scored.push(row)
   }
 
-  const ranked = rankSuggestions(scored, GLOBAL_TOP)
+  const ranked = rankTrendingSuggestions(scored, TRENDING_GLOBAL_RANK_LIMIT)
   void ensureLogosForTickers(
     supabase,
     ranked.map((s) => s.ticker),
@@ -170,7 +181,7 @@ async function buildGlobalRanked(
     console.warn('[watchlist/suggestions] cache upsert failed:', cacheWriteError.message)
   } else {
     const llmCount = Object.values(reasons).filter((r) => r.narrative_source === 'llm').length
-    console.info(`[watchlist/suggestions] rebuilt rankings; ${llmCount} LLM blurbs in cache`)
+    console.info(`[watchlist/suggestions] rebuilt trending rankings; ${llmCount} LLM blurbs in cache`)
   }
 
   return payload
@@ -210,7 +221,6 @@ function toSuggestion(s: ScoredSuggestion, cached: CachedReason | undefined): Wa
   }
 }
 
-/** Same Yahoo source as watchlist — live when open, last close when closed. */
 async function overlayLivePrices(
   suggestions: WatchlistSuggestion[],
 ): Promise<WatchlistSuggestion[]> {
@@ -226,7 +236,7 @@ async function overlayLivePrices(
       ...s,
       current_price: snap.price,
       change_1d_pct: snap.change_1d_pct,
-      headline: suggestionHeadline(snap.change_1d_pct),
+      headline: trendingHeadline(snap.change_1d_pct),
     }
   })
 }
@@ -269,8 +279,9 @@ export async function GET(req: NextRequest) {
     }
   }
 
-  const available = cached.ranked.filter((s) => !owned.has(s.ticker))
-  const top = available.slice(0, USER_TOP)
+  // Only per-user filter: exclude tickers already on this user's watchlist.
+  const notOnWatchlist = cached.ranked.filter((s) => !owned.has(s.ticker.toUpperCase()))
+  const top = notOnWatchlist.slice(0, USER_TRENDING_LIMIT)
 
   let suggestions: WatchlistSuggestion[] = top.map((s) => {
     const key = s.ticker.toUpperCase()

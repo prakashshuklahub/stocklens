@@ -56,17 +56,17 @@ export default function WatchlistSuggestions({
   const subtitle = isLoading
     ? 'Scanning market movers…'
     : showEmpty
-      ? 'No new hot picks right now'
+      ? 'Nothing trending outside your watchlist'
       : visible.length
         ? open
-          ? 'Strong day + majority analyst buy ratings'
-          : `${visible.length} pick${visible.length === 1 ? '' : 's'} — tap to expand`
-        : 'Strong day + analyst buy ratings'
+          ? 'Not on your watchlist · momentum + buy ratings'
+          : `Not on your watchlist · ${visible.length} name${visible.length === 1 ? '' : 's'}`
+        : 'Not on your watchlist'
 
   return (
     <section
       className={cn(open ? 'mb-4' : 'mb-2')}
-      aria-label="Suggested stocks to watch"
+      aria-label="Trending stocks not on your watchlist"
     >
       <button
         type="button"
@@ -77,7 +77,7 @@ export default function WatchlistSuggestions({
       >
         <Flame className="w-4 h-4 text-orange-400 shrink-0" aria-hidden="true" />
         <div className="flex-1 min-w-0 text-left">
-          <h2 className="text-base font-bold text-white">Trending — not on your list</h2>
+          <h2 className="text-base font-bold text-white">Trending</h2>
           <p className="text-sm text-zinc-500 mt-0.5 truncate">{subtitle}</p>
         </div>
         {data?.llm_enabled && !isLoading && visible.length > 0 && (
@@ -102,8 +102,8 @@ export default function WatchlistSuggestions({
       {showEmpty ? (
         <div className="rounded-2xl bg-zinc-900/80 border border-zinc-800 px-4 py-4">
           <p className="text-sm text-zinc-400 leading-relaxed">
-            We scanned today&apos;s top gainers and most-active names. Nothing new matched our bar
-            (momentum + analyst buy consensus), or you already watch them. Tap ↻ to rescan.
+            No market movers matched our bar, or you already have them on your watchlist.
+            Tap ↻ to rescan.
           </p>
         </div>
       ) : isLoading ? (
@@ -187,11 +187,9 @@ export default function WatchlistSuggestions({
 
       {data?.generated_at && !isLoading && visible.length > 0 && (
         <p className="text-xs text-zinc-600 mt-3 leading-relaxed">
-          Prices update during pre-market, regular, and after-hours
-          {data.scanned_count > 0 && ` · ${data.scanned_count} screened`}
-          {' · '}picks rescan every 3h
-          {data.llm_enabled ? ' · AI blurbs' : ''}
-          <span className="block mt-1 text-zinc-700">Not financial advice.</span>
+          Trending list rescans every 3h
+          {marketOpen ? ' · live prices refresh with the market' : ''}
+          {data.llm_enabled ? ' · AI context lines' : ''}
         </p>
       )}
         </div>

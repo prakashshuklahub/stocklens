@@ -386,9 +386,20 @@ export default function WatchlistPage() {
   }
 
   async function handleRemove(ticker: string) {
-    mutate(stocks.filter((s) => s.ticker !== ticker), { revalidate: false })
-    await fetch(`/api/watchlist/${ticker}`, { method: 'DELETE' })
-    mutate()
+    const sym = ticker.toUpperCase()
+    setError('')
+    const res = await fetch(`/api/watchlist/${encodeURIComponent(sym)}`, { method: 'DELETE' })
+    if (!res.ok) {
+      const d = (await res.json().catch(() => ({}))) as { error?: string }
+      setError(d.error ?? 'Failed to remove stock')
+      await mutate()
+      return
+    }
+    await mutate(
+      (current) => (current ?? []).filter((s) => s.ticker.toUpperCase() !== sym),
+      { revalidate: false },
+    )
+    void mutateFundamentals()
   }
 
   const ownedTickers = new Set(stocks.map((s) => s.ticker.toUpperCase()))

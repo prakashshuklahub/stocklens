@@ -221,16 +221,36 @@ export async function generateNarrative(input: NarrativeInput): Promise<Narrativ
 
 // ── Portfolio sell review (conservative tone) ─────────────────────────────────
 
+export interface SellReviewFactor {
+  label: string
+  value?: string
+  tone: 'bullish' | 'bearish' | 'neutral'
+}
+
 export interface SellReviewInput {
   ticker: string
   company_name: string | null
   severity: 'red' | 'watch'
+  score: number
+  headline: string
   position_pnl_pct: number
+  avg_cost_basis: number
+  current_price: number
+  quantity: number
   change_7d_pct: number | null
+  change_14d_pct: number | null
   change_30d_pct: number | null
+  analyst_buy: number
+  analyst_hold: number
   analyst_sell: number
   analyst_total: number
-  factors: string[]
+  news_sentiment: number | null
+  week52_high: number | null
+  week52_low: number | null
+  target_price: number | null
+  support_20d: number | null
+  negative_factors: SellReviewFactor[]
+  positive_factors: SellReviewFactor[]
 }
 
 export interface SellReviewOutput {
@@ -239,26 +259,71 @@ export interface SellReviewOutput {
   model: string
 }
 
-const SELL_REVIEW_SYSTEM = `You help a patient long-term investor review a stock they already own.
+const SELL_REVIEW_SYSTEM = `You write a clear portfolio review for someone who already owns this stock and is deciding whether to keep holding for the next 1–3 months.
 
-Rules you MUST follow:
-- review_reason: 2 sentences max. Explain why holding 1–3 more months may still be weak based ONLY on the data.
-- caveat: 1 sentence. Remind them this is informational, not urgent advice to sell.
-- NEVER say "sell now", "dump", "get out", or create panic.
-- NEVER mention API names or data vendors.
-- Cite specific numbers (position %, 30-day move, analyst counts).
-- Plain text only. No markdown, no emojis.`
+Your job is to explain WHY the app flagged this position — connect the dots between their cost basis, recent price action, fundamentals, and analyst/news data so a non-expert understands the picture.
+
+Rules for review_reason (4 to 6 sentences):
+1. Open with their personal situation: average cost, current price, and P&L % in plain English.
+2. Walk through EACH matched concern listed under "Concerns" — explain what it means in everyday language and cite the exact numbers provided (do not invent data).
+3. If "Offsets" are listed, briefly acknowledge them and explain why concerns still outweigh them for a 1–3 month hold.
+4. Close with a sober outlook: whether recent data supports a dependable recovery in the next quarter, or why patience may still be tested. Use "Review" severity as stronger language than "Watch" when alert level is red.
+5. NEVER say "sell now", "dump", "get out", "cut losses immediately", or create panic.
+6. NEVER mention API names, data vendors, or "AI".
+7. Plain text only. No markdown, bullet characters, or emojis.
+
+Rules for caveat (1 sentence):
+- Remind them this is an informational review to support their own decision—not urgent trading advice.`
+
+function formatReviewFactors(factors: SellReviewFactor[]): string {
+  if (!factors.length) return '  (none)'
+  return factors
+    .map((f) => (f.value ? `  - ${f.label}: ${f.value}` : `  - ${f.label}`))
+    .join('\n')
+}
 
 function buildSellReviewPrompt(input: SellReviewInput): string {
-  const lines = [
+  const lines: string[] = [
     `Ticker: ${input.ticker} (${input.company_name ?? 'Unknown'})`,
-    `Alert level: ${input.severity}`,
-    `Position vs your average cost: ${input.position_pnl_pct.toFixed(1)}%`,
-    `Analyst coverage: ${input.analyst_sell} sell of ${input.analyst_total} total`,
-    `Matched concerns: ${input.factors.join(', ')}`,
+    `Alert level: ${input.severity} (internal score ${input.score})`,
+    `Summary headline: ${input.headline}`,
+    '',
+    'Your position:',
+    `  Shares: ${input.quantity}`,
+    `  Average cost: $${input.avg_cost_basis.toFixed(2)}`,
+    `  Current price: $${input.current_price.toFixed(2)}`,
+    `  P&L vs your cost: ${input.position_pnl_pct >= 0 ? '+' : ''}${input.position_pnl_pct.toFixed(1)}%`,
+    '',
+    'Price trends:',
   ]
-  if (input.change_7d_pct != null) lines.push(`7-day change: ${input.change_7d_pct.toFixed(1)}%`)
-  if (input.change_30d_pct != null) lines.push(`30-day change: ${input.change_30d_pct.toFixed(1)}%`)
+  if (input.change_7d_pct != null) lines.push(`  7-day: ${input.change_7d_pct.toFixed(1)}%`)
+  if (input.change_14d_pct != null) lines.push(`  14-day: ${input.change_14d_pct.toFixed(1)}%`)
+  if (input.change_30d_pct != null) lines.push(`  30-day: ${input.change_30d_pct.toFixed(1)}%`)
+
+  lines.push(
+    '',
+    `Analyst ratings: ${input.analyst_buy} buy / ${input.analyst_hold} hold / ${input.analyst_sell} sell (n=${input.analyst_total})`,
+  )
+
+  if (input.news_sentiment != null) {
+    lines.push(`News sentiment score: ${input.news_sentiment.toFixed(2)} (scale roughly -1 to +1; negative = bearish tone)`)
+  }
+  if (input.week52_low != null && input.week52_high != null) {
+    lines.push(`52-week range: $${input.week52_low.toFixed(2)}–$${input.week52_high.toFixed(2)}`)
+  }
+  if (input.target_price != null) {
+    const vsTarget = ((input.current_price - input.target_price) / input.target_price) * 100
+    lines.push(
+      `Reference target price: $${input.target_price.toFixed(2)} (current price is ${vsTarget >= 0 ? '+' : ''}${vsTarget.toFixed(0)}% vs this reference)`,
+    )
+  }
+  if (input.support_20d != null) {
+    lines.push(`Recent 20-day support level: $${input.support_20d.toFixed(2)}`)
+  }
+
+  lines.push('', 'Concerns (explain each in review_reason):', formatReviewFactors(input.negative_factors))
+  lines.push('', 'Offsets (mention if relevant):', formatReviewFactors(input.positive_factors))
+
   return lines.join('\n')
 }
 
@@ -280,8 +345,8 @@ async function callGeminiSellReview(
           systemInstruction: { parts: [{ text: SELL_REVIEW_SYSTEM }] },
           contents: [{ role: 'user', parts: [{ text: user }] }],
           generationConfig: {
-            temperature: 0.35,
-            maxOutputTokens: 220,
+            temperature: 0.45,
+            maxOutputTokens: 520,
             responseMimeType: 'application/json',
             responseSchema: {
               type: 'object',

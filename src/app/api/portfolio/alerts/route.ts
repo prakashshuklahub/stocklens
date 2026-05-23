@@ -1,6 +1,6 @@
 import { auth, getSessionUserId } from '@/lib/auth'
 import { loadFundamentalsForTickers } from '@/lib/load-fundamentals'
-import { fetchLivePricesForTickers } from '@/lib/live-prices'
+import { fetchRegularSnapshotsForTickers } from '@/lib/live-prices'
 import { isPriceRefreshActive, isUSMarketOpen } from '@/lib/market-hours'
 import { generateSellReview, isLLMEnabled } from '@/lib/llm'
 import {
@@ -10,12 +10,8 @@ import {
   narrativeSourceFromModel,
   upsertNarratives,
 } from '@/lib/narrative-cache'
-import {
-  mechanicalSellReview,
-  rankAlerts,
-  scorePortfolioAlert,
-  type ScoredAlert,
-} from '@/lib/portfolio-alerts'
+import { buildSellReviewInput, mechanicalSellReview } from '@/lib/portfolio-alerts'
+import { rankAlerts, scorePortfolioAlert, type ScoredAlert } from '@/lib/portfolio-alert-scoring'
 import { createServerClient } from '@/lib/supabase'
 import { NextRequest, NextResponse } from 'next/server'
 import type {
@@ -82,7 +78,7 @@ export async function GET(req: NextRequest) {
     }
   }
 
-  const priceMap = await fetchLivePricesForTickers(tickers)
+  const priceMap = await fetchRegularSnapshotsForTickers(tickers)
   const scored: ScoredAlert[] = []
 
   for (const holding of list) {
@@ -111,12 +107,14 @@ export async function GET(req: NextRequest) {
   }
 
   const alertTickers = ranked.map((a) => a.ticker.toUpperCase())
-  const cachedByTicker = await loadFreshNarratives<{
-    ticker: string
-    review_reason: string
-    caveat: string
-    model: string | null
-  }>(supabase, 'portfolio_sell_narratives', alertTickers, LOG_PREFIX)
+  const cachedByTicker = forceRefresh
+    ? new Map<string, { ticker: string; review_reason: string; caveat: string; model: string | null }>()
+    : await loadFreshNarratives<{
+        ticker: string
+        review_reason: string
+        caveat: string
+        model: string | null
+      }>(supabase, 'portfolio_sell_narratives', alertTickers, LOG_PREFIX)
 
   const needGeneration = ranked.filter((a) => !cachedByTicker.has(a.ticker.toUpperCase()))
 
@@ -136,19 +134,9 @@ export async function GET(req: NextRequest) {
 
   const generated: GenResult[] = await mapSequential(needGeneration, async (alert): Promise<GenResult> => {
       const f = fundamentalsByTicker.get(alert.ticker)
+      const reviewInput = buildSellReviewInput(alert, f)
       if (llmEnabled) {
-        const narrative = await generateSellReview({
-          ticker: alert.ticker,
-          company_name: alert.company_name,
-          severity: alert.severity,
-          position_pnl_pct: alert.holding.position_pnl_pct,
-          change_7d_pct: f?.change_7d_pct ?? null,
-          change_30d_pct: f?.change_30d_pct ?? null,
-          analyst_sell: f?.analyst_sell ?? 0,
-          analyst_total:
-            (f?.analyst_buy ?? 0) + (f?.analyst_hold ?? 0) + (f?.analyst_sell ?? 0),
-          factors: alert.factors.filter((x) => x.tone === 'negative').map((x) => x.label),
-        })
+        const narrative = await generateSellReview(reviewInput)
         if (narrative) {
           return {
             ticker: alert.ticker,

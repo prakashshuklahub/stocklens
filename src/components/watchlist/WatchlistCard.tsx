@@ -43,7 +43,7 @@ export interface WatchlistStock {
 
 interface Props {
   stock: WatchlistStock
-  onRemove: (ticker: string) => void
+  onRemove: (ticker: string) => void | Promise<void>
   /** Client clock session — fallback for Closed / Pre-market badges. */
   marketSession?: MarketSession
   /** When provided (watchlist batch load), skips per-card fundamentals fetch. */
@@ -274,6 +274,7 @@ export default function WatchlistCard({
   const [expanded, setExpanded] = useState(false)
   const [menuOpen, setMenuOpen] = useState(false)
   const [confirming, setConfirming] = useState(false)
+  const [removing, setRemoving] = useState(false)
   const menuRef = useRef<HTMLDivElement>(null)
   const menuButtonRef = useRef<HTMLButtonElement>(null)
 
@@ -327,13 +328,27 @@ export default function WatchlistCard({
         </p>
         <div className="flex gap-2">
           <button
-            onClick={() => { onRemove(stock.ticker); setConfirming(false) }}
-            className="flex-1 min-h-[44px] text-sm font-medium rounded-xl bg-red-500/10 hover:bg-red-500/20 active:bg-red-500/30 text-red-400 border border-red-500/20 transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-red-500 [touch-action:manipulation]"
+            type="button"
+            disabled={removing}
+            onClick={() => {
+              void (async () => {
+                setRemoving(true)
+                try {
+                  await onRemove(stock.ticker)
+                  setConfirming(false)
+                } finally {
+                  setRemoving(false)
+                }
+              })()
+            }}
+            className="flex-1 min-h-[44px] text-sm font-medium rounded-xl bg-red-500/10 hover:bg-red-500/20 active:bg-red-500/30 text-red-400 border border-red-500/20 transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-red-500 disabled:opacity-50 [touch-action:manipulation]"
           >
-            Remove
+            {removing ? 'Removing…' : 'Remove'}
           </button>
           <button
+            type="button"
             autoFocus
+            disabled={removing}
             onClick={() => { setConfirming(false); menuButtonRef.current?.focus() }}
             className="flex-1 min-h-[44px] text-sm font-medium rounded-xl bg-zinc-800 hover:bg-zinc-700 active:bg-zinc-600 text-zinc-300 transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-zinc-500 [touch-action:manipulation]"
           >
