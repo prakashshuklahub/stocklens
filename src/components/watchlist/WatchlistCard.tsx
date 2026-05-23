@@ -15,8 +15,19 @@ import {
   targetPriceSubline,
 } from '@/lib/target-price-display'
 import { priceBadgeSession, type MarketSession } from '@/lib/market-hours'
+import {
+  computeLiveD1Window,
+  computeRsScoreWithD1,
+  d1VsSectorFootnote,
+  d1VsSectorLabel,
+  regularSessionChange1d,
+  relativeStrengthUserCopy,
+  sectorEtfSubtitle,
+  vsSectorBadgeLabel,
+} from '@/lib/sector-relative-strength'
+import { isBenchmarkableSector, normalizeWatchlistSector } from '@/lib/sector-relative-strength-scoring'
 import { cn } from '@/lib/utils'
-import type { StockFundamentals, StockSnapshot } from '@/types'
+import type { SectorBenchmark, SectorRelativeStrength, StockFundamentals, StockSnapshot, VsSectorWindow } from '@/types'
 
 const SECTOR_COLORS: Record<string, { bg: string; text: string }> = {
   Technology:               { bg: 'bg-blue-500/10',    text: 'text-blue-400' },
@@ -49,6 +60,11 @@ interface Props {
   /** When provided (watchlist batch load), skips per-card fundamentals fetch. */
   fundamentals?: StockFundamentals | null
   fundamentalsLoading?: boolean
+  vsSector?: SectorRelativeStrength | null
+  sectorBenchmark?: SectorBenchmark | null
+  /** Regular-session 1d % — never extended hours (from batch API). */
+  regularChange1dPct?: number | null
+  sectorBenchmarksRefreshing?: boolean
 }
 
 const fetcher = (url: string) => fetch(url).then((r) => r.json())
@@ -194,14 +210,178 @@ function TargetPrice({
   )
 }
 
+function VsSectorDelta({ delta }: { delta: number | null }) {
+  if (delta == null) {
+    return <span className="text-zinc-600 tabular-nums">—</span>
+  }
+  const isPos = delta >= 0
+  return (
+    <span
+      className={cn(
+        'text-sm font-bold tabular-nums',
+        isPos ? 'text-emerald-400' : 'text-red-400',
+      )}
+    >
+      {fmtPct(delta)}
+    </span>
+  )
+}
+
+function VsSectorWindowRow({
+  label,
+  window,
+}: {
+  label: string
+  window: VsSectorWindow | null
+}) {
+  if (!window) return null
+  return (
+    <div className="flex items-center justify-between gap-2 text-xs">
+      <span className="text-zinc-500">{label}</span>
+      <div className="flex items-center gap-2 tabular-nums">
+        <span className="text-zinc-400">{fmtPct(window.stock, false)}</span>
+        <span className="text-zinc-600">vs</span>
+        <span className="text-zinc-400">{fmtPct(window.sector, false)}</span>
+        <span className="text-zinc-600">·</span>
+        <VsSectorDelta delta={window.delta} />
+      </div>
+    </div>
+  )
+}
+
+function VsSectorPanel({
+  vsSector,
+  sectorBenchmark,
+  stockSector,
+  regularChange1dPct,
+  stockChange1d,
+  snapshotSession,
+  marketSession,
+  refreshing,
+}: {
+  vsSector: SectorRelativeStrength | null | undefined
+  sectorBenchmark: SectorBenchmark | null | undefined
+  stockSector: string | null | undefined
+  regularChange1dPct: number | null | undefined
+  stockChange1d: number | null | undefined
+  snapshotSession: MarketSession | undefined
+  marketSession: MarketSession
+  refreshing?: boolean
+}) {
+  const sectorLabel = vsSector?.sector ?? normalizeWatchlistSector(stockSector)
+  if (sectorLabel === 'Other' || !isBenchmarkableSector(sectorLabel)) return null
+
+  if (!vsSector?.windows) {
+    return (
+      <div className="rounded-lg bg-zinc-900/60 px-3 py-2.5 border border-white/[0.04]">
+        <p className="text-[11px] font-semibold text-zinc-400 uppercase tracking-wide">
+          Compared to {sectorLabel}
+        </p>
+        <p className="text-xs text-zinc-500 mt-2" aria-live="polite">
+          {refreshing ? 'Loading…' : 'Comparison not ready — pull down to refresh'}
+        </p>
+      </div>
+    )
+  }
+
+  const stockRegular1d =
+    regularChange1dPct ??
+    regularSessionChange1d(stockChange1d, snapshotSession)
+  const d1Window = computeLiveD1Window(stockRegular1d, sectorBenchmark ?? null)
+  const rsScore =
+    d1Window != null
+      ? computeRsScoreWithD1({
+          d1: d1Window,
+          d7: vsSector.windows.d7,
+          d14: vsSector.windows.d14,
+          d30: vsSector.windows.d30,
+        })
+      : vsSector.rs_score
+
+  const primaryDelta = vsSector.windows.d7?.delta ?? vsSector.windows.d30?.delta ?? null
+  const badgeLabel = vsSectorBadgeLabel(vsSector.badge)
+  const etf = vsSector.benchmark_ticker ?? sectorBenchmark?.benchmark_ticker
+  const d1Label = d1VsSectorLabel(marketSession)
+  const d1Footnote = d1VsSectorFootnote(marketSession)
+  const strengthCopy = rsScore != null ? relativeStrengthUserCopy(rsScore) : null
+
+  return (
+    <div className="rounded-lg bg-zinc-900/60 px-3 py-2.5 space-y-2 border border-white/[0.04]">
+      <div className="flex items-start justify-between gap-2">
+        <div>
+          <p className="text-[11px] font-semibold text-zinc-400 uppercase tracking-wide">
+            Compared to {vsSector.sector}
+          </p>
+          {etf && (
+            <p className="text-[11px] text-zinc-600 mt-0.5 leading-snug">
+              {sectorEtfSubtitle(etf, vsSector.sector)}
+              {primaryDelta != null && (
+                <>
+                  {' '}
+                  ·{' '}
+                  <span className={primaryDelta >= 0 ? 'text-emerald-400/90' : 'text-red-400/90'}>
+                    {primaryDelta >= 0 ? 'Ahead by ' : 'Behind by '}
+                    {fmtPct(Math.abs(primaryDelta), false)}
+                  </span>
+                </>
+              )}
+            </p>
+          )}
+        </div>
+        {badgeLabel && (
+          <span
+            className={cn(
+              'shrink-0 text-[10px] font-bold uppercase tracking-wide px-2 py-1 rounded-full',
+              vsSector.badge === 'leader' && 'bg-emerald-500/15 text-emerald-300',
+              vsSector.badge === 'lagger' && 'bg-red-500/15 text-red-300',
+              vsSector.badge === 'inline' && 'bg-zinc-700/50 text-zinc-400',
+              refreshing && 'opacity-70',
+            )}
+          >
+            {refreshing ? '…' : badgeLabel}
+          </span>
+        )}
+      </div>
+
+      <VsSectorWindowRow label="Past week" window={vsSector.windows.d7} />
+      <VsSectorWindowRow label="Past 2 weeks" window={vsSector.windows.d14} />
+      <VsSectorWindowRow label="Past month" window={vsSector.windows.d30} />
+      {d1Window && (
+        <VsSectorWindowRow label={d1Label} window={d1Window} />
+      )}
+
+      {strengthCopy && (
+        <div className="pt-2 border-t border-white/[0.04] space-y-0.5">
+          <p className="text-[11px] font-medium text-zinc-400">{strengthCopy.title}</p>
+          <p className="text-sm font-bold text-zinc-200 tabular-nums">{strengthCopy.tier}</p>
+          <p className="text-[11px] text-zinc-500 leading-relaxed [text-wrap:pretty]">
+            {strengthCopy.hint}
+          </p>
+        </div>
+      )}
+
+      {d1Footnote && (
+        <p className="text-[10px] text-zinc-600 leading-relaxed [text-wrap:pretty]">
+          {d1Footnote}
+          {refreshing ? ' · Updating…' : ''}
+        </p>
+      )}
+    </div>
+  )
+}
+
 function CollapsedSummary({
   fundamentals,
   currentPrice,
   loading,
+  vsSector,
+  sectorBenchmarksRefreshing,
 }: {
   fundamentals: StockFundamentals | null | undefined
   currentPrice: number | null
   loading: boolean
+  vsSector?: SectorRelativeStrength | null
+  sectorBenchmarksRefreshing?: boolean
 }) {
   const showTarget = hasDisplayTargetPrice(
     fundamentals?.target_price,
@@ -225,8 +405,23 @@ function CollapsedSummary({
     )
   }
 
+  const badgeLabel = vsSectorBadgeLabel(vsSector?.badge ?? null)
+
   return (
     <div className="flex flex-wrap items-center gap-1.5 px-5 pb-1">
+      {badgeLabel && vsSector?.sector !== 'Other' && (
+        <span
+          className={cn(
+            'text-xs font-semibold px-2 py-0.5 rounded-full',
+            vsSector?.badge === 'leader' && 'bg-emerald-500/10 text-emerald-400',
+            vsSector?.badge === 'lagger' && 'bg-red-500/10 text-red-400',
+            vsSector?.badge === 'inline' && 'bg-zinc-800 text-zinc-400',
+            sectorBenchmarksRefreshing && 'opacity-70',
+          )}
+        >
+          {sectorBenchmarksRefreshing ? 'Updating sector…' : badgeLabel}
+        </span>
+      )}
       {fundamentals?.change_7d_pct != null && (
         <span
           className={cn(
@@ -270,6 +465,10 @@ export default function WatchlistCard({
   marketSession = 'regular',
   fundamentals: fundamentalsProp,
   fundamentalsLoading: fundamentalsLoadingProp,
+  vsSector,
+  sectorBenchmark,
+  regularChange1dPct,
+  sectorBenchmarksRefreshing,
 }: Props) {
   const [expanded, setExpanded] = useState(false)
   const [menuOpen, setMenuOpen] = useState(false)
@@ -405,6 +604,8 @@ export default function WatchlistCard({
             fundamentals={fundamentals}
             currentPrice={currentPrice}
             loading={fundamentalsLoading}
+            vsSector={vsSector}
+            sectorBenchmarksRefreshing={sectorBenchmarksRefreshing}
           />
         )}
 
@@ -431,6 +632,17 @@ export default function WatchlistCard({
             <div className="w-px h-5 bg-zinc-700/60" />
             <PctBadge value={fundamentals?.change_30d_pct ?? null} label="30d" />
           </div>
+
+          <VsSectorPanel
+            vsSector={vsSector}
+            sectorBenchmark={sectorBenchmark}
+            stockSector={stock.sector}
+            regularChange1dPct={regularChange1dPct}
+            stockChange1d={snap?.change_1d_pct ?? null}
+            snapshotSession={snap?.session}
+            marketSession={marketSession}
+            refreshing={sectorBenchmarksRefreshing}
+          />
 
           <TargetPrice
             targetPrice={fundamentals?.target_price ?? null}

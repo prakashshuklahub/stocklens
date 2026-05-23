@@ -29,6 +29,7 @@ export async function fetchYahooHistory(ticker: string) {
     const meta = result.meta
     const timestamps: number[] = result.timestamp ?? []
     const closes: (number | null)[] = result.indicators?.quote?.[0]?.close ?? []
+    const volumes: (number | null)[] = result.indicators?.quote?.[0]?.volume ?? []
     const currentPrice: number | null = meta?.regularMarketPrice ?? null
 
     function changePct(daysAgo: number): number | null {
@@ -54,6 +55,20 @@ export async function fetchYahooHistory(ticker: string) {
     const support_20d = last20.length ? Math.min(...last20) : null
     const avg_20d = last20.length ? last20.reduce((a, b) => a + b, 0) / last20.length : null
 
+    let volume_ratio: number | null = null
+    const todayVol = volumes.length ? volumes[volumes.length - 1] : null
+    if (typeof todayVol === 'number' && todayVol > 0 && volumes.length > 21) {
+      const prior: number[] = []
+      for (let i = volumes.length - 2; i >= 0 && prior.length < 20; i--) {
+        const v = volumes[i]
+        if (typeof v === 'number' && v > 0) prior.push(v)
+      }
+      if (prior.length >= 10) {
+        const avgVol = prior.reduce((a, b) => a + b, 0) / prior.length
+        if (avgVol > 0) volume_ratio = todayVol / avgVol
+      }
+    }
+
     return {
       week52_high: (meta?.fiftyTwoWeekHigh as number) ?? null,
       week52_low: (meta?.fiftyTwoWeekLow as number) ?? null,
@@ -63,6 +78,7 @@ export async function fetchYahooHistory(ticker: string) {
       support_5d,
       support_20d,
       avg_20d,
+      volume_ratio,
     }
   } catch {
     return null
@@ -209,6 +225,7 @@ export async function fetchStockPriceData(ticker: string): Promise<Omit<
     support_5d: yahoo?.support_5d ?? null,
     support_20d: yahoo?.support_20d ?? null,
     avg_20d: yahoo?.avg_20d ?? null,
+    volume_ratio: yahoo?.volume_ratio ?? null,
   }
 }
 
@@ -240,6 +257,7 @@ export async function fetchAndResolveTarget(
     support_5d: null,
     support_20d: null,
     avg_20d: null,
+    volume_ratio: null,
   }
 
   const analyst = await fetchAnalystPriceTarget(sym)

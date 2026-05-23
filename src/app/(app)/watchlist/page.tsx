@@ -15,9 +15,10 @@ import {
   computeTargetUpsidePct,
   hasDisplayTargetPrice,
 } from '@/lib/target-price-display'
+import { vsSectorSortKey } from '@/lib/sector-relative-strength'
 import { cn } from '@/lib/utils'
+import type { FundamentalsBatchResponse, SectorBenchmark, SectorRelativeStrength, StockFundamentals } from '@/types'
 import type { MarketSession } from '@/lib/market-hours'
-import type { StockFundamentals } from '@/types'
 
 // Deterministic sector order
 const SECTOR_ORDER = [
@@ -35,7 +36,7 @@ const SECTOR_ORDER = [
   'Other',
 ]
 
-type WatchlistSort = 'sector' | 'day_change' | 'target_upside' | 'alphabetical'
+type WatchlistSort = 'sector' | 'day_change' | 'target_upside' | 'alphabetical' | 'vs_sector'
 
 const SORT_STORAGE_KEY = 'watchlist-sort'
 
@@ -46,7 +47,8 @@ function loadSortMode(): WatchlistSort {
     saved === 'day_change' ||
     saved === 'target_upside' ||
     saved === 'alphabetical' ||
-    saved === 'sector'
+    saved === 'sector' ||
+    saved === 'vs_sector'
   ) {
     return saved
   }
@@ -83,6 +85,15 @@ function sortByTargetUpside(
   )
 }
 
+function sortByVsSector(
+  stocks: WatchlistStock[],
+  vsSectorByTicker: FundamentalsBatchResponse['vs_sector'],
+): WatchlistStock[] {
+  return [...stocks].sort(
+    (a, b) => vsSectorSortKey(vsSectorByTicker[b.ticker]) - vsSectorSortKey(vsSectorByTicker[a.ticker]),
+  )
+}
+
 function WatchlistSortBar({
   value,
   onChange,
@@ -93,6 +104,7 @@ function WatchlistSortBar({
   const options: { id: WatchlistSort; label: string }[] = [
     { id: 'sector', label: 'Sector' },
     { id: 'day_change', label: 'Day %' },
+    { id: 'vs_sector', label: 'Sector strength' },
     { id: 'target_upside', label: 'Target upside' },
     { id: 'alphabetical', label: 'A–Z' },
   ]
@@ -133,18 +145,35 @@ function WatchlistSortBar({
   )
 }
 
+function sectorBenchmarkForStock(
+  stock: WatchlistStock,
+  sectorBenchmarks: Record<string, SectorBenchmark>,
+): SectorBenchmark | null {
+  const sector = stock.sector?.trim()
+  if (!sector || sector === 'Other') return null
+  return sectorBenchmarks[sector] ?? null
+}
+
 function StockList({
   stocks,
   onRemove,
   marketSession,
   fundamentalsByTicker,
   fundamentalsLoading,
+  vsSectorByTicker,
+  sectorBenchmarks,
+  regularChange1dByTicker,
+  sectorBenchmarksRefreshing,
 }: {
   stocks: WatchlistStock[]
   onRemove: (ticker: string) => void
   marketSession: MarketSession
   fundamentalsByTicker: Record<string, StockFundamentals>
   fundamentalsLoading: boolean
+  vsSectorByTicker: Record<string, SectorRelativeStrength>
+  sectorBenchmarks: Record<string, SectorBenchmark>
+  regularChange1dByTicker: Record<string, number>
+  sectorBenchmarksRefreshing: boolean
 }) {
   return (
     <ul className="space-y-3" aria-label="Watchlist stocks">
@@ -156,6 +185,10 @@ function StockList({
             marketSession={marketSession}
             fundamentals={fundamentalsByTicker[stock.ticker] ?? null}
             fundamentalsLoading={fundamentalsLoading}
+            vsSector={vsSectorByTicker[stock.ticker] ?? null}
+            sectorBenchmark={sectorBenchmarkForStock(stock, sectorBenchmarks)}
+            regularChange1dPct={regularChange1dByTicker[stock.ticker] ?? null}
+            sectorBenchmarksRefreshing={sectorBenchmarksRefreshing}
           />
         </li>
       ))}
@@ -191,6 +224,10 @@ function SectorGroup({
   marketSession,
   fundamentalsByTicker,
   fundamentalsLoading,
+  vsSectorByTicker,
+  sectorBenchmarks,
+  regularChange1dByTicker,
+  sectorBenchmarksRefreshing,
   defaultOpen = true,
 }: {
   sector: string
@@ -199,6 +236,10 @@ function SectorGroup({
   marketSession: MarketSession
   fundamentalsByTicker: Record<string, StockFundamentals>
   fundamentalsLoading: boolean
+  vsSectorByTicker: Record<string, SectorRelativeStrength>
+  sectorBenchmarks: Record<string, SectorBenchmark>
+  regularChange1dByTicker: Record<string, number>
+  sectorBenchmarksRefreshing: boolean
   defaultOpen?: boolean
 }) {
   const [open, setOpen] = useState(defaultOpen)
@@ -226,7 +267,7 @@ function SectorGroup({
           aria-hidden="true"
           className={cn(
             'w-3.5 h-3.5 text-zinc-600 transition-transform duration-200',
-            open ? 'rotate-0' : '-rotate-90'
+            open ? 'rotate-0' : '-rotate-90',
           )}
         />
       </button>
@@ -241,6 +282,10 @@ function SectorGroup({
                 marketSession={marketSession}
                 fundamentals={fundamentalsByTicker[stock.ticker] ?? null}
                 fundamentalsLoading={fundamentalsLoading}
+                vsSector={vsSectorByTicker[stock.ticker] ?? null}
+                sectorBenchmark={sectorBenchmarkForStock(stock, sectorBenchmarks)}
+                regularChange1dPct={regularChange1dByTicker[stock.ticker] ?? null}
+                sectorBenchmarksRefreshing={sectorBenchmarksRefreshing}
               />
             </li>
           ))}
@@ -255,10 +300,7 @@ function SectorGroup({
 const watchlistFetcher = createMarketAwareFetcher<WatchlistStock>()
 const BATCH_CHUNK = 40
 
-async function fundamentalsBatchFetcher(url: string): Promise<{
-  fundamentals: Record<string, StockFundamentals>
-  refreshing: boolean
-}> {
+async function fundamentalsBatchFetcher(url: string): Promise<FundamentalsBatchResponse> {
   const tickers =
     new URL(url, window.location.origin).searchParams.get('tickers')?.split(',').filter(Boolean) ?? []
 
@@ -267,26 +309,39 @@ async function fundamentalsBatchFetcher(url: string): Promise<{
     chunks.push(tickers.slice(i, i + BATCH_CHUNK).join(','))
   }
 
+  const merged: FundamentalsBatchResponse = {
+    fundamentals: {},
+    vs_sector: {},
+    sector_benchmarks: {},
+    regular_change_1d_pct: {},
+    sector_benchmarks_refreshing: false,
+    sector_benchmarks_age_minutes: null,
+    refreshing: false,
+  }
+
   const results = await Promise.all(
     chunks.map(async (chunk) => {
       const params = new URLSearchParams({ tickers: chunk })
       const res = await fetch(`/api/fundamentals/batch?${params}`)
       if (!res.ok) return null
-      return res.json() as Promise<{
-        fundamentals?: Record<string, StockFundamentals>
-        refreshing?: boolean
-      }>
+      return res.json() as Promise<FundamentalsBatchResponse>
     }),
   )
 
-  const fundamentals: Record<string, StockFundamentals> = {}
-  let refreshing = false
   for (const data of results) {
     if (!data) continue
-    Object.assign(fundamentals, data.fundamentals ?? {})
-    if (data.refreshing) refreshing = true
+    Object.assign(merged.fundamentals, data.fundamentals ?? {})
+    Object.assign(merged.vs_sector, data.vs_sector ?? {})
+    Object.assign(merged.regular_change_1d_pct, data.regular_change_1d_pct ?? {})
+    Object.assign(merged.sector_benchmarks, data.sector_benchmarks ?? {})
+    if (data.sector_benchmarks_refreshing) merged.sector_benchmarks_refreshing = true
+    if (data.refreshing) merged.refreshing = true
+    if (data.sector_benchmarks_age_minutes != null) {
+      merged.sector_benchmarks_age_minutes = data.sector_benchmarks_age_minutes
+    }
   }
-  return { fundamentals, refreshing }
+
+  return merged
 }
 
 export default function WatchlistPage() {
@@ -308,10 +363,7 @@ export default function WatchlistPage() {
     data: fundamentalsBatch,
     isLoading: fundamentalsLoading,
     mutate: mutateFundamentals,
-  } = useSWR<{
-    fundamentals: Record<string, StockFundamentals>
-    refreshing: boolean
-  }>(tickerKey, fundamentalsBatchFetcher, {
+  } = useSWR<FundamentalsBatchResponse>(tickerKey, fundamentalsBatchFetcher, {
     revalidateOnFocus: false,
     revalidateOnReconnect: false,
     dedupingInterval: 60_000,
@@ -319,6 +371,17 @@ export default function WatchlistPage() {
   })
 
   const fundamentalsByTicker = fundamentalsBatch?.fundamentals ?? {}
+  const vsSectorByTicker = fundamentalsBatch?.vs_sector ?? {}
+  const sectorBenchmarks = fundamentalsBatch?.sector_benchmarks ?? {}
+  const regularChange1dByTicker = fundamentalsBatch?.regular_change_1d_pct ?? {}
+  const sectorBenchmarksRefreshing = fundamentalsBatch?.sector_benchmarks_refreshing ?? false
+
+  const cardBatchProps = {
+    vsSectorByTicker,
+    sectorBenchmarks,
+    regularChange1dByTicker,
+    sectorBenchmarksRefreshing,
+  }
   const [adding, setAdding] = useState(false)
   const [error, setError] = useState('')
   const [suggestionsRefresh, setSuggestionsRefresh] = useState(0)
@@ -358,8 +421,14 @@ export default function WatchlistPage() {
         stocks: sortByTargetUpside(stocks, fundamentalsByTicker),
       }
     }
+    if (sortMode === 'vs_sector') {
+      return {
+        type: 'flat' as const,
+        stocks: sortByVsSector(stocks, vsSectorByTicker),
+      }
+    }
     return { type: 'flat' as const, stocks: sortAlphabetical(stocks) }
-  }, [stocks, sortMode, fundamentalsByTicker])
+  }, [stocks, sortMode, fundamentalsByTicker, vsSectorByTicker])
 
   async function handleAdd(result: StockResult) {
     setError('')
@@ -498,6 +567,7 @@ export default function WatchlistPage() {
                     marketSession={marketSession}
                     fundamentalsByTicker={fundamentalsByTicker}
                     fundamentalsLoading={fundamentalsLoading}
+                    {...cardBatchProps}
                     defaultOpen
                   />
                 ))
@@ -508,6 +578,7 @@ export default function WatchlistPage() {
                   marketSession={marketSession}
                   fundamentalsByTicker={fundamentalsByTicker}
                   fundamentalsLoading={fundamentalsLoading}
+                  {...cardBatchProps}
                 />
               )}
             </div>

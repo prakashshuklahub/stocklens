@@ -11,6 +11,10 @@ import { isPriceRefreshActive } from '@/lib/market-hours'
 import { ensureLogosForTickers } from '@/lib/stock-logo-cache'
 import { fetchYahooSector } from '@/lib/sectors'
 import { fetchTrendingCandidates } from '@/lib/trending-candidates'
+import {
+  ensureSectorBenchmarksLoaded,
+} from '@/lib/sector-benchmarks'
+import { isBenchmarkableSector, type BenchmarkableSector } from '@/lib/sector-relative-strength-scoring'
 import { generateSuggestionBlurb, isLLMEnabled } from '@/lib/llm'
 import { NARRATIVE_TTL_HOURS } from '@/lib/narrative-cache'
 import {
@@ -143,11 +147,27 @@ async function buildGlobalRanked(
     )
   }
 
+  const sectorLoaded = await ensureSectorBenchmarksLoaded(supabase)
+  const sectorCache = {
+    benchmarks: sectorLoaded.benchmarks,
+    stale: sectorLoaded.refreshing,
+    tableMissing: sectorLoaded.tableMissing,
+  }
+
   const scored: ScoredSuggestion[] = []
   for (const mover of candidates) {
+    let sectorDayDelta: number | null = null
+    if (isBenchmarkableSector(mover.sector)) {
+      const bench = sectorCache.benchmarks[mover.sector as BenchmarkableSector]
+      if (bench?.change_1d_pct != null) {
+        sectorDayDelta = mover.change_1d_pct - bench.change_1d_pct
+      }
+    }
+
     const row = scoreTrendingCandidate({
       mover,
       fundamentals: fundamentalsByTicker.get(mover.ticker) ?? null,
+      sectorDayDelta,
     })
     if (row) scored.push(row)
   }

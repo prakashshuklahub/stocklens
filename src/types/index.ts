@@ -82,6 +82,52 @@ export interface StockFundamentals {
   support_5d: number | null
   support_20d: number | null
   avg_20d: number | null
+  /** Today volume ÷ 20-day average (Yahoo daily candles). */
+  volume_ratio: number | null
+}
+
+// ── Sector benchmarks (shared ETF proxies, 30 min cache) ─────────────────────
+export interface SectorBenchmark {
+  sector: string
+  benchmark_ticker: string
+  change_1d_pct: number | null
+  change_7d_pct: number | null
+  change_14d_pct: number | null
+  change_30d_pct: number | null
+  fetched_at: string
+}
+
+export interface VsSectorWindow {
+  stock: number
+  sector: number
+  delta: number
+}
+
+export interface SectorRelativeStrength {
+  ticker: string
+  sector: string
+  sector_source: 'watchlist' | 'resolved' | 'fallback'
+  benchmark_ticker: string | null
+  badge: 'leader' | 'inline' | 'lagger' | null
+  rs_score: number | null
+  /** 7d/14d/30d only — d1 computed client-side with regular-session quotes. */
+  windows: {
+    d7: VsSectorWindow | null
+    d14: VsSectorWindow | null
+    d30: VsSectorWindow | null
+  } | null
+  benchmark_fetched_at: string | null
+}
+
+export interface FundamentalsBatchResponse {
+  fundamentals: Record<string, StockFundamentals>
+  vs_sector: Record<string, SectorRelativeStrength>
+  sector_benchmarks: Record<string, SectorBenchmark>
+  /** Regular-session day % per ticker — for client d1 vs sector (not extended hours). */
+  regular_change_1d_pct: Record<string, number>
+  sector_benchmarks_refreshing: boolean
+  sector_benchmarks_age_minutes: number | null
+  refreshing: boolean
 }
 
 // ── Signals (computed server-side, consumed by News page) ────────────────────
@@ -118,6 +164,17 @@ export interface SignalsResponse {
 }
 
 // ── Picks (buy recommendations) ──────────────────────────────────────────────
+export interface PickVsSector {
+  benchmark_ticker: string | null
+  badge: 'leader' | 'inline' | 'lagger' | null
+  rs_score: number | null
+  /** Stock minus sector ETF on 7d window (percentage points). */
+  delta_7d: number | null
+  delta_30d: number | null
+}
+
+export type PickSourceTag = 'watchlist' | 'portfolio' | 'both' | 'discovery'
+
 export interface PickFactor {
   label: string         // e.g. "Strong buy consensus"
   value?: string        // e.g. "22 of 26 analysts"
@@ -137,6 +194,12 @@ export interface Pick {
 
   // Pricing
   current_price: number
+  change_1d_pct: number | null
+  change_7d_pct: number | null
+  change_14d_pct: number | null
+  change_30d_pct: number | null
+  volume_ratio: number | null
+  news_count_7d: number | null
   entry_low: number          // short-term buy zone low
   entry_high: number         // short-term buy zone high
   target_mean: number
@@ -158,15 +221,24 @@ export interface Pick {
   // Reasoning
   score: number
   factors: PickFactor[]          // matched scoring factors
+  vs_sector: PickVsSector | null
+  source: PickSourceTag
   thesis: string | null          // LLM narrative (null if not generated)
   main_risk: string | null
   narrative_source: 'llm' | 'mechanical'
+  /** ISO timestamp when thesis/risk was last generated (3h cache). */
+  narrative_generated_at: string | null
 
   // Optional ownership tag
   ownership: PickOwnership | null
 }
 
 export interface PicksResponse {
+  /** Top buy ideas from your watchlist and portfolio (max 5). */
+  your_picks: Pick[]
+  /** Strong market movers you are not tracking yet (max 5). */
+  discovery_picks: Pick[]
+  /** @deprecated use your_picks + discovery_picks */
   picks: Pick[]
   /** When prices, scores, and ranking were last computed */
   scores_at: string

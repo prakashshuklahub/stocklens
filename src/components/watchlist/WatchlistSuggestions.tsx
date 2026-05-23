@@ -2,7 +2,8 @@
 
 import { useMemo, useState } from 'react'
 import useSWR from 'swr'
-import { ChevronDown, Flame, Plus } from 'lucide-react'
+import { Flame, Plus } from 'lucide-react'
+import CollapseChevron from '@/components/CollapseChevron'
 import StockLogo from '@/components/StockLogo'
 import { PRICE_REFRESH_MS } from '@/lib/market-hours'
 import { cn } from '@/lib/utils'
@@ -90,13 +91,7 @@ export default function WatchlistSuggestions({
             {visible.length}
           </span>
         )}
-        <ChevronDown
-          className={cn(
-            'w-4 h-4 text-zinc-500 shrink-0 transition-transform duration-200',
-            open ? 'rotate-180' : '',
-          )}
-          aria-hidden="true"
-        />
+        <CollapseChevron open={open} />
       </button>
 
       {open && (

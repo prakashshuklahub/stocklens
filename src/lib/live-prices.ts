@@ -1,5 +1,6 @@
 import type { MarketSession } from '@/lib/market-hours'
 import { getUSMarketSession } from '@/lib/market-hours'
+import { normalizeSector, type WatchlistSector } from '@/lib/sectors'
 import type { StockSnapshot } from '@/types'
 
 export type LivePriceSnapshot = {
@@ -7,6 +8,7 @@ export type LivePriceSnapshot = {
   change_1d_pct: number
   session: MarketSession
   as_of?: number | null
+  sector?: WatchlistSector | null
 }
 
 const YAHOO_UA = 'Mozilla/5.0'
@@ -54,9 +56,19 @@ function isExtendedQuoteEligible(q: Record<string, unknown>): boolean {
   return q.hasPrePostMarketData !== false
 }
 
+function quoteSector(q: Record<string, unknown>): WatchlistSector | null {
+  const raw =
+    (typeof q.sector === 'string' && q.sector) ||
+    (typeof q.sectorDisp === 'string' && q.sectorDisp) ||
+    null
+  return raw ? normalizeSector(raw) : null
+}
+
 function parseYahooQuote(q: Record<string, unknown>): LivePriceSnapshot | null {
   const sym = String(q.symbol ?? '').toUpperCase()
   if (!sym) return null
+
+  const sector = quoteSector(q)
 
   const state = String(q.marketState ?? '').toUpperCase()
   const prevClose = previousClose(q)
@@ -73,6 +85,7 @@ function parseYahooQuote(q: Record<string, unknown>): LivePriceSnapshot | null {
         change_1d_pct,
         session: 'pre',
         as_of: yahooTimeToMs(q.preMarketTime ?? q.extendedMarketTime),
+        sector,
       }
     }
   }
@@ -87,6 +100,7 @@ function parseYahooQuote(q: Record<string, unknown>): LivePriceSnapshot | null {
         change_1d_pct,
         session: 'post',
         as_of: yahooTimeToMs(q.postMarketTime ?? q.extendedMarketTime),
+        sector,
       }
     }
   }
@@ -105,6 +119,7 @@ function parseYahooQuote(q: Record<string, unknown>): LivePriceSnapshot | null {
       change_1d_pct,
       session: 'regular',
       as_of: yahooTimeToMs(q.regularMarketTime),
+      sector,
     }
   }
 
@@ -115,6 +130,7 @@ function parseYahooQuote(q: Record<string, unknown>): LivePriceSnapshot | null {
     change_1d_pct,
     session: 'closed',
     as_of: yahooTimeToMs(q.regularMarketTime),
+    sector,
   }
 }
 

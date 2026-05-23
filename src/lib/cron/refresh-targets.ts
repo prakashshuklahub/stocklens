@@ -93,6 +93,7 @@ export async function refreshTargetsInDb(
           support_5d: null,
           support_20d: null,
           avg_20d: null,
+          volume_ratio: null,
         }),
         ...targetFields,
       }

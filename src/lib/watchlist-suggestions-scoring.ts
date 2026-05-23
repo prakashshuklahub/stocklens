@@ -6,6 +6,7 @@
  */
 
 import type { MoverQuote } from '@/lib/market-movers'
+import { TRENDING_VS_SECTOR_RULES } from '@/lib/sector-relative-strength-scoring'
 import type { WatchlistSector } from '@/lib/sectors'
 import type { StockFundamentals } from '@/types'
 
@@ -33,13 +34,15 @@ export const TRENDING_SCORING_RULES = {
 } as const
 
 /** Max ranked rows stored in the global trending cache. */
-export const TRENDING_GLOBAL_RANK_LIMIT = 15
+export const TRENDING_GLOBAL_RANK_LIMIT = 20
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 
 export interface TrendingScoreInput {
   mover: MoverQuote
   fundamentals: StockFundamentals | null
+  /** Regular-session stock 1d % minus sector ETF 1d % (null if unavailable). */
+  sectorDayDelta?: number | null
 }
 
 export interface ScoredSuggestion {
@@ -123,6 +126,15 @@ export function scoreTrendingCandidate(input: TrendingScoreInput): ScoredSuggest
 
   const near_52w_high = Boolean(f?.week52_high && price >= f.week52_high * rules.near52wHigh.proximityRatio)
   if (near_52w_high) score += rules.near52wHigh.points
+
+  const sectorDelta = input.sectorDayDelta
+  if (sectorDelta != null && mover.sector !== 'Other') {
+    if (sectorDelta > TRENDING_VS_SECTOR_RULES.beatMinDelta) {
+      score += TRENDING_VS_SECTOR_RULES.beatPoints
+    } else if (sectorDelta < TRENDING_VS_SECTOR_RULES.lagMaxDelta) {
+      score -= TRENDING_VS_SECTOR_RULES.lagPenalty
+    }
+  }
 
   score = Math.min(score, TRENDING_MAX_SCORE)
 
