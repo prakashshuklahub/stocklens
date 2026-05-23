@@ -12,18 +12,18 @@ import {
   CheckCircle,
   X,
   AlertCircle,
-  ChevronDown,
   Eye,
 } from 'lucide-react'
 import AppNav from '@/components/AppNav'
+import CollapseChevron from '@/components/CollapseChevron'
 import StockLogo from '@/components/StockLogo'
-import LiveRefreshHeader from '@/components/LiveRefreshHeader'
+import { RefreshCountdown } from '@/components/LiveRefreshHeader'
 import { useMarketOpen, useMarketSession } from '@/hooks/useMarketOpen'
 import { useLivePriceRefresh } from '@/hooks/useLivePriceRefresh'
 import { PORTFOLIO_ALERT_DEMO } from '@/lib/portfolio-alerts'
 import { createMarketAwareFetcher } from '@/lib/swr-market-fetcher'
 import type { MarketSession } from '@/lib/market-hours'
-import { formatSnapshotAsOfET } from '@/lib/market-hours'
+import { formatSnapshotAsOfET, liveRefreshSubtitle } from '@/lib/market-hours'
 import { cn } from '@/lib/utils'
 import type {
   PortfolioAlert,
@@ -43,6 +43,12 @@ const fetcher = async (url: string) => {
 
 function fmt(n: number, decimals = 2) {
   return n.toLocaleString('en-US', { minimumFractionDigits: decimals, maximumFractionDigits: decimals })
+}
+
+function truncatePreview(text: string, max = 72): string {
+  const t = text.trim()
+  if (t.length <= max) return t
+  return `${t.slice(0, max - 1).trim()}…`
 }
 
 function parseVestedXlsx(file: File): Promise<VestedRow[]> {
@@ -101,37 +107,39 @@ function SummaryBar({
   const asOfLabel = session === 'closed' ? formatSnapshotAsOfET(latestAsOf) : null
 
   return (
-    <div className="card-surface px-4 py-3 mb-4">
-      <p className="text-[10px] font-semibold text-zinc-500 uppercase tracking-[0.1em] mb-1">Portfolio Value</p>
-      <div className="flex items-end justify-between gap-2">
-        <div>
-          <p className="text-2xl font-black text-white tabular-nums leading-none">${fmt(totalCurrent)}</p>
-          {asOfLabel && (
-            <p className="text-[10px] text-zinc-600 mt-1">{asOfLabel}</p>
-          )}
+    <div className="portfolio-summary mb-4">
+      <div className="portfolio-summary-inner px-4 py-3">
+        <p className="text-[10px] font-semibold text-blue-400/55 uppercase tracking-[0.1em] mb-1">Portfolio Value</p>
+        <div className="flex items-end justify-between gap-2">
+          <div>
+            <p className="text-2xl font-black text-white tabular-nums leading-none">${fmt(totalCurrent)}</p>
+            {asOfLabel && (
+              <p className="text-[10px] text-zinc-600 mt-1">{asOfLabel}</p>
+            )}
+          </div>
+          <span className={cn(
+            'text-xs font-bold px-2 py-0.5 rounded-full shrink-0',
+            isPos ? 'bg-emerald-500/15 text-emerald-400' : 'bg-red-500/15 text-red-400',
+          )}>
+            {isPos ? '+' : ''}{fmt(pnlPct)}%
+          </span>
         </div>
-        <span className={cn(
-          'text-xs font-bold px-2 py-0.5 rounded-full shrink-0',
-          isPos ? 'bg-emerald-500/15 text-emerald-400' : 'bg-red-500/15 text-red-400'
-        )}>
-          {isPos ? '+' : ''}{fmt(pnlPct)}%
-        </span>
-      </div>
 
-      <div className="mt-2 flex items-center justify-between pt-2 border-t border-white/[0.06] gap-3">
-        <div>
-          <p className="text-[10px] text-zinc-500">Invested</p>
-          <p className="text-sm font-bold text-zinc-200 tabular-nums leading-tight">${fmt(totalInvested)}</p>
-        </div>
-        <div className="text-right">
-          <p className="text-[10px] text-zinc-500">Total P&L</p>
-          <div className="flex items-center justify-end gap-1">
-            {isPos
-              ? <TrendingUp className="w-3 h-3 text-emerald-400" />
-              : <TrendingDown className="w-3 h-3 text-red-400" />}
-            <p className={cn('text-sm font-bold tabular-nums leading-tight', isPos ? 'text-emerald-400' : 'text-red-400')}>
-              {isPos ? '+' : '-'}${fmt(Math.abs(pnl))}
-            </p>
+        <div className="mt-2 flex items-center justify-between pt-2 border-t border-white/[0.06] gap-3">
+          <div>
+            <p className="text-[10px] text-zinc-500">Invested</p>
+            <p className="text-sm font-bold text-zinc-200 tabular-nums leading-tight">${fmt(totalInvested)}</p>
+          </div>
+          <div className="text-right">
+            <p className="text-[10px] text-zinc-500">Total P&L</p>
+            <div className="flex items-center justify-end gap-1">
+              {isPos
+                ? <TrendingUp className="w-3 h-3 text-emerald-400" />
+                : <TrendingDown className="w-3 h-3 text-red-400" />}
+              <p className={cn('text-sm font-bold tabular-nums leading-tight', isPos ? 'text-emerald-400' : 'text-red-400')}>
+                {isPos ? '+' : '-'}${fmt(Math.abs(pnl))}
+              </p>
+            </div>
           </div>
         </div>
       </div>
@@ -150,26 +158,22 @@ function HoldingCard({ h }: { h: PortfolioHoldingWithPrice }) {
   const change1d = h.snapshot?.change_1d_pct ?? null
 
   return (
-    <div className="card-surface px-5 py-4 flex items-center gap-3 active:scale-[0.99] active:brightness-95 transition-all duration-100">
+    <div className="card-surface px-4 py-3.5 flex items-center gap-3 active:scale-[0.99] active:brightness-95 transition-all duration-100">
       <StockLogo ticker={h.ticker} size="md" />
-      {/* Left: identity */}
       <div className="flex-1 min-w-0">
-        <div className="flex items-baseline gap-1.5">
-          <span className="text-[15px] font-bold text-white tracking-tight">{h.ticker}</span>
-          <span className="text-xs text-zinc-500 truncate">{h.company_name ?? ''}</span>
-        </div>
-        <p className="text-xs text-zinc-400 mt-0.5 tabular-nums">
+        <span className="text-lg font-bold text-white tracking-tight">{h.ticker}</span>
+        {h.company_name && (
+          <p className="text-sm text-zinc-400 truncate leading-snug">{h.company_name}</p>
+        )}
+        <p className="text-[11px] text-zinc-500 mt-1 tabular-nums">
           {fmt(h.quantity, 0)} shares · avg ${fmt(h.avg_cost_basis)} · inv ${fmt(invested)}
         </p>
       </div>
 
-      {/* Right: price + P&L */}
       <div className="text-right shrink-0">
-        <div className="flex items-baseline justify-end gap-1.5">
-          <span className="text-[15px] font-bold text-white tabular-nums">
-            {price != null ? `$${fmt(price)}` : '—'}
-          </span>
-        </div>
+        <p className="text-base font-bold text-white tabular-nums leading-tight">
+          {price != null ? `$${fmt(price)}` : '—'}
+        </p>
         {change1d != null && (
           <p className={cn('text-xs tabular-nums font-semibold mt-0.5', change1d >= 0 ? 'text-emerald-400' : 'text-red-400')}>
             {change1d >= 0 ? '+' : ''}{fmt(change1d)}%
@@ -199,12 +203,86 @@ function AlertFactorChip({ factor }: { factor: PickFactor }) {
   )
 }
 
+function reviewPreview(alert: PortfolioAlert): string {
+  if (alert.review_reason) return truncatePreview(alert.review_reason)
+  return 'Tap to read the review'
+}
+
+function AlertReviewRow({
+  alert,
+  preview,
+  cardId,
+  isRed,
+}: {
+  alert: PortfolioAlert
+  preview?: boolean
+  cardId: string
+  isRed: boolean
+}) {
+  const [open, setOpen] = useState(false)
+  const previewText = reviewPreview(alert)
+
+  return (
+    <div className={cn('border-t bg-black/20', isRed ? 'border-red-500/10' : 'border-amber-500/10')}>
+      <button
+        type="button"
+        id={`${cardId}-review-trigger`}
+        aria-expanded={open}
+        aria-controls={`${cardId}-review-panel`}
+        onClick={() => setOpen((o) => !o)}
+        className={cn(
+          'w-full text-left px-4 py-3 min-h-[48px]',
+          'active:brightness-95 transition-all [touch-action:manipulation]',
+          'focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-blue-500/40',
+        )}
+      >
+        <div className="flex items-start justify-between gap-2">
+          <div className="min-w-0 flex-1">
+            <div className="flex items-center gap-1.5">
+              <Eye className="w-3.5 h-3.5 text-zinc-500 shrink-0" aria-hidden="true" />
+              <span className="text-[11px] font-semibold text-zinc-300">Why review this holding?</span>
+            </div>
+            {!open && (
+              <p className="text-[11px] text-zinc-600 mt-1 leading-snug truncate">{previewText}</p>
+            )}
+          </div>
+          <CollapseChevron open={open} className="text-zinc-600 shrink-0 mt-0.5" />
+        </div>
+      </button>
+      {open && (
+        <div
+          id={`${cardId}-review-panel`}
+          role="region"
+          aria-labelledby={`${cardId}-review-trigger`}
+          className="px-4 pb-4 pt-0 space-y-3"
+        >
+          {alert.review_reason && (
+            <p className="text-sm text-zinc-200 leading-relaxed">{alert.review_reason}</p>
+          )}
+          {alert.caveat && (
+            <p className="text-xs text-zinc-500 leading-relaxed border-l-2 border-zinc-700 pl-3">
+              {alert.caveat}
+            </p>
+          )}
+          <p className="text-[10px] text-zinc-600">
+            {preview
+              ? 'Sample card for UI preview'
+              : alert.narrative_source === 'llm'
+                ? 'Summary by AI · based on your cost and market data'
+                : 'Summary from matched signals · based on your cost and market data'}
+          </p>
+        </div>
+      )}
+    </div>
+  )
+}
+
 // ── Portfolio review alert card ───────────────────────────────────────────────
 function AlertCard({ alert, preview }: { alert: PortfolioAlert; preview?: boolean }) {
-  const [open, setOpen] = useState(false)
   const isRed = alert.severity === 'red'
   const pnl = alert.holding.position_pnl_pct
   const isPos = pnl >= 0
+  const cardId = `portfolio-alert-${alert.ticker}`
 
   return (
     <div
@@ -214,12 +292,7 @@ function AlertCard({ alert, preview }: { alert: PortfolioAlert; preview?: boolea
         preview && 'opacity-90',
       )}
     >
-      <button
-        type="button"
-        onClick={() => setOpen((o) => !o)}
-        aria-expanded={open}
-        className="w-full text-left px-4 py-4 active:brightness-95 transition-all [touch-action:manipulation]"
-      >
+      <div className="px-4 pt-4 pb-3">
         <div className="flex items-start justify-between gap-2 mb-2">
           <div className="flex items-start gap-2 min-w-0 flex-1">
             <StockLogo ticker={alert.ticker} size="sm" className="mt-0.5" />
@@ -265,39 +338,30 @@ function AlertCard({ alert, preview }: { alert: PortfolioAlert; preview?: boolea
             ))}
           </div>
         )}
+      </div>
 
-        <div className="flex items-center justify-between mt-3 pt-2 border-t border-white/[0.06]">
-          <span className="text-[11px] text-zinc-500 font-medium">
-            {open ? 'Hide review' : 'Why review this holding?'}
-          </span>
-          <ChevronDown
-            className={cn('w-4 h-4 text-zinc-600 transition-transform', open && 'rotate-180')}
-            aria-hidden="true"
-          />
-        </div>
-      </button>
-
-      {open && (
-        <div className="px-4 pb-4 pt-0 space-y-3">
-          {alert.review_reason && (
-            <p className="text-sm text-zinc-200 leading-relaxed">{alert.review_reason}</p>
-          )}
-          {alert.caveat && (
-            <p className="text-xs text-zinc-500 leading-relaxed border-l-2 border-zinc-700 pl-3">
-              {alert.caveat}
-            </p>
-          )}
-          <p className="text-[10px] text-zinc-600">
-            {preview
-              ? 'Sample card for UI preview'
-              : alert.narrative_source === 'llm'
-                ? 'Summary by AI · based on your cost and market data'
-                : 'Summary from matched signals · based on your cost and market data'}
-          </p>
-        </div>
-      )}
+      <AlertReviewRow alert={alert} preview={preview} cardId={cardId} isRed={isRed} />
     </div>
   )
+}
+
+function alertsSectionSubtitle({
+  preview,
+  loading,
+  alerts,
+  clearCount,
+  holdingCount,
+}: {
+  preview?: boolean
+  loading?: boolean
+  alerts: PortfolioAlert[]
+  clearCount: number
+  holdingCount: number
+}): string {
+  if (preview) return 'Sample alerts (not your portfolio)'
+  if (loading) return `Scanning ${holdingCount} holding${holdingCount === 1 ? '' : 's'}…`
+  if (alerts.length) return `${alerts.length} worth a calm review · ${clearCount} look OK`
+  return `Scanned ${holdingCount} holding${holdingCount === 1 ? '' : 's'} — none need review`
 }
 
 function AlertsSection({
@@ -315,65 +379,139 @@ function AlertsSection({
   llmEnabled?: boolean
   loading?: boolean
 }) {
+  const [open, setOpen] = useState(true)
+
   if (!preview && holdingCount === 0) return null
 
+  const subtitle = alertsSectionSubtitle({ preview, loading, alerts, clearCount, holdingCount })
+  const sectionCount = loading ? '…' : String(alerts.length)
+
   return (
-    <section className="mb-4" aria-label="Portfolio review alerts">
-      <div className="flex items-center justify-between gap-2 mb-2">
-        <div>
-          <h2 className="text-sm font-bold text-white">Portfolio review</h2>
-          <p className="text-xs text-zinc-500 mt-0.5">
-            {preview
-              ? 'Sample alerts (not your portfolio)'
-              : loading
-                ? `Scanning ${holdingCount} holding${holdingCount === 1 ? '' : 's'}…`
-                : alerts.length
-                  ? `${alerts.length} worth a calm review · ${clearCount} look OK`
-                  : `Scanned ${holdingCount} holding${holdingCount === 1 ? '' : 's'} — none need review`}
-          </p>
-        </div>
-        {!preview && !loading && clearCount > 0 && alerts.length > 0 && (
-          <span className="text-[11px] text-emerald-400/90 font-semibold shrink-0">
-            {clearCount} OK
-          </span>
+    <section className="mb-5" aria-label="Portfolio review alerts">
+      <button
+        type="button"
+        onClick={() => setOpen((o) => !o)}
+        aria-expanded={open}
+        className={cn(
+          'w-full min-h-[48px] flex items-center justify-between rounded-2xl px-4 py-3',
+          'border border-white/[0.06] bg-zinc-900/40',
+          'active:bg-zinc-800/50 transition-colors [touch-action:manipulation]',
+          'focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500/40',
         )}
-      </div>
-
-      {preview && (
-        <p className="text-[11px] text-amber-400/80 mb-2 px-0.5">
-          Preview only — sync Vested to scan your real holdings.
-        </p>
-      )}
-
-      {loading ? (
-        <div className="rounded-2xl bg-zinc-900 px-4 py-5 animate-pulse" aria-busy="true">
-          <div className="h-3 w-40 bg-zinc-800 rounded mb-2" />
-          <div className="h-3 w-full bg-zinc-800/80 rounded" />
+      >
+        <div className="flex items-center gap-2.5 min-w-0">
+          <Eye className="w-4 h-4 text-amber-400 shrink-0" aria-hidden="true" />
+          <span className="text-sm font-bold text-white">Portfolio review</span>
+          <span className="text-xs font-semibold tabular-nums text-zinc-500">({sectionCount})</span>
         </div>
-      ) : alerts.length > 0 ? (
-        <ul className="space-y-2.5">
-          {alerts.map((a) => (
-            <li key={a.ticker}>
-              <AlertCard alert={a} preview={preview} />
-            </li>
-          ))}
-        </ul>
-      ) : !preview ? (
-        <div className="rounded-xl bg-emerald-500/5 border border-emerald-500/15 px-3.5 py-3 flex items-start gap-2.5">
-          <CheckCircle className="w-5 h-5 text-emerald-400 shrink-0 mt-0.5" aria-hidden="true" />
-          <div className="min-w-0 text-left">
-            <p className="text-sm font-semibold text-emerald-300/90 leading-tight">All clear for now</p>
-            <p className="text-[11px] text-zinc-500 mt-0.5 leading-snug">
-              No holdings need review—we flag only when several weak signals line up.
+        <div className="flex items-center gap-2 shrink-0">
+          {!preview && !loading && clearCount > 0 && alerts.length > 0 && (
+            <span className="text-[11px] text-emerald-400/90 font-semibold">
+              {clearCount} OK
+            </span>
+          )}
+          <CollapseChevron open={open} />
+        </div>
+      </button>
+
+      {open && (
+        <div className="mt-2">
+          <p className="text-xs text-zinc-500 mb-2 px-0.5">{subtitle}</p>
+
+          {preview && (
+            <p className="text-[11px] text-amber-400/80 mb-2 px-0.5">
+              Preview only — sync Vested to scan your real holdings.
             </p>
+          )}
+
+          {loading ? (
+            <div className="rounded-2xl bg-zinc-900 px-4 py-5 animate-pulse" aria-busy="true">
+              <div className="h-3 w-40 bg-zinc-800 rounded mb-2" />
+              <div className="h-3 w-full bg-zinc-800/80 rounded" />
+            </div>
+          ) : alerts.length > 0 ? (
+            <ul className="space-y-3">
+              {alerts.map((a) => (
+                <li key={a.ticker}>
+                  <AlertCard alert={a} preview={preview} />
+                </li>
+              ))}
+            </ul>
+          ) : !preview ? (
+            <div className="rounded-xl bg-emerald-500/5 border border-emerald-500/15 px-3.5 py-3 flex items-start gap-2.5">
+              <CheckCircle className="w-5 h-5 text-emerald-400 shrink-0 mt-0.5" aria-hidden="true" />
+              <div className="min-w-0 text-left">
+                <p className="text-sm font-semibold text-emerald-300/90 leading-tight">All clear for now</p>
+                <p className="text-[11px] text-zinc-500 mt-0.5 leading-snug">
+                  No holdings need review—we flag only when several weak signals line up.
+                </p>
+              </div>
+            </div>
+          ) : null}
+
+          {!preview && !loading && holdingCount > 0 && (
+            <p className="text-[10px] text-zinc-600 mt-2 leading-snug px-0.5">
+              Tap ↻ to rescan.{llmEnabled ? ' AI summaries when available.' : ''}
+            </p>
+          )}
+        </div>
+      )}
+    </section>
+  )
+}
+
+function HoldingsSection({
+  holdings,
+  countdown,
+  refreshing,
+  session,
+}: {
+  holdings: PortfolioHoldingWithPrice[]
+  countdown: number
+  refreshing: boolean
+  session: MarketSession
+}) {
+  const [open, setOpen] = useState(true)
+  const isLive = session === 'regular'
+  const subtitle = liveRefreshSubtitle(session)
+
+  return (
+    <section className="mb-5" aria-label="Your holdings">
+      <button
+        type="button"
+        onClick={() => setOpen((o) => !o)}
+        aria-expanded={open}
+        className={cn(
+          'w-full min-h-[48px] flex items-center justify-between rounded-2xl px-4 py-3',
+          'border border-white/[0.06] bg-zinc-900/40',
+          'active:bg-zinc-800/50 transition-colors [touch-action:manipulation]',
+          'focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500/40',
+        )}
+      >
+        <div className="flex items-center gap-2.5 min-w-0">
+          <PieChart className="w-4 h-4 text-blue-400 shrink-0" aria-hidden="true" />
+          <span className="text-sm font-bold text-white">Your holdings</span>
+          <span className="text-xs font-semibold tabular-nums text-zinc-500">({holdings.length})</span>
+        </div>
+        <div className="flex items-center gap-2 shrink-0">
+          {isLive && (
+            <RefreshCountdown seconds={countdown} refreshing={refreshing} />
+          )}
+          <CollapseChevron open={open} />
+        </div>
+      </button>
+
+      {open && (
+        <div className="mt-2">
+          <p className="text-xs text-zinc-500 mb-2 px-0.5" aria-live="polite">
+            {subtitle}
+          </p>
+          <div className="space-y-3">
+            {holdings.map((h) => (
+              <HoldingCard key={h.id} h={h} />
+            ))}
           </div>
         </div>
-      ) : null}
-
-      {!preview && !loading && holdingCount > 0 && (
-        <p className="text-[10px] text-zinc-600 mt-2 leading-snug px-0.5">
-          Tap ↻ to rescan.{llmEnabled ? ' AI summaries when available.' : ''}
-        </p>
       )}
     </section>
   )
@@ -587,27 +725,26 @@ export default function PortfolioPage() {
           showRefresh={holdings.length > 0}
         />
 
-        <main id="main" className="page-shell">
-          {/* Header */}
-          <div className="flex items-start justify-between mb-5 gap-3">
-            <div className="flex-1 min-w-0">
-              <h1 className="page-title">Portfolio</h1>
-              {syncedLabel ? (
-                <div className="flex items-center gap-1.5 mt-2">
-                  <div className="w-1.5 h-1.5 rounded-full bg-emerald-500 shrink-0" />
-                  <p className="text-xs text-zinc-400 font-medium">Vested synced <span className="text-zinc-300">{syncedLabel}</span></p>
-                </div>
-              ) : (
-                <p className="text-xs text-zinc-600 mt-2">No holdings synced yet</p>
-              )}
+        <main id="main" className="page-shell !pt-3">
+          <div className="flex items-center justify-between gap-3 mb-4">
+            <div className="flex items-center gap-1.5 min-w-0">
+              <h1 className="text-xl font-bold text-white tracking-tight">Portfolio</h1>
+              <PieChart className="w-4 h-4 text-blue-400 shrink-0" aria-hidden="true" />
             </div>
-            <button
-              onClick={() => fileInputRef.current?.click()}
-              className="flex items-center gap-1.5 px-3.5 h-9 rounded-xl bg-zinc-800 active:scale-[0.95] active:bg-zinc-700 text-zinc-300 text-sm font-semibold transition-all [touch-action:manipulation] shrink-0 mt-1"
-            >
-              <Upload className="w-3.5 h-3.5" />
-              Sync
-            </button>
+            <div className="flex items-center gap-2 shrink-0">
+              {syncedLabel && (
+                <p className="text-[11px] text-zinc-500 tabular-nums hidden sm:block">
+                  Synced {syncedLabel}
+                </p>
+              )}
+              <button
+                onClick={() => fileInputRef.current?.click()}
+                className="flex items-center gap-1.5 px-3.5 h-9 rounded-xl bg-zinc-800 active:scale-[0.95] active:bg-zinc-700 text-zinc-300 text-sm font-semibold transition-all [touch-action:manipulation]"
+              >
+                <Upload className="w-3.5 h-3.5" />
+                Sync
+              </button>
+            </div>
             <input
               ref={fileInputRef}
               type="file"
@@ -616,6 +753,11 @@ export default function PortfolioPage() {
               onChange={handleFileChange}
             />
           </div>
+          {syncedLabel ? (
+            <p className="text-xs text-zinc-500 mb-4 -mt-2 sm:hidden">Synced {syncedLabel}</p>
+          ) : (
+            <p className="text-xs text-zinc-600 mb-4 -mt-2">No holdings synced yet</p>
+          )}
 
           {parseError && (
             <div className="flex items-start gap-2 rounded-xl bg-red-500/10 px-3 py-2.5 mb-4">
@@ -626,10 +768,10 @@ export default function PortfolioPage() {
 
           {/* Content */}
           {isLoading ? (
-            <div className="space-y-2.5" aria-busy="true">
-              <div className="h-[88px] rounded-2xl bg-zinc-900 animate-pulse mb-1" />
+            <div className="space-y-3" aria-busy="true">
+              <div className="portfolio-summary h-[100px] animate-pulse opacity-60 mb-4" />
               {[1, 2, 3].map((n) => (
-                <div key={n} className="h-[62px] rounded-2xl bg-zinc-900 animate-pulse" style={{ animationDelay: `${n * 80}ms` }} />
+                <div key={n} className="h-[72px] rounded-2xl bg-zinc-900 animate-pulse" style={{ animationDelay: `${n * 80}ms` }} />
               ))}
             </div>
           ) : holdings.length === 0 ? (
@@ -696,18 +838,12 @@ export default function PortfolioPage() {
                 loading={alertsLoading && !alertsData}
               />
 
-              <LiveRefreshHeader
-                title="Your holdings"
-                seconds={countdown}
+              <HoldingsSection
+                holdings={holdings}
+                countdown={countdown}
                 refreshing={refreshing}
                 session={marketSession}
               />
-
-              <div className="space-y-2">
-                {holdings.map((h) => (
-                  <HoldingCard key={h.id} h={h} />
-                ))}
-              </div>
             </>
           )}
         </main>
