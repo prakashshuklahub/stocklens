@@ -170,7 +170,7 @@ function VsSectorPanel({ pick }: { pick: Pick }) {
   const sectorName = pick.sector ?? 'sector'
 
   return (
-    <div className="rounded-xl bg-zinc-900/80 border border-white/[0.04] px-3.5 py-3">
+    <div className="rounded-xl bg-zinc-900/80 border border-white/[0.04] px-3 py-3">
       <div className="flex items-start justify-between gap-2">
         <div className="min-w-0">
           <p className="text-[10px] font-semibold text-zinc-500 uppercase tracking-wide mb-1">
@@ -231,7 +231,7 @@ function PickCard({ pick, rank }: { pick: Pick; rank: number }) {
         type="button"
         onClick={() => setOpen((o) => !o)}
         aria-expanded={open}
-        className="w-full text-left px-5 py-4 active:bg-zinc-800/60 transition-colors [touch-action:manipulation]"
+        className="w-full text-left px-3.5 py-4 active:bg-zinc-800/60 transition-colors [touch-action:manipulation]"
       >
         <div className="flex items-start justify-between gap-2 mb-3">
           <div className="flex items-center gap-2.5 min-w-0 flex-1">
@@ -258,7 +258,7 @@ function PickCard({ pick, rank }: { pick: Pick; rank: number }) {
           <ConfidenceBadge level={pick.confidence} />
         </div>
 
-        <div className="bg-zinc-800/50 rounded-xl px-3.5 py-3 space-y-2.5">
+        <div className="bg-zinc-800/50 rounded-xl px-3 py-3 space-y-2.5">
           <div className="grid grid-cols-2 gap-y-2.5 gap-x-3">
             <div>
               <p className="text-[10px] font-semibold text-zinc-500 uppercase tracking-wide">Price to buy</p>
@@ -365,7 +365,7 @@ function PickCard({ pick, rank }: { pick: Pick; rank: number }) {
       </button>
 
       {open && (
-        <div className="px-4 pb-4 pt-1 space-y-4">
+        <div className="px-3.5 pb-4 pt-1 space-y-4">
           <div>
             <p className="text-[11px] font-semibold text-zinc-500 uppercase tracking-wide mb-2">
               What analysts say ({pick.analyst_total})
