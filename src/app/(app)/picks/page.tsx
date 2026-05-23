@@ -96,21 +96,159 @@ function sourceStyles(source: PickSourceTag): string {
 
 function ConfidenceBadge({ level }: { level: 'high' | 'medium' | 'low' }) {
   const config = {
-    high: { label: 'High confidence', styles: 'bg-emerald-500/15 text-emerald-300' },
-    medium: { label: 'Medium confidence', styles: 'bg-yellow-500/15 text-yellow-300' },
-    low: { label: 'Low confidence', styles: 'bg-zinc-700/40 text-zinc-400' },
+    high: { label: 'High confidence', styles: 'bg-emerald-500/15 text-emerald-300 ring-1 ring-emerald-500/25' },
+    medium: { label: 'Medium confidence', styles: 'bg-yellow-500/15 text-yellow-300 ring-1 ring-yellow-500/20' },
+    low: { label: 'Low confidence', styles: 'bg-zinc-800/80 text-zinc-400 ring-1 ring-white/8' },
   }[level]
   return (
     <span
       aria-label={`${config.label} confidence`}
       className={cn(
-        'shrink-0 whitespace-nowrap text-xs font-bold uppercase tracking-wide',
-        'px-3 py-1.5 rounded-full',
+        'shrink-0 whitespace-nowrap text-[10px] font-bold uppercase tracking-wide',
+        'px-2.5 py-1 rounded-full',
         config.styles,
       )}
     >
       {config.label}
     </span>
+  )
+}
+
+function PickRankBadge({ rank }: { rank: number }) {
+  const isTop = rank === 1
+  return (
+    <div
+      className={cn(
+        'w-10 h-10 rounded-xl flex flex-col items-center justify-center shrink-0',
+        isTop
+          ? 'bg-gradient-to-br from-amber-400/30 via-amber-500/15 to-orange-600/10 border border-amber-400/35 shadow-[0_0_16px_rgba(251,191,36,0.12)]'
+          : rank <= 3
+            ? 'bg-gradient-to-br from-violet-400/20 to-violet-600/5 border border-violet-400/25'
+            : 'bg-zinc-800/90 border border-white/10',
+      )}
+      aria-hidden="true"
+    >
+      <Sparkles
+        className={cn(
+          'w-3 h-3 mb-0.5',
+          isTop ? 'text-amber-300' : rank <= 3 ? 'text-violet-300/90' : 'text-zinc-500',
+        )}
+      />
+      <span
+        className={cn(
+          'text-[11px] font-black tabular-nums leading-none',
+          isTop ? 'text-amber-100' : rank <= 3 ? 'text-violet-100' : 'text-zinc-300',
+        )}
+      >
+        {rank}
+      </span>
+    </div>
+  )
+}
+
+type PickHeroContentProps = {
+  pick: Pick
+  rank: number
+  upsidePct: number | null
+  isPos: boolean
+}
+
+function PickOwnershipRow({ pick }: { pick: Pick }) {
+  if (!pick.ownership) return null
+  return (
+    <div className="flex items-center gap-1.5 mt-3 px-2 py-2 rounded-lg bg-black/20 border border-white/[0.04]">
+      <Briefcase className="w-3.5 h-3.5 shrink-0 text-amber-400/70" aria-hidden="true" />
+      <p className="text-[11px] text-zinc-400">
+        You own <span className="text-zinc-200 font-semibold tabular-nums">{fmt(pick.ownership.shares, 0)}</span> shares
+        <span className="text-zinc-600"> · paid avg ${fmt(pick.ownership.avg_cost_basis)}</span>
+      </p>
+    </div>
+  )
+}
+
+function PickCardHeroStats({
+  pick,
+  upsidePct,
+  isPos,
+}: {
+  pick: Pick
+  upsidePct: number | null
+  isPos: boolean
+}) {
+  return (
+    <div className="pick-card-stats rounded-xl px-3 py-2.5 space-y-2">
+      <div className="flex flex-wrap items-baseline gap-x-2 gap-y-1 text-sm">
+        <span className="text-[10px] font-bold uppercase tracking-wide text-blue-400/55 shrink-0">Buy</span>
+        <span className="font-bold text-white tabular-nums">
+          ${fmt(pick.entry_low)} – ${fmt(pick.entry_high)}
+        </span>
+        <span className="text-zinc-600">·</span>
+        <span className="text-[11px] text-zinc-500 tabular-nums">Now ${fmt(pick.current_price)}</span>
+      </div>
+      <div className="h-px bg-blue-500/10" />
+      <div className="flex flex-wrap items-center justify-between gap-2">
+        <div className="flex items-baseline gap-2">
+          <span className="text-[10px] font-bold uppercase tracking-wide text-blue-400/55">Room</span>
+          <span className={cn(
+            'text-base font-black tabular-nums',
+            upsidePct == null ? 'text-zinc-500' : isPos ? 'text-emerald-400' : 'text-red-400',
+          )}>
+            {formatUpsidePct(upsidePct)}
+          </span>
+        </div>
+        <div className="flex items-baseline gap-2">
+          <span className="text-[10px] font-bold uppercase tracking-wide text-blue-400/55">Analysts</span>
+          <span className="text-sm font-bold text-white tabular-nums">
+            {pick.analyst_buy} buy
+          </span>
+          <span className="text-[11px] text-zinc-500 tabular-nums">/ {pick.analyst_total}</span>
+        </div>
+      </div>
+    </div>
+  )
+}
+
+function PickCardHero({ pick, rank, upsidePct, isPos }: PickHeroContentProps) {
+  return (
+    <div className="pick-card-hero px-4 pt-5 pb-3.5">
+      <Sparkles
+        className="absolute right-3 top-8 w-16 h-16 text-amber-400/[0.04] pointer-events-none"
+        aria-hidden="true"
+      />
+
+      <div className="relative flex items-start justify-between gap-2 mb-3.5">
+        <div className="flex items-start gap-3 min-w-0 flex-1">
+          <PickRankBadge rank={rank} />
+          <StockLogo ticker={pick.ticker} size="md" inset />
+          <div className="min-w-0 pt-0.5">
+            <div className="flex items-baseline gap-2 flex-wrap">
+              <span className="text-lg font-bold text-white tracking-tight" translate="no">
+                {pick.ticker}
+              </span>
+              {rank === 1 && (
+                <span className="text-[10px] font-bold uppercase tracking-wide text-amber-300/90">
+                  Top pick
+                </span>
+              )}
+            </div>
+            <p className="text-sm text-zinc-400 truncate leading-snug">{pick.company_name}</p>
+            <div className="flex items-center gap-1.5 mt-1.5 flex-wrap">
+              <span className="text-[11px] text-zinc-500">{pick.sector ?? 'Unknown'}</span>
+              <span className="text-[11px] text-zinc-600 tabular-nums">
+                · {pick.analyst_total} analyst{pick.analyst_total === 1 ? '' : 's'}
+              </span>
+              <span className={cn('text-[10px] font-bold uppercase tracking-wide px-2 py-0.5 rounded-full', sourceStyles(pick.source))}>
+                {sourceLabel(pick.source)}
+              </span>
+            </div>
+          </div>
+        </div>
+        <ConfidenceBadge level={pick.confidence} />
+      </div>
+
+      <PickCardHeroStats pick={pick} upsidePct={upsidePct} isPos={isPos} />
+      <PickOwnershipRow pick={pick} />
+    </div>
   )
 }
 
@@ -268,70 +406,15 @@ function PickCard({
   const hasSector = sectorLabel !== 'Other' && isBenchmarkableSector(sectorLabel)
 
   return (
-    <div className="card-surface overflow-hidden">
-      <div className="px-3.5 pt-4 pb-3">
-        <div className="flex items-start justify-between gap-2 mb-3">
-          <div className="flex items-center gap-2.5 min-w-0 flex-1">
-            <span className="text-[11px] font-bold text-zinc-500 tabular-nums w-5 shrink-0">#{rank}</span>
-            <StockLogo ticker={pick.ticker} size="sm" inset />
-            <div className="min-w-0">
-              <div className="flex items-baseline gap-2 flex-wrap">
-                <span className="text-base font-bold text-white tracking-tight" translate="no">
-                  {pick.ticker}
-                </span>
-                <span className="text-xs text-zinc-500 truncate">{pick.company_name}</span>
-              </div>
-              <div className="flex items-center gap-1.5 mt-1 flex-wrap">
-                <span className="text-[11px] text-zinc-600">{pick.sector ?? 'Unknown'}</span>
-                <span className="text-[11px] text-zinc-600 tabular-nums">
-                  · {pick.analyst_total} analyst{pick.analyst_total === 1 ? '' : 's'}
-                </span>
-                <span className={cn('text-[10px] font-bold uppercase tracking-wide px-2 py-0.5 rounded-full', sourceStyles(pick.source))}>
-                  {sourceLabel(pick.source)}
-                </span>
-              </div>
-            </div>
-          </div>
-          <ConfidenceBadge level={pick.confidence} />
-        </div>
+    <div className={cn('pick-card overflow-hidden', rank === 1 && 'pick-card--top')}>
+      <PickCardHero
+        pick={pick}
+        rank={rank}
+        upsidePct={upsidePct}
+        isPos={isPos}
+      />
 
-        <div className="grid grid-cols-3 gap-2 rounded-xl bg-zinc-800/50 px-2 py-2.5">
-          <div>
-            <p className="text-[10px] font-semibold text-zinc-500 uppercase tracking-wide">Price to buy</p>
-            <p className="text-sm font-bold text-white tabular-nums leading-tight">
-              ${fmt(pick.entry_low)} – ${fmt(pick.entry_high)}
-            </p>
-            <p className="text-[10px] text-zinc-600 tabular-nums">Current ${fmt(pick.current_price)}</p>
-          </div>
-          <div className="text-center">
-            <p className="text-[10px] font-semibold text-zinc-500 uppercase tracking-wide">Room to grow</p>
-            <p className={cn(
-              'text-sm font-bold tabular-nums leading-tight',
-              upsidePct == null ? 'text-zinc-500' : isPos ? 'text-emerald-400' : 'text-red-400',
-            )}>
-              {formatUpsidePct(upsidePct)}
-            </p>
-          </div>
-          <div className="text-right">
-            <p className="text-[10px] font-semibold text-zinc-500 uppercase tracking-wide">Analysts</p>
-            <p className="text-sm font-bold text-white tabular-nums leading-tight">
-              {pick.analyst_buy} buy
-            </p>
-            <p className="text-[10px] text-zinc-600 tabular-nums">of {pick.analyst_total}</p>
-          </div>
-        </div>
-
-        {pick.ownership && (
-          <div className="flex items-center gap-1.5 mt-2.5">
-            <Briefcase className="w-3.5 h-3.5 text-zinc-500" aria-hidden="true" />
-            <p className="text-[11px] text-zinc-400">
-              You own <span className="text-zinc-200 font-semibold tabular-nums">{fmt(pick.ownership.shares, 0)}</span> shares
-              <span className="text-zinc-600"> · paid avg ${fmt(pick.ownership.avg_cost_basis)}</span>
-            </p>
-          </div>
-        )}
-      </div>
-
+      <div className="border-t border-amber-500/10 bg-zinc-950/35">
       <PickAccordionRow
         id={`${cardId}-price`}
         label="Price & targets"
@@ -470,6 +553,7 @@ function PickCard({
           </p>
         </div>
       </PickAccordionRow>
+      </div>
     </div>
   )
 }
@@ -708,7 +792,7 @@ export default function PicksPage() {
         {isLoading ? (
           <div className="space-y-3" aria-busy="true">
             {[1, 2, 3].map((n) => (
-              <div key={n} className="h-[240px] rounded-2xl bg-zinc-900 animate-pulse" style={{ animationDelay: `${n * 80}ms` }} />
+              <div key={n} className="pick-card h-[260px] animate-pulse opacity-60" style={{ animationDelay: `${n * 80}ms` }} />
             ))}
           </div>
         ) : !data ? (
