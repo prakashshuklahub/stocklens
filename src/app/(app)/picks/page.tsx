@@ -1,9 +1,12 @@
 'use client'
 
 import useSWR from 'swr'
-import { useCallback, useState } from 'react'
+import { useCallback, useState, type ReactNode } from 'react'
 import AppNav from '@/components/AppNav'
-import { useMarketOpen } from '@/hooks/useMarketOpen'
+import AnalystMiniGrid from '@/components/AnalystMiniGrid'
+import RecentMovesPanel, { recentMovesCollapsedPreview } from '@/components/RecentMovesPanel'
+import VsSectorPanel, { vsSectorCollapsedPreview } from '@/components/VsSectorPanel'
+import { useMarketOpen, useMarketSession } from '@/hooks/useMarketOpen'
 import CollapseChevron from '@/components/CollapseChevron'
 import {
   Sparkles,
@@ -14,20 +17,22 @@ import {
   Eye,
   BarChart3,
   Compass,
+  Target,
+  Activity,
 } from 'lucide-react'
 import StockLogo from '@/components/StockLogo'
 import Week52Range from '@/components/Week52Range'
 import { pickDisplayCopy } from '@/lib/picks'
-import { relativeStrengthUserCopy, sectorEtfSubtitle, vsSectorBadgeLabel, vsSectorSpreadLabel } from '@/lib/sector-relative-strength'
+import { isBenchmarkableSector, normalizeWatchlistSector } from '@/lib/sector-relative-strength-scoring'
 import {
   formatTargetPrice,
-  formatUpsideDollar,
   formatUpsidePct,
   hasDisplayTargetFromPickLabel,
   TARGET_UNAVAILABLE,
 } from '@/lib/target-price-display'
 import { cn } from '@/lib/utils'
-import type { Pick, PicksResponse, PickFactor, PickSourceTag } from '@/types'
+import type { Pick, PicksResponse, PickFactor, PickSourceTag, SectorBenchmark } from '@/types'
+import type { MarketSession } from '@/lib/market-hours'
 
 function allPicksFingerprint(data: PicksResponse): string {
   const rows = [...data.your_picks, ...data.discovery_picks]
@@ -122,98 +127,132 @@ function FactorChip({ factor }: { factor: PickFactor }) {
   )
 }
 
-function MomentumStrip({ pick }: { pick: Pick }) {
-  return (
-    <div className="grid grid-cols-3 gap-2 pt-2 border-t border-white/[0.04]">
-      <div>
-        <p className="text-[10px] font-semibold text-zinc-500 uppercase tracking-wide">Today</p>
-        <p className={cn(
-          'text-sm font-bold tabular-nums',
-          pick.change_1d_pct == null ? 'text-zinc-500' :
-          pick.change_1d_pct >= 0 ? 'text-emerald-400' : 'text-red-400',
-        )}>
-          {fmtPct(pick.change_1d_pct)}
-        </p>
-      </div>
-      <div className="text-center">
-        <p className="text-[10px] font-semibold text-zinc-500 uppercase tracking-wide">Past 2 weeks</p>
-        <p className={cn(
-          'text-sm font-bold tabular-nums',
-          pick.change_14d_pct == null ? 'text-zinc-500' :
-          pick.change_14d_pct >= 0 ? 'text-emerald-400' : 'text-red-400',
-        )}>
-          {fmtPct(pick.change_14d_pct)}
-        </p>
-      </div>
-      <div className="text-right">
-        <p className="text-[10px] font-semibold text-zinc-500 uppercase tracking-wide">Past month</p>
-        <p className={cn(
-          'text-sm font-bold tabular-nums',
-          pick.change_30d_pct == null ? 'text-zinc-500' :
-          pick.change_30d_pct >= 0 ? 'text-emerald-400' : 'text-red-400',
-        )}>
-          {fmtPct(pick.change_30d_pct)}
-        </p>
-      </div>
-    </div>
-  )
+function sectorBenchmarkForPick(
+  pick: Pick,
+  benchmarks: Record<string, SectorBenchmark>,
+): SectorBenchmark | null {
+  const sector = pick.sector?.trim()
+  if (!sector || sector === 'Other') return null
+  return benchmarks[sector] ?? null
 }
 
-function VsSectorPanel({ pick }: { pick: Pick }) {
-  const vs = pick.vs_sector
-  if (!vs?.benchmark_ticker) return null
+function truncatePreview(text: string, max = 72): string {
+  const t = text.trim()
+  if (t.length <= max) return t
+  return `${t.slice(0, max - 1).trim()}…`
+}
 
-  const badge = vsSectorBadgeLabel(vs.badge)
-  const rsCopy = vs.rs_score != null ? relativeStrengthUserCopy(vs.rs_score) : null
-  const delta = vs.delta_7d ?? vs.delta_30d
-  const spreadWindow = vs.delta_7d != null ? '7d' : '30d'
-  const sectorName = pick.sector ?? 'sector'
+type PickAccordionKey = 'price' | 'momentum' | 'sector' | 'why'
 
+const PICK_SECTIONS_CLOSED: Record<PickAccordionKey, boolean> = {
+  price: false,
+  momentum: false,
+  sector: false,
+  why: false,
+}
+
+function pricePreview(pick: Pick, showTarget: boolean, targetCopy: ReturnType<typeof pickDisplayCopy>): string {
+  const buy = `Buy $${fmt(pick.entry_low)}–$${fmt(pick.entry_high)}`
+  if (!showTarget) return buy
+  const target = formatTargetPrice(pick.target_mean)
+  const extra = targetCopy.targetSub ? ` · ${targetCopy.targetSub}` : ''
+  return `${buy} · Target ${target}${extra}`
+}
+
+function momentumPreview(pick: Pick): string {
+  return recentMovesCollapsedPreview({
+    change1d: pick.change_1d_pct,
+    change7d: pick.change_7d_pct,
+    change30d: pick.change_30d_pct,
+    volumeRatio: pick.volume_ratio,
+  })
+}
+
+function sectorPreview(pick: Pick): string | null {
+  return vsSectorCollapsedPreview(pick.vs_sector, pick.sector)
+}
+
+function whyPreview(pick: Pick): string {
+  if (pick.thesis) return truncatePreview(pick.thesis)
+  const top = pick.factors.find((f) => f.tone === 'positive')
+  if (top) return truncatePreview(top.label)
+  return 'Signals and summary'
+}
+
+function PickAccordionRow({
+  id,
+  label,
+  preview,
+  open,
+  onToggle,
+  icon: Icon,
+  children,
+}: {
+  id: string
+  label: string
+  preview: string
+  open: boolean
+  onToggle: () => void
+  icon: typeof Target
+  children: ReactNode
+}) {
   return (
-    <div className="rounded-xl bg-zinc-900/80 border border-white/[0.04] px-3 py-3">
-      <div className="flex items-start justify-between gap-2">
-        <div className="min-w-0">
-          <p className="text-[10px] font-semibold text-zinc-500 uppercase tracking-wide mb-1">
-            {rsCopy?.title ?? 'Compared to its sector'}
-          </p>
-          <p className="text-[11px] text-zinc-600 mb-1.5 leading-snug">
-            {sectorEtfSubtitle(vs.benchmark_ticker, sectorName)}
-          </p>
-          {rsCopy ? (
-            <>
-              <p className="text-sm font-bold text-white">{rsCopy.tier}</p>
-              <p className="text-[11px] text-zinc-500 mt-0.5 leading-relaxed">{rsCopy.hint}</p>
-            </>
-          ) : (
-            <p className="text-sm text-zinc-400">Loading comparison…</p>
-          )}
-        </div>
-        {badge && (
-          <span className={cn(
-            'shrink-0 text-[10px] font-bold uppercase tracking-wide px-2 py-1 rounded-full',
-            vs.badge === 'leader' ? 'bg-emerald-500/15 text-emerald-300' :
-            vs.badge === 'lagger' ? 'bg-red-500/15 text-red-300' :
-            'bg-zinc-800 text-zinc-400',
-          )}>
-            {badge}
-          </span>
+    <div className="border-t border-white/[0.04]">
+      <button
+        type="button"
+        id={`${id}-trigger`}
+        aria-expanded={open}
+        aria-controls={`${id}-panel`}
+        onClick={onToggle}
+        className={cn(
+          'w-full text-left px-3.5 py-3 min-h-[48px]',
+          'active:bg-zinc-800/50 transition-colors [touch-action:manipulation]',
+          'focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-blue-500/40',
         )}
-      </div>
-      {delta != null && (
-        <p className="text-[11px] text-zinc-500 mt-2 tabular-nums leading-relaxed">
-          {vsSectorSpreadLabel(spreadWindow)}:{' '}
-          <span className={delta >= 0 ? 'text-emerald-400' : 'text-red-400'}>
-            {delta >= 0 ? 'beat sector by ' : 'trailed sector by '}
-            {fmtPct(Math.abs(delta), false)}
-          </span>
-        </p>
+      >
+        <div className="flex items-start justify-between gap-2">
+          <div className="min-w-0 flex-1">
+            <div className="flex items-center gap-1.5">
+              <Icon className="w-3.5 h-3.5 text-zinc-500 shrink-0" aria-hidden="true" />
+              <span className="text-[11px] font-semibold text-zinc-300">{label}</span>
+            </div>
+            {!open && (
+              <p className="text-[11px] text-zinc-600 mt-1 leading-snug truncate">{preview}</p>
+            )}
+          </div>
+          <CollapseChevron open={open} className="text-zinc-600 shrink-0 mt-0.5" />
+        </div>
+      </button>
+      {open && (
+        <div id={`${id}-panel`} role="region" aria-labelledby={`${id}-trigger`} className="px-3.5 pb-3.5 pt-0">
+          {children}
+        </div>
       )}
     </div>
   )
 }
 
-function PickCard({ pick, rank, llmEnabled }: { pick: Pick; rank: number; llmEnabled?: boolean }) {
-  const [open, setOpen] = useState(false)
+function PickCard({
+  pick,
+  rank,
+  llmEnabled,
+  marketSession,
+  sectorBenchmarks,
+}: {
+  pick: Pick
+  rank: number
+  llmEnabled?: boolean
+  marketSession: MarketSession
+  sectorBenchmarks: Record<string, SectorBenchmark>
+}) {
+  const cardId = `pick-${pick.ticker}-${pick.source}`
+
+  const [sections, setSections] = useState<Record<PickAccordionKey, boolean>>(() => ({ ...PICK_SECTIONS_CLOSED }))
+
+  const toggleSection = useCallback((key: PickAccordionKey) => {
+    setSections((prev) => ({ ...prev, [key]: !prev[key] }))
+  }, [])
+
   const showTarget = hasDisplayTargetFromPickLabel(pick.target_mean, pick.target_label)
   const upsidePct = showTarget ? pick.upside_pct : null
   const isPos = upsidePct != null && upsidePct >= 0
@@ -224,15 +263,13 @@ function PickCard({ pick, rank, llmEnabled }: { pick: Pick; rank: number; llmEna
     pick.target_low != null &&
     pick.target_high != null &&
     pick.target_high > pick.target_low
+  const sectorPreviewText = sectorPreview(pick)
+  const sectorLabel = pick.vs_sector?.sector ?? normalizeWatchlistSector(pick.sector)
+  const hasSector = sectorLabel !== 'Other' && isBenchmarkableSector(sectorLabel)
 
   return (
     <div className="card-surface overflow-hidden">
-      <button
-        type="button"
-        onClick={() => setOpen((o) => !o)}
-        aria-expanded={open}
-        className="w-full text-left px-3.5 py-4 active:bg-zinc-800/60 transition-colors [touch-action:manipulation]"
-      >
+      <div className="px-3.5 pt-4 pb-3">
         <div className="flex items-start justify-between gap-2 mb-3">
           <div className="flex items-center gap-2.5 min-w-0 flex-1">
             <span className="text-[11px] font-bold text-zinc-500 tabular-nums w-5 shrink-0">#{rank}</span>
@@ -258,8 +295,53 @@ function PickCard({ pick, rank, llmEnabled }: { pick: Pick; rank: number; llmEna
           <ConfidenceBadge level={pick.confidence} />
         </div>
 
-        <div className="bg-zinc-800/50 rounded-xl px-3 py-3 space-y-2.5">
-          <div className="grid grid-cols-2 gap-y-2.5 gap-x-3">
+        <div className="grid grid-cols-3 gap-2 rounded-xl bg-zinc-800/50 px-2 py-2.5">
+          <div>
+            <p className="text-[10px] font-semibold text-zinc-500 uppercase tracking-wide">Price to buy</p>
+            <p className="text-sm font-bold text-white tabular-nums leading-tight">
+              ${fmt(pick.entry_low)} – ${fmt(pick.entry_high)}
+            </p>
+            <p className="text-[10px] text-zinc-600 tabular-nums">Current ${fmt(pick.current_price)}</p>
+          </div>
+          <div className="text-center">
+            <p className="text-[10px] font-semibold text-zinc-500 uppercase tracking-wide">Room to grow</p>
+            <p className={cn(
+              'text-sm font-bold tabular-nums leading-tight',
+              upsidePct == null ? 'text-zinc-500' : isPos ? 'text-emerald-400' : 'text-red-400',
+            )}>
+              {formatUpsidePct(upsidePct)}
+            </p>
+          </div>
+          <div className="text-right">
+            <p className="text-[10px] font-semibold text-zinc-500 uppercase tracking-wide">Analysts</p>
+            <p className="text-sm font-bold text-white tabular-nums leading-tight">
+              {pick.analyst_buy} buy
+            </p>
+            <p className="text-[10px] text-zinc-600 tabular-nums">of {pick.analyst_total}</p>
+          </div>
+        </div>
+
+        {pick.ownership && (
+          <div className="flex items-center gap-1.5 mt-2.5">
+            <Briefcase className="w-3.5 h-3.5 text-zinc-500" aria-hidden="true" />
+            <p className="text-[11px] text-zinc-400">
+              You own <span className="text-zinc-200 font-semibold tabular-nums">{fmt(pick.ownership.shares, 0)}</span> shares
+              <span className="text-zinc-600"> · paid avg ${fmt(pick.ownership.avg_cost_basis)}</span>
+            </p>
+          </div>
+        )}
+      </div>
+
+      <PickAccordionRow
+        id={`${cardId}-price`}
+        label="Price & targets"
+        preview={pricePreview(pick, showTarget, targetCopy)}
+        open={sections.price}
+        onToggle={() => toggleSection('price')}
+        icon={Target}
+      >
+        <div className="space-y-3 rounded-xl bg-zinc-900/60 border border-white/[0.04] px-3 py-3">
+          <div className="grid grid-cols-2 gap-3">
             <div>
               <p className="text-[10px] font-semibold text-zinc-500 uppercase tracking-wide">Price to buy</p>
               <p className="text-sm font-bold text-white tabular-nums leading-tight">
@@ -284,95 +366,75 @@ function PickCard({ pick, rank, llmEnabled }: { pick: Pick; rank: number; llmEna
                 </p>
               )}
             </div>
-            <div>
-              <p className="text-[10px] font-semibold text-zinc-500 uppercase tracking-wide">Room to grow</p>
-              <p className={cn(
-                'text-sm font-bold tabular-nums leading-tight',
-                upsidePct == null ? 'text-zinc-500' : isPos ? 'text-emerald-400' : 'text-red-400',
-              )}>
-                {formatUpsidePct(upsidePct)}
-              </p>
-              <p className="text-[11px] text-zinc-500 tabular-nums">
-                {showTarget
-                  ? `${formatUpsideDollar(pick.target_mean, pick.current_price)} ${targetCopy.upsideSub}`
-                  : TARGET_UNAVAILABLE}
-              </p>
-            </div>
-            <div className="text-right">
-              <p className="text-[10px] font-semibold text-zinc-500 uppercase tracking-wide">Analyst views</p>
-              <p className="text-sm font-bold text-white tabular-nums leading-tight">
-                {pick.analyst_buy} say buy
-              </p>
-              <p className="text-[11px] text-zinc-500 tabular-nums">
-                out of {pick.analyst_total}
-              </p>
-            </div>
           </div>
-
-          <MomentumStrip pick={pick} />
-
-          {(pick.volume_ratio != null && pick.volume_ratio >= 1.3) && (
-            <div className="flex items-center gap-2 text-[11px]">
-              <BarChart3 className="w-3.5 h-3.5 text-amber-400 shrink-0" aria-hidden="true" />
-              <span className="text-zinc-400">
-                Trading volume is{' '}
-                <span className="text-amber-300 font-semibold tabular-nums">
-                  {pick.volume_ratio.toFixed(1)}×
-                </span>
-                {' '}the usual daily average
-              </span>
-            </div>
-          )}
-
           <Week52Range
             high={pick.week52_high}
             low={pick.week52_low}
             current={pick.current_price}
           />
         </div>
+      </PickAccordionRow>
 
-        <div className="mt-3">
-          <VsSectorPanel pick={pick} />
-        </div>
+      <PickAccordionRow
+        id={`${cardId}-momentum`}
+        label="Recent moves"
+        preview={momentumPreview(pick)}
+        open={sections.momentum}
+        onToggle={() => toggleSection('momentum')}
+        icon={Activity}
+      >
+        <RecentMovesPanel
+          change7d={pick.change_7d_pct}
+          change14d={pick.change_14d_pct}
+          change30d={pick.change_30d_pct}
+          volumeRatio={pick.volume_ratio}
+        />
+      </PickAccordionRow>
 
-        {pick.ownership && (
-          <div className="flex items-center gap-1.5 mt-2.5">
-            <Briefcase className="w-3.5 h-3.5 text-zinc-500" aria-hidden="true" />
-            <p className="text-[11px] text-zinc-400">
-              You own <span className="text-zinc-200 font-semibold tabular-nums">{fmt(pick.ownership.shares, 0)}</span> shares
-              <span className="text-zinc-600"> · paid avg ${fmt(pick.ownership.avg_cost_basis)}</span>
-            </p>
-          </div>
-        )}
+      {hasSector && sectorPreviewText && (
+        <PickAccordionRow
+          id={`${cardId}-sector`}
+          label="Vs sector"
+          preview={sectorPreviewText}
+          open={sections.sector}
+          onToggle={() => toggleSection('sector')}
+          icon={BarChart3}
+        >
+          <VsSectorPanel
+            vsSector={pick.vs_sector}
+            sectorBenchmark={sectorBenchmarkForPick(pick, sectorBenchmarks)}
+            stockSector={pick.sector}
+            regularChange1dPct={pick.change_1d_pct}
+            stockChange1d={pick.change_1d_pct}
+            snapshotSession={pick.change_1d_session}
+            marketSession={marketSession}
+          />
+        </PickAccordionRow>
+      )}
 
-        {pick.factors.length > 0 && (
-          <div className="flex flex-wrap gap-1.5 mt-3">
-            {pick.factors.map((f, i) => (
-              <FactorChip key={i} factor={f} />
-            ))}
-          </div>
-        )}
-
-        <div className="flex items-center justify-between mt-3 pt-2 border-t border-white/[0.04]">
-          <span className="text-[11px] text-zinc-500 font-medium">
-            {open ? 'Hide details' : 'See why we picked this'}
-          </span>
-          <CollapseChevron open={open} className="text-zinc-600" />
-        </div>
-      </button>
-
-      {open && (
-        <div className="px-3.5 pb-4 pt-1 space-y-4">
-          <div>
-            <p className="text-[11px] font-semibold text-zinc-500 uppercase tracking-wide mb-2">
-              What analysts say ({pick.analyst_total})
-            </p>
-            <div className="flex gap-2">
-              <Mini label="Buy" value={pick.analyst_buy} tone="emerald" />
-              <Mini label="Hold" value={pick.analyst_hold} tone="zinc" />
-              <Mini label="Sell" value={pick.analyst_sell} tone="red" />
+      <PickAccordionRow
+        id={`${cardId}-why`}
+        label="Why we picked this"
+        preview={whyPreview(pick)}
+        open={sections.why}
+        onToggle={() => toggleSection('why')}
+        icon={Eye}
+      >
+        <div className="space-y-4">
+          {pick.factors.length > 0 && (
+            <div className="flex flex-wrap gap-1.5">
+              {pick.factors.map((f, i) => (
+                <FactorChip key={i} factor={f} />
+              ))}
             </div>
-          </div>
+          )}
+
+          <AnalystMiniGrid
+            buy={pick.analyst_buy}
+            hold={pick.analyst_hold}
+            sell={pick.analyst_sell}
+            total={pick.analyst_total}
+          />
 
           {pick.thesis && (
             <div>
@@ -407,21 +469,7 @@ function PickCard({ pick, rank, llmEnabled }: { pick: Pick; rank: number; llmEna
             )}
           </p>
         </div>
-      )}
-    </div>
-  )
-}
-
-function Mini({ label, value, tone }: { label: string; value: number; tone: 'emerald' | 'zinc' | 'red' }) {
-  const styles = {
-    emerald: 'bg-emerald-500/10 text-emerald-300',
-    zinc: 'bg-zinc-800 text-zinc-300',
-    red: 'bg-red-500/10 text-red-300',
-  }[tone]
-  return (
-    <div className={cn('flex-1 rounded-xl py-2 text-center', styles)}>
-      <p className="text-base font-bold tabular-nums leading-tight">{value}</p>
-      <p className="text-[10px] uppercase tracking-wide opacity-80">{label}</p>
+      </PickAccordionRow>
     </div>
   )
 }
@@ -437,6 +485,8 @@ function PickSection({
   defaultOpen = true,
   hideSubtitle = false,
   llmEnabled = false,
+  marketSession,
+  sectorBenchmarks,
 }: {
   title: string
   subtitle: string
@@ -448,6 +498,8 @@ function PickSection({
   defaultOpen?: boolean
   hideSubtitle?: boolean
   llmEnabled?: boolean
+  marketSession: MarketSession
+  sectorBenchmarks: Record<string, SectorBenchmark>
 }) {
   const [open, setOpen] = useState(() => {
     if (!collapsible || !storageKey || typeof window === 'undefined') return defaultOpen
@@ -517,7 +569,13 @@ function PickSection({
         <ul id={`${sectionId}-list`} className="space-y-3 mt-2">
           {picks.map((p, i) => (
             <li key={`${p.ticker}-${p.source}`}>
-              <PickCard pick={p} rank={i + 1} llmEnabled={llmEnabled} />
+              <PickCard
+                pick={p}
+                rank={i + 1}
+                llmEnabled={llmEnabled}
+                marketSession={marketSession}
+                sectorBenchmarks={sectorBenchmarks}
+              />
             </li>
           ))}
         </ul>
@@ -603,6 +661,7 @@ function SectionHeader({
 
 export default function PicksPage() {
   const marketOpen = useMarketOpen()
+  const marketSession = useMarketSession()
   const { data, isLoading, isValidating, mutate } = useSWR<PicksResponse>('/api/picks', fetcher, {
     revalidateOnFocus: false,
     dedupingInterval: 0,
@@ -677,6 +736,8 @@ export default function PicksPage() {
               defaultOpen
               hideSubtitle
               llmEnabled={data.llm_enabled}
+              marketSession={marketSession}
+              sectorBenchmarks={data.sector_benchmarks ?? {}}
             />
 
             <PickSection
@@ -689,6 +750,8 @@ export default function PicksPage() {
               storageKey="picks_discovery_open"
               defaultOpen
               llmEnabled={data.llm_enabled}
+              marketSession={marketSession}
+              sectorBenchmarks={data.sector_benchmarks ?? {}}
             />
 
             <div className="mt-2 flex items-start gap-2 px-1">

@@ -164,15 +164,6 @@ export interface SignalsResponse {
 }
 
 // ── Picks (buy recommendations) ──────────────────────────────────────────────
-export interface PickVsSector {
-  benchmark_ticker: string | null
-  badge: 'leader' | 'inline' | 'lagger' | null
-  rs_score: number | null
-  /** Stock minus sector ETF on 7d window (percentage points). */
-  delta_7d: number | null
-  delta_30d: number | null
-}
-
 export type PickSourceTag = 'watchlist' | 'portfolio' | 'both' | 'discovery'
 
 export interface PickFactor {
@@ -195,6 +186,7 @@ export interface Pick {
   // Pricing
   current_price: number
   change_1d_pct: number | null
+  change_1d_session?: MarketSession
   change_7d_pct: number | null
   change_14d_pct: number | null
   change_30d_pct: number | null
@@ -221,7 +213,7 @@ export interface Pick {
   // Reasoning
   score: number
   factors: PickFactor[]          // matched scoring factors
-  vs_sector: PickVsSector | null
+  vs_sector: SectorRelativeStrength | null
   source: PickSourceTag
   thesis: string | null          // LLM narrative (null if not generated)
   main_risk: string | null
@@ -245,6 +237,8 @@ export interface PicksResponse {
   /** When pick summaries were last generated (3h narrative cache) */
   narratives_at: string | null
   llm_enabled: boolean
+  /** Sector ETF benchmarks for client-side d1 vs-sector rows. */
+  sector_benchmarks: Record<string, SectorBenchmark>
 }
 
 export interface VestedRow {

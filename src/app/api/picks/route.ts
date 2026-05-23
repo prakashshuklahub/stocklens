@@ -43,6 +43,7 @@ import type {
   PickOwnership,
   PicksResponse,
   PortfolioHolding,
+  SectorBenchmark,
   StockFundamentals,
   WatchlistStock,
 } from '@/types'
@@ -64,6 +65,7 @@ function emptyPicksResponse(): PicksResponse {
     scores_at: now,
     narratives_at: null,
     llm_enabled: isLLMEnabled(),
+    sector_benchmarks: {},
   }
 }
 
@@ -334,6 +336,7 @@ export async function GET(req: NextRequest) {
       candidate,
       current_price,
       change_1d_pct: live?.change_1d_pct ?? null,
+      change_1d_session: live?.session,
       fundamentals,
       ownership: ownershipByTicker.get(candidate.ticker) ?? null,
       benchmark,
@@ -402,6 +405,7 @@ export async function GET(req: NextRequest) {
           },
           current_price: price,
           change_1d_pct: d1,
+          change_1d_session: live.session,
           fundamentals: f ?? null,
           benchmark,
         })
@@ -428,6 +432,9 @@ export async function GET(req: NextRequest) {
     scores_at: scoresAt,
     narratives_at: latestIso([...yourResult.narrativeTimes, ...discoveryResult.narrativeTimes]),
     llm_enabled: isLLMEnabled(),
+    sector_benchmarks: Object.fromEntries(
+      Object.entries(sectorBenchmarks).filter((entry): entry is [string, SectorBenchmark] => entry[1] != null),
+    ),
   }
 
   return NextResponse.json(response, { headers: NO_CACHE_HEADERS })

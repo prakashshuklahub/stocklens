@@ -5,6 +5,7 @@
  * Section 2 (discovery_picks): market movers not on your list — see scoreDiscoveryPick().
  */
 
+import type { MarketSession } from '@/lib/market-hours'
 import { isBenchmarkableSector, PICKS_VS_SECTOR_RULES } from '@/lib/sector-relative-strength-scoring'
 import { computeVsSector } from '@/lib/sector-relative-strength'
 import type { MoverQuote } from '@/lib/market-movers'
@@ -14,8 +15,8 @@ import type {
   PickFactor,
   PickOwnership,
   PickSourceTag,
-  PickVsSector,
   SectorBenchmark,
+  SectorRelativeStrength,
   StockFundamentals,
 } from '@/types'
 
@@ -96,6 +97,7 @@ export interface PickScoreInput {
   candidate: PickCandidate
   current_price: number
   change_1d_pct: number | null
+  change_1d_session?: MarketSession
   fundamentals: StockFundamentals
   ownership: PickOwnership | null
   benchmark?: SectorBenchmark | null
@@ -105,6 +107,7 @@ export interface DiscoveryPickInput {
   mover: MoverQuote
   current_price: number
   change_1d_pct: number
+  change_1d_session?: MarketSession
   fundamentals: StockFundamentals | null
   benchmark?: SectorBenchmark | null
 }
@@ -119,36 +122,31 @@ interface BuildPickOptions {
   momentumUpsidePointsCap: number | null
 }
 
-function toPickVsSector(
+function buildPickVsSector(
   candidate: PickCandidate,
   f: StockFundamentals,
   benchmark: SectorBenchmark | null | undefined,
-): PickVsSector | null {
+): SectorRelativeStrength | null {
   if (!benchmark) return null
   const vs = computeVsSector({
     ticker: candidate.ticker,
     sector: candidate.sector,
+    sectorSource: 'watchlist',
     fundamentals: f,
     benchmark,
   })
   if (!vs.benchmark_ticker) return null
-  return {
-    benchmark_ticker: vs.benchmark_ticker,
-    badge: vs.badge,
-    rs_score: vs.rs_score,
-    delta_7d: vs.windows?.d7?.delta ?? null,
-    delta_30d: vs.windows?.d30?.delta ?? null,
-  }
+  return vs
 }
 
 function applyVsSectorScore(
-  vs: PickVsSector | null,
+  vs: SectorRelativeStrength | null,
   sector: string | null,
   factors: PickFactor[],
 ): number {
   if (!vs || !isBenchmarkableSector(sector)) return 0
   const rules = PICKS_VS_SECTOR_RULES
-  const windowDelta = vs.delta_7d ?? vs.delta_30d
+  const windowDelta = vs.windows?.d7?.delta ?? vs.windows?.d30?.delta ?? null
 
   const rsPart =
     vs.rs_score != null && vs.rs_score >= rules.strongRsMin
@@ -425,7 +423,7 @@ function buildScoredPick(input: PickScoreInput, options: BuildPickOptions): Scor
 
   score += applySignalBonuses(f, current_price, factors)
 
-  const vs_sector = toPickVsSector(candidate, f, benchmark)
+  const vs_sector = buildPickVsSector(candidate, f, benchmark)
   score += applyVsSectorScore(vs_sector, candidate.sector, factors)
 
   if (score < options.minScore) return null
@@ -447,6 +445,7 @@ function buildScoredPick(input: PickScoreInput, options: BuildPickOptions): Scor
     sector: candidate.sector,
     current_price,
     change_1d_pct,
+    change_1d_session: input.change_1d_session,
     change_7d_pct: f.change_7d_pct,
     change_14d_pct: f.change_14d_pct,
     change_30d_pct: f.change_30d_pct,
@@ -511,6 +510,7 @@ export function scoreDiscoveryPick(input: DiscoveryPickInput): ScoredPick | null
       candidate,
       current_price,
       change_1d_pct,
+      change_1d_session: input.change_1d_session,
       fundamentals: f,
       ownership: null,
       benchmark,

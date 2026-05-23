@@ -1,10 +1,14 @@
 'use client'
 
-import { useState, useRef, useEffect } from 'react'
-import { MoreVertical, Trash2, ChevronDown } from 'lucide-react'
+import { useState, useRef, useEffect, useCallback, type ReactNode } from 'react'
+import { MoreVertical, Trash2, Target, Activity, BarChart3, Users } from 'lucide-react'
 import useSWR from 'swr'
 import StockLogo from '@/components/StockLogo'
+import AnalystMiniGrid from '@/components/AnalystMiniGrid'
+import RecentMovesPanel, { recentMovesCollapsedPreview } from '@/components/RecentMovesPanel'
+import VsSectorPanel, { vsSectorCollapsedPreview } from '@/components/VsSectorPanel'
 import SessionPriceBadge from '@/components/SessionPriceBadge'
+import CollapseChevron from '@/components/CollapseChevron'
 import Week52Range from '@/components/Week52Range'
 import {
   computeTargetUpsidePct,
@@ -15,19 +19,10 @@ import {
   hasDisplayTargetPrice,
 } from '@/lib/target-price-display'
 import { priceBadgeSession, type MarketSession } from '@/lib/market-hours'
-import {
-  computeLiveD1Window,
-  computeRsScoreWithD1,
-  d1VsSectorFootnote,
-  d1VsSectorLabel,
-  regularSessionChange1d,
-  relativeStrengthUserCopy,
-  sectorEtfSubtitle,
-  vsSectorBadgeLabel,
-} from '@/lib/sector-relative-strength'
+import { vsSectorBadgeLabel } from '@/lib/sector-relative-strength'
 import { isBenchmarkableSector, normalizeWatchlistSector } from '@/lib/sector-relative-strength-scoring'
 import { cn } from '@/lib/utils'
-import type { SectorBenchmark, SectorRelativeStrength, StockFundamentals, StockSnapshot, VsSectorWindow } from '@/types'
+import type { SectorBenchmark, SectorRelativeStrength, StockFundamentals, StockSnapshot } from '@/types'
 
 const SECTOR_COLORS: Record<string, { bg: string; text: string }> = {
   Technology:               { bg: 'bg-blue-500/10',    text: 'text-blue-400' },
@@ -82,56 +77,6 @@ function fmtPrice(n: number | null | undefined) {
 function fmtPct(n: number | null | undefined, showPlus = true) {
   if (n == null) return null
   return `${showPlus && n >= 0 ? '+' : ''}${n.toFixed(2)}%`
-}
-
-function PctBadge({ value, label }: { value: number | null; label: string }) {
-  if (value == null) return (
-    <div className="flex flex-col items-center gap-1">
-      <span className="text-[11px] text-zinc-500">{label}</span>
-      <div className="h-3 w-10 rounded bg-zinc-700/60 animate-pulse" />
-    </div>
-  )
-  const isPos = value >= 0
-  return (
-    <div className="flex flex-col items-center gap-0.5">
-      <span className="text-[11px] text-zinc-500 font-medium">{label}</span>
-      <span className={cn('text-sm font-bold tabular-nums', isPos ? 'text-emerald-400' : 'text-red-400')}>
-        {fmtPct(value)}
-      </span>
-    </div>
-  )
-}
-
-function AnalystRating({ buy, hold, sell }: { buy: number | null; hold: number | null; sell: number | null }) {
-  if (buy == null) return (
-    <div className="space-y-1.5">
-      <div className="h-1.5 w-full rounded-full bg-zinc-700/60 animate-pulse" />
-      <div className="h-3 w-32 rounded bg-zinc-700/60 animate-pulse" />
-    </div>
-  )
-  const total = (buy ?? 0) + (hold ?? 0) + (sell ?? 0)
-  if (!total) return null
-
-  const buyPct = Math.round(((buy ?? 0) / total) * 100)
-  const holdPct = Math.round(((hold ?? 0) / total) * 100)
-  const sellPct = 100 - buyPct - holdPct
-
-  return (
-    <div className="space-y-1.5">
-      <span className="text-[11px] text-zinc-500 font-medium">Analyst ratings</span>
-      <div className="flex h-1.5 w-full rounded-full overflow-hidden gap-px">
-        {buyPct > 0 && <div className="bg-emerald-500/70 rounded-l-full" style={{ width: `${buyPct}%` }} />}
-        {holdPct > 0 && <div className="bg-yellow-500/60" style={{ width: `${holdPct}%` }} />}
-        {sellPct > 0 && <div className="bg-red-500/60 rounded-r-full" style={{ width: `${sellPct}%` }} />}
-      </div>
-      {/* Counts */}
-      <div className="flex items-center gap-3">
-        <span className="text-xs font-semibold text-emerald-400 tabular-nums">{buy} buy</span>
-        <span className="text-xs font-semibold text-yellow-400 tabular-nums">{hold} hold</span>
-        <span className="text-xs font-semibold text-red-400 tabular-nums">{sell} sell</span>
-      </div>
-    </div>
-  )
 }
 
 function TargetPrice({
@@ -200,178 +145,20 @@ function TargetPrice({
   )
 }
 
-function VsSectorDelta({ delta }: { delta: number | null }) {
-  if (delta == null) {
-    return <span className="text-zinc-600 tabular-nums">—</span>
-  }
-  const isPos = delta >= 0
-  return (
-    <span
-      className={cn(
-        'text-sm font-bold tabular-nums',
-        isPos ? 'text-emerald-400' : 'text-red-400',
-      )}
-    >
-      {fmtPct(delta)}
-    </span>
-  )
-}
-
-function VsSectorWindowRow({
-  label,
-  window,
-}: {
-  label: string
-  window: VsSectorWindow | null
-}) {
-  if (!window) return null
-  return (
-    <div className="flex items-center justify-between gap-2 text-xs">
-      <span className="text-zinc-500">{label}</span>
-      <div className="flex items-center gap-2 tabular-nums">
-        <span className="text-zinc-400">{fmtPct(window.stock, false)}</span>
-        <span className="text-zinc-600">vs</span>
-        <span className="text-zinc-400">{fmtPct(window.sector, false)}</span>
-        <span className="text-zinc-600">·</span>
-        <VsSectorDelta delta={window.delta} />
-      </div>
-    </div>
-  )
-}
-
-function VsSectorPanel({
-  vsSector,
-  sectorBenchmark,
-  stockSector,
-  regularChange1dPct,
-  stockChange1d,
-  snapshotSession,
-  marketSession,
-  refreshing,
-}: {
-  vsSector: SectorRelativeStrength | null | undefined
-  sectorBenchmark: SectorBenchmark | null | undefined
-  stockSector: string | null | undefined
-  regularChange1dPct: number | null | undefined
-  stockChange1d: number | null | undefined
-  snapshotSession: MarketSession | undefined
-  marketSession: MarketSession
-  refreshing?: boolean
-}) {
-  const sectorLabel = vsSector?.sector ?? normalizeWatchlistSector(stockSector)
-  if (sectorLabel === 'Other' || !isBenchmarkableSector(sectorLabel)) return null
-
-  if (!vsSector?.windows) {
-    return (
-      <div className="rounded-lg bg-zinc-900/60 px-3 py-2.5 border border-white/[0.04]">
-        <p className="text-[11px] font-semibold text-zinc-400 uppercase tracking-wide">
-          Compared to {sectorLabel}
-        </p>
-        <p className="text-xs text-zinc-500 mt-2" aria-live="polite">
-          {refreshing ? 'Loading…' : 'Comparison not ready — pull down to refresh'}
-        </p>
-      </div>
-    )
-  }
-
-  const stockRegular1d =
-    regularChange1dPct ??
-    regularSessionChange1d(stockChange1d, snapshotSession)
-  const d1Window = computeLiveD1Window(stockRegular1d, sectorBenchmark ?? null)
-  const rsScore =
-    d1Window != null
-      ? computeRsScoreWithD1({
-          d1: d1Window,
-          d7: vsSector.windows.d7,
-          d14: vsSector.windows.d14,
-          d30: vsSector.windows.d30,
-        })
-      : vsSector.rs_score
-
-  const primaryDelta = vsSector.windows.d7?.delta ?? vsSector.windows.d30?.delta ?? null
-  const badgeLabel = vsSectorBadgeLabel(vsSector.badge)
-  const etf = vsSector.benchmark_ticker ?? sectorBenchmark?.benchmark_ticker
-  const d1Label = d1VsSectorLabel(marketSession)
-  const d1Footnote = d1VsSectorFootnote(marketSession)
-  const strengthCopy = rsScore != null ? relativeStrengthUserCopy(rsScore) : null
-
-  return (
-    <div className="rounded-lg bg-zinc-900/60 px-3 py-2.5 space-y-2 border border-white/[0.04]">
-      <div className="flex items-start justify-between gap-2">
-        <div>
-          <p className="text-[11px] font-semibold text-zinc-400 uppercase tracking-wide">
-            Compared to {vsSector.sector}
-          </p>
-          {etf && (
-            <p className="text-[11px] text-zinc-600 mt-0.5 leading-snug">
-              {sectorEtfSubtitle(etf, vsSector.sector)}
-              {primaryDelta != null && (
-                <>
-                  {' '}
-                  ·{' '}
-                  <span className={primaryDelta >= 0 ? 'text-emerald-400/90' : 'text-red-400/90'}>
-                    {primaryDelta >= 0 ? 'Ahead by ' : 'Behind by '}
-                    {fmtPct(Math.abs(primaryDelta), false)}
-                  </span>
-                </>
-              )}
-            </p>
-          )}
-        </div>
-        {badgeLabel && (
-          <span
-            className={cn(
-              'shrink-0 text-[10px] font-bold uppercase tracking-wide px-2 py-1 rounded-full',
-              vsSector.badge === 'leader' && 'bg-emerald-500/15 text-emerald-300',
-              vsSector.badge === 'lagger' && 'bg-red-500/15 text-red-300',
-              vsSector.badge === 'inline' && 'bg-zinc-700/50 text-zinc-400',
-              refreshing && 'opacity-70',
-            )}
-          >
-            {refreshing ? '…' : badgeLabel}
-          </span>
-        )}
-      </div>
-
-      <VsSectorWindowRow label="Past week" window={vsSector.windows.d7} />
-      <VsSectorWindowRow label="Past 2 weeks" window={vsSector.windows.d14} />
-      <VsSectorWindowRow label="Past month" window={vsSector.windows.d30} />
-      {d1Window && (
-        <VsSectorWindowRow label={d1Label} window={d1Window} />
-      )}
-
-      {strengthCopy && (
-        <div className="pt-2 border-t border-white/[0.04] space-y-0.5">
-          <p className="text-[11px] font-medium text-zinc-400">{strengthCopy.title}</p>
-          <p className="text-sm font-bold text-zinc-200 tabular-nums">{strengthCopy.tier}</p>
-          <p className="text-[11px] text-zinc-500 leading-relaxed [text-wrap:pretty]">
-            {strengthCopy.hint}
-          </p>
-        </div>
-      )}
-
-      {d1Footnote && (
-        <p className="text-[10px] text-zinc-600 leading-relaxed [text-wrap:pretty]">
-          {d1Footnote}
-          {refreshing ? ' · Updating…' : ''}
-        </p>
-      )}
-    </div>
-  )
-}
-
 function CollapsedSummary({
   fundamentals,
   currentPrice,
   loading,
   vsSector,
   sectorBenchmarksRefreshing,
+  inset = false,
 }: {
   fundamentals: StockFundamentals | null | undefined
   currentPrice: number | null
   loading: boolean
   vsSector?: SectorRelativeStrength | null
   sectorBenchmarksRefreshing?: boolean
+  inset?: boolean
 }) {
   const showTarget = hasDisplayTargetPrice(
     fundamentals?.target_price,
@@ -387,7 +174,7 @@ function CollapsedSummary({
 
   if (loading && !fundamentals) {
     return (
-      <div className="flex gap-2 px-5 pb-1">
+      <div className={cn('flex gap-2 pb-1', inset ? 'px-0' : 'px-5 pb-1')}>
         <div className="h-6 w-16 rounded-full bg-zinc-800 animate-pulse" />
         <div className="h-6 w-16 rounded-full bg-zinc-800 animate-pulse" />
         <div className="h-6 w-24 rounded-full bg-zinc-800 animate-pulse" />
@@ -398,7 +185,7 @@ function CollapsedSummary({
   const badgeLabel = vsSectorBadgeLabel(vsSector?.badge ?? null)
 
   return (
-    <div className="flex flex-wrap items-center gap-1.5 px-5 pb-1">
+    <div className={cn('flex flex-wrap items-center gap-1.5 pb-1', inset ? 'px-0' : 'px-5 pb-1')}>
       {badgeLabel && vsSector?.sector !== 'Other' && (
         <span
           className={cn(
@@ -449,6 +236,117 @@ function CollapsedSummary({
   )
 }
 
+type WatchlistAccordionKey = 'room' | 'moves' | 'sector' | 'analyst'
+
+const WATCHLIST_SECTIONS_CLOSED: Record<WatchlistAccordionKey, boolean> = {
+  room: false,
+  moves: false,
+  sector: false,
+  analyst: false,
+}
+
+function roomPreview(
+  fundamentals: StockFundamentals | null | undefined,
+  currentPrice: number | null,
+): string {
+  const showTarget = hasDisplayTargetPrice(
+    fundamentals?.target_price,
+    fundamentals?.target_source ?? null,
+  )
+  const upside = showTarget
+    ? formatDisplayUpsidePct(
+        fundamentals?.target_price,
+        currentPrice,
+        fundamentals?.target_source ?? null,
+      )
+    : null
+  const target = showTarget && fundamentals?.target_price != null
+    ? formatDisplayTargetPrice(fundamentals.target_price, fundamentals.target_source ?? null)
+    : null
+
+  const parts: string[] = []
+  if (upside && upside !== '—') parts.push(`Room to grow ${upside}`)
+  else parts.push('No target')
+  if (target) parts.push(`target ${target}`)
+  return parts.join(' · ')
+}
+
+function movesPreview(
+  fundamentals: StockFundamentals | null | undefined,
+  change1dPct: number | null | undefined,
+): string {
+  return recentMovesCollapsedPreview({
+    change1d: change1dPct,
+    change7d: fundamentals?.change_7d_pct,
+    change30d: fundamentals?.change_30d_pct,
+  })
+}
+
+function sectorPreview(
+  vsSector: SectorRelativeStrength | null | undefined,
+  stockSector: string | null | undefined,
+): string | null {
+  return vsSectorCollapsedPreview(vsSector, stockSector)
+}
+
+function analystPreview(fundamentals: StockFundamentals | null | undefined): string {
+  if (fundamentals?.analyst_buy == null) return 'Analyst ratings'
+  return `${fundamentals.analyst_buy} buy · ${fundamentals.analyst_hold ?? 0} hold · ${fundamentals.analyst_sell ?? 0} sell`
+}
+
+function WatchlistAccordionRow({
+  id,
+  label,
+  preview,
+  open,
+  onToggle,
+  icon: Icon,
+  children,
+}: {
+  id: string
+  label: string
+  preview: string
+  open: boolean
+  onToggle: () => void
+  icon: typeof Target
+  children: ReactNode
+}) {
+  return (
+    <div className="border-t border-white/[0.04]">
+      <button
+        type="button"
+        id={`${id}-trigger`}
+        aria-expanded={open}
+        aria-controls={`${id}-panel`}
+        onClick={onToggle}
+        className={cn(
+          'w-full text-left px-5 py-3 min-h-[48px]',
+          'active:bg-zinc-800/50 transition-colors [touch-action:manipulation]',
+          'focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-blue-500/40',
+        )}
+      >
+        <div className="flex items-start justify-between gap-2">
+          <div className="min-w-0 flex-1">
+            <div className="flex items-center gap-1.5">
+              <Icon className="w-3.5 h-3.5 text-zinc-500 shrink-0" aria-hidden="true" />
+              <span className="text-[11px] font-semibold text-zinc-300">{label}</span>
+            </div>
+            {!open && (
+              <p className="text-[11px] text-zinc-600 mt-1 leading-snug truncate">{preview}</p>
+            )}
+          </div>
+          <CollapseChevron open={open} className="text-zinc-600 shrink-0 mt-0.5" />
+        </div>
+      </button>
+      {open && (
+        <div id={`${id}-panel`} role="region" aria-labelledby={`${id}-trigger`} className="px-5 pb-3.5 pt-0">
+          {children}
+        </div>
+      )}
+    </div>
+  )
+}
+
 export default function WatchlistCard({
   stock,
   onRemove,
@@ -460,7 +358,16 @@ export default function WatchlistCard({
   regularChange1dPct,
   sectorBenchmarksRefreshing,
 }: Props) {
-  const [expanded, setExpanded] = useState(false)
+  const cardId = `watchlist-${stock.ticker}`
+
+  const [sections, setSections] = useState<Record<WatchlistAccordionKey, boolean>>(() => ({
+    ...WATCHLIST_SECTIONS_CLOSED,
+  }))
+
+  const toggleSection = useCallback((key: WatchlistAccordionKey) => {
+    setSections((prev) => ({ ...prev, [key]: !prev[key] }))
+  }, [])
+
   const [menuOpen, setMenuOpen] = useState(false)
   const [confirming, setConfirming] = useState(false)
   const [removing, setRemoving] = useState(false)
@@ -504,6 +411,14 @@ export default function WatchlistCard({
   const isUp = (snap?.change_1d_pct ?? 0) >= 0
   const currentPrice = snap?.price ?? null
   const badgeSession = priceBadgeSession(snap?.session, marketSession)
+  const sectorLabel = vsSector?.sector ?? normalizeWatchlistSector(stock.sector)
+  const hasSector = sectorLabel !== 'Other' && isBenchmarkableSector(sectorLabel)
+  const sectorPreviewText = sectorPreview(vsSector, stock.sector)
+  const change1d = regularChange1dPct ?? snap?.change_1d_pct ?? null
+  const analystTotal =
+    (fundamentals?.analyst_buy ?? 0) +
+    (fundamentals?.analyst_hold ?? 0) +
+    (fundamentals?.analyst_sell ?? 0)
 
   if (confirming) {
     return (
@@ -550,13 +465,7 @@ export default function WatchlistCard({
 
   return (
     <div className="relative card-surface overflow-hidden active:scale-[0.99] active:brightness-95 transition-all duration-100">
-      <button
-        type="button"
-        onClick={() => setExpanded((o) => !o)}
-        aria-expanded={expanded}
-        aria-label={`${expanded ? 'Collapse' : 'Expand'} details for ${stock.ticker}`}
-        className="w-full text-left px-5 pt-4 pb-3 pr-14 active:bg-zinc-800/40 transition-colors [touch-action:manipulation]"
-      >
+      <div className="px-5 pt-4 pb-2 pr-14">
         <div className="flex items-start justify-between gap-3">
           <div className="flex items-start gap-3 flex-1 min-w-0">
             <StockLogo ticker={stock.ticker} size="md" />
@@ -589,40 +498,67 @@ export default function WatchlistCard({
           </div>
         </div>
 
-        {!expanded && (
+        <div className="mt-2">
           <CollapsedSummary
             fundamentals={fundamentals}
             currentPrice={currentPrice}
             loading={fundamentalsLoading}
             vsSector={vsSector}
             sectorBenchmarksRefreshing={sectorBenchmarksRefreshing}
-          />
-        )}
-
-        <div className="flex items-center justify-between gap-2 mt-2.5 pt-2 border-t border-white/[0.04]">
-          <span className="text-[11px] text-zinc-500 font-medium">
-            {expanded ? 'Hide details' : 'Tap for target, range & ratings'}
-          </span>
-          <ChevronDown
-            className={cn(
-              'w-4 h-4 text-zinc-600 shrink-0 transition-transform duration-200',
-              expanded ? 'rotate-180' : '',
-            )}
-            aria-hidden="true"
+            inset
           />
         </div>
-      </button>
+      </div>
 
-      {expanded && (
-        <div className="mx-3 mb-3 bg-zinc-800/50 rounded-xl px-3 py-2.5 space-y-2.5 border-t border-white/[0.04]">
-          <div className="flex items-center justify-around">
-            <PctBadge value={fundamentals?.change_7d_pct ?? null} label="7d" />
-            <div className="w-px h-5 bg-zinc-700/60" />
-            <PctBadge value={fundamentals?.change_14d_pct ?? null} label="14d" />
-            <div className="w-px h-5 bg-zinc-700/60" />
-            <PctBadge value={fundamentals?.change_30d_pct ?? null} label="30d" />
-          </div>
+      <WatchlistAccordionRow
+        id={`${cardId}-room`}
+        label="Room to grow"
+        preview={roomPreview(fundamentals, currentPrice)}
+        open={sections.room}
+        onToggle={() => toggleSection('room')}
+        icon={Target}
+      >
+        <div className="space-y-2.5 rounded-xl bg-zinc-800/50 px-3 py-2.5 border border-white/[0.04]">
+          <TargetPrice
+            targetPrice={fundamentals?.target_price ?? null}
+            targetLow={fundamentals?.target_low ?? null}
+            targetHigh={fundamentals?.target_high ?? null}
+            targetSource={fundamentals?.target_source ?? null}
+            current={currentPrice}
+            loading={fundamentalsLoading && !fundamentals}
+          />
+          <Week52Range
+            high={fundamentals?.week52_high ?? null}
+            low={fundamentals?.week52_low ?? null}
+            current={currentPrice}
+          />
+        </div>
+      </WatchlistAccordionRow>
 
+      <WatchlistAccordionRow
+        id={`${cardId}-moves`}
+        label="Recent moves"
+        preview={movesPreview(fundamentals, change1d)}
+        open={sections.moves}
+        onToggle={() => toggleSection('moves')}
+        icon={Activity}
+      >
+        <RecentMovesPanel
+          change7d={fundamentals?.change_7d_pct ?? null}
+          change14d={fundamentals?.change_14d_pct ?? null}
+          change30d={fundamentals?.change_30d_pct ?? null}
+        />
+      </WatchlistAccordionRow>
+
+      {hasSector && sectorPreviewText && (
+        <WatchlistAccordionRow
+          id={`${cardId}-sector`}
+          label="Vs sector"
+          preview={sectorPreviewText}
+          open={sections.sector}
+          onToggle={() => toggleSection('sector')}
+          icon={BarChart3}
+        >
           <VsSectorPanel
             vsSector={vsSector}
             sectorBenchmark={sectorBenchmark}
@@ -633,29 +569,25 @@ export default function WatchlistCard({
             marketSession={marketSession}
             refreshing={sectorBenchmarksRefreshing}
           />
-
-          <TargetPrice
-            targetPrice={fundamentals?.target_price ?? null}
-            targetLow={fundamentals?.target_low ?? null}
-            targetHigh={fundamentals?.target_high ?? null}
-            targetSource={fundamentals?.target_source ?? null}
-            current={currentPrice}
-            loading={fundamentalsLoading && !fundamentals}
-          />
-
-          <Week52Range
-            high={fundamentals?.week52_high ?? null}
-            low={fundamentals?.week52_low ?? null}
-            current={currentPrice}
-          />
-
-          <AnalystRating
-            buy={fundamentals?.analyst_buy ?? null}
-            hold={fundamentals?.analyst_hold ?? null}
-            sell={fundamentals?.analyst_sell ?? null}
-          />
-        </div>
+        </WatchlistAccordionRow>
       )}
+
+      <WatchlistAccordionRow
+        id={`${cardId}-analyst`}
+        label="Analyst views"
+        preview={analystPreview(fundamentals)}
+        open={sections.analyst}
+        onToggle={() => toggleSection('analyst')}
+        icon={Users}
+      >
+        <AnalystMiniGrid
+          buy={fundamentals?.analyst_buy ?? null}
+          hold={fundamentals?.analyst_hold ?? null}
+          sell={fundamentals?.analyst_sell ?? null}
+          total={analystTotal}
+          loading={fundamentalsLoading && !fundamentals}
+        />
+      </WatchlistAccordionRow>
 
       {/* ── 3-dot menu ── */}
       <div ref={menuRef} className="absolute right-1 top-2">
