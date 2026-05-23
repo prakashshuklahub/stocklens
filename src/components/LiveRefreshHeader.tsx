@@ -76,21 +76,23 @@ export default function LiveRefreshHeader({
   return (
     <div
       className={cn(
-        'flex items-start justify-between gap-4 mb-3',
+        'mb-3',
         bordered && 'mt-6 pt-6 border-t border-zinc-800/60',
         className,
       )}
     >
-      <div className="min-w-0">
-        <h2 className="section-label">{title}</h2>
-        <p className="text-xs text-zinc-600 mt-1" aria-live="polite">
-          {subtitle ?? liveRefreshSubtitle(session)}
-        </p>
-        {footer}
+      <div className="flex items-start justify-between gap-4">
+        <div className="min-w-0">
+          <h2 className="section-label">{title}</h2>
+          <p className="text-xs text-zinc-600 mt-1" aria-live="polite">
+            {subtitle ?? liveRefreshSubtitle(session)}
+          </p>
+        </div>
+        {isLive && (
+          <RefreshCountdown seconds={seconds} refreshing={!!refreshing} />
+        )}
       </div>
-      {isLive && (
-        <RefreshCountdown seconds={seconds} refreshing={!!refreshing} />
-      )}
+      {footer}
     </div>
   )
 }

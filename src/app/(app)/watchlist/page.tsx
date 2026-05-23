@@ -99,16 +99,16 @@ function WatchlistSortBar({
 
   return (
     <div
-      className="flex items-center flex-wrap gap-x-1 mt-3"
+      className="flex items-center flex-nowrap gap-x-0 mt-2.5"
       role="group"
       aria-label="Sort watchlist"
     >
       {options.map((opt, i) => {
         const active = value === opt.id
         return (
-          <span key={opt.id} className="inline-flex items-center">
+          <span key={opt.id} className="inline-flex items-center shrink-0">
             {i > 0 && (
-              <span className="text-zinc-700 px-1 select-none text-xs" aria-hidden>
+              <span className="text-zinc-700 px-0.5 select-none text-xs" aria-hidden>
                 ·
               </span>
             )}
@@ -117,8 +117,8 @@ function WatchlistSortBar({
               aria-pressed={active}
               onClick={() => onChange(opt.id)}
               className={cn(
-                'relative min-h-[44px] px-3 -mx-1 text-sm transition-colors [touch-action:manipulation]',
-                'after:absolute after:left-3 after:right-3 after:bottom-2 after:h-0.5 after:rounded-full after:transition-opacity',
+                'relative min-h-[44px] px-1.5 text-sm transition-colors [touch-action:manipulation]',
+                'after:absolute after:left-1.5 after:right-1.5 after:bottom-2 after:h-0.5 after:rounded-full after:transition-opacity',
                 active
                   ? 'text-zinc-300 font-semibold after:bg-zinc-500/80 after:opacity-100'
                   : 'text-zinc-500 after:opacity-0 active:text-zinc-400',
