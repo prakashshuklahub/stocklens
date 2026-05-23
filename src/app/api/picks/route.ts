@@ -4,7 +4,7 @@
 //   1. Load watchlist + portfolio + cached fundamentals + sector benchmarks
 //   2. Fetch live prices (Yahoo)
 //   3. Score section 1 from watchlist ∪ portfolio; section 2 from global trending cache
-//   4. Rank top 5 each; attach narratives from pick_narratives (3h TTL)
+//   4. Rank top 5 each; attach narratives (Gemini sync on cache miss, 3h TTL)
 
 import { auth, getSessionUserId } from '@/lib/auth'
 import { loadFundamentalsCacheFirst, refreshFundamentalsForTickers } from '@/lib/load-fundamentals'
@@ -16,6 +16,7 @@ import { fetchNewsForTicker } from '@/lib/news'
 import { generateNarrative, isLLMEnabled } from '@/lib/llm'
 import {
   loadFreshNarratives,
+  mapSequential,
   MECHANICAL_MODEL,
   narrativeSourceFromModel,
   upsertNarratives,
@@ -36,7 +37,7 @@ import {
   type PickCandidate,
   type ScoredPick,
 } from '@/lib/picks'
-import { after, NextRequest, NextResponse } from 'next/server'
+import { NextRequest, NextResponse } from 'next/server'
 import type {
   Pick,
   PickOwnership,
@@ -127,6 +128,7 @@ async function attachNarratives(
   if (!top.length) return { picks: [], narrativeTimes: [] }
 
   const topTickers = top.map((p) => p.ticker.toUpperCase())
+  const llmEnabled = isLLMEnabled()
   const cachedByTicker = await loadFreshNarratives<{
     ticker: string
     thesis: string
@@ -135,7 +137,13 @@ async function attachNarratives(
     generated_at: string
   }>(supabase, 'pick_narratives', topTickers, LOG_PREFIX)
 
-  const llmEnabled = isLLMEnabled()
+  // Stale mechanical rows (from old async flow) should not block a fresh Gemini pass.
+  if (llmEnabled) {
+    for (const [ticker, row] of cachedByTicker) {
+      if (row.model === MECHANICAL_MODEL) cachedByTicker.delete(ticker)
+    }
+  }
+
   const needGeneration = top.filter((p) => !cachedByTicker.has(p.ticker.toUpperCase()))
 
   if (needGeneration.length) {
@@ -152,81 +160,65 @@ async function attachNarratives(
     model: string | null
   }
 
-  const generated: GenResult[] = needGeneration.map((pick) => {
-    const fallback = mechanicalThesis(pick)
-    return { ticker: pick.ticker, ...fallback, source: 'mechanical', model: null }
-  })
-
-  if (llmEnabled && needGeneration.length) {
-    after(async () => {
-      const headlinesByTicker = new Map<string, string[]>()
-      const headlineResults = await Promise.all(
-        needGeneration.map((p) => fetchNewsForTicker(p.ticker)),
-      )
-      needGeneration.forEach((p, i) => {
-        const items = (headlineResults[i] ?? [])
-          .sort((a, b) => new Date(b.published_at).getTime() - new Date(a.published_at).getTime())
-          .slice(0, 3)
-          .map((n) => n.title)
-        headlinesByTicker.set(p.ticker, items)
-      })
-
-      const llmRows: {
-        ticker: string
-        thesis: string
-        main_risk: string
-        model: string
-        generated_at: string
-      }[] = []
-
-      for (const pick of needGeneration) {
-        const f = fundamentalsByTicker.get(pick.ticker)
-        if (!f) continue
-        const narrative = await generateNarrative({
-          ticker: pick.ticker,
-          company_name: pick.company_name,
-          sector: pick.sector,
-          target_label: pick.target_label,
-          current_price: pick.current_price,
-          target_mean: pick.target_mean,
-          target_low: pick.target_low,
-          target_high: pick.target_high,
-          upside_pct: pick.upside_pct,
-          analyst_buy: pick.analyst_buy,
-          analyst_hold: pick.analyst_hold,
-          analyst_sell: pick.analyst_sell,
-          analyst_total: pick.analyst_total,
-          change_7d_pct: f.change_7d_pct,
-          change_30d_pct: f.change_30d_pct,
-          week52_high: f.week52_high,
-          week52_low: f.week52_low,
-          news_sentiment: f.news_sentiment,
-          factors: pick.factors.map((x) => x.label),
-          recent_headlines: headlinesByTicker.get(pick.ticker) ?? [],
-        })
-        if (narrative) {
-          llmRows.push({
-            ticker: pick.ticker.toUpperCase(),
-            thesis: narrative.thesis,
-            main_risk: narrative.main_risk,
-            model: narrative.model,
-            generated_at: new Date().toISOString(),
-          })
-        }
-      }
-
-      if (llmRows.length) {
-        await upsertNarratives(supabase, 'pick_narratives', llmRows, LOG_PREFIX)
-      }
+  const headlinesByTicker = new Map<string, string[]>()
+  if (needGeneration.length) {
+    const headlineResults = await Promise.all(needGeneration.map((p) => fetchNewsForTicker(p.ticker)))
+    needGeneration.forEach((p, i) => {
+      const items = (headlineResults[i] ?? [])
+        .sort((a, b) => new Date(b.published_at).getTime() - new Date(a.published_at).getTime())
+        .slice(0, 3)
+        .map((n) => n.title)
+      headlinesByTicker.set(p.ticker, items)
     })
   }
+
+  const generated: GenResult[] = needGeneration.length
+    ? await mapSequential(needGeneration, async (pick): Promise<GenResult> => {
+        const f = fundamentalsByTicker.get(pick.ticker)
+        if (llmEnabled && f) {
+          const narrative = await generateNarrative({
+            ticker: pick.ticker,
+            company_name: pick.company_name,
+            sector: pick.sector,
+            target_label: pick.target_label,
+            current_price: pick.current_price,
+            target_mean: pick.target_mean,
+            target_low: pick.target_low,
+            target_high: pick.target_high,
+            upside_pct: pick.upside_pct,
+            analyst_buy: pick.analyst_buy,
+            analyst_hold: pick.analyst_hold,
+            analyst_sell: pick.analyst_sell,
+            analyst_total: pick.analyst_total,
+            change_7d_pct: f.change_7d_pct,
+            change_30d_pct: f.change_30d_pct,
+            week52_high: f.week52_high,
+            week52_low: f.week52_low,
+            news_sentiment: f.news_sentiment,
+            factors: pick.factors.map((x) => x.label),
+            recent_headlines: headlinesByTicker.get(pick.ticker) ?? [],
+          })
+          if (narrative) {
+            return {
+              ticker: pick.ticker,
+              thesis: narrative.thesis,
+              main_risk: narrative.main_risk,
+              source: 'llm',
+              model: narrative.model,
+            }
+          }
+        }
+        const fallback = mechanicalThesis(pick)
+        return { ticker: pick.ticker, ...fallback, source: 'mechanical', model: null }
+      })
+    : []
 
   if (generated.length) {
     const narrativeRows = generated.map((g) => ({
       ticker: g.ticker.toUpperCase(),
       thesis: g.thesis,
       main_risk: g.main_risk,
-      model: MECHANICAL_MODEL,
+      model: g.source === 'llm' && g.model ? g.model : MECHANICAL_MODEL,
       generated_at: new Date().toISOString(),
     }))
     await upsertNarratives(supabase, 'pick_narratives', narrativeRows, LOG_PREFIX)

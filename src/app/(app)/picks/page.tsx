@@ -212,7 +212,7 @@ function VsSectorPanel({ pick }: { pick: Pick }) {
   )
 }
 
-function PickCard({ pick, rank }: { pick: Pick; rank: number }) {
+function PickCard({ pick, rank, llmEnabled }: { pick: Pick; rank: number; llmEnabled?: boolean }) {
   const [open, setOpen] = useState(false)
   const showTarget = hasDisplayTargetFromPickLabel(pick.target_mean, pick.target_label)
   const upsidePct = showTarget ? pick.upside_pct : null
@@ -397,7 +397,9 @@ function PickCard({ pick, rank }: { pick: Pick; rank: number }) {
           <p className="text-[10px] text-zinc-600 pt-1">
             {pick.narrative_source === 'llm'
               ? 'Summary written by AI · prices and ratings from public data'
-              : 'Summary from the signals above · prices and ratings from public data'}
+              : llmEnabled
+                ? 'Signal-based summary · AI unavailable right now'
+                : 'Summary from the signals above · prices and ratings from public data'}
             {pick.narrative_generated_at && (
               <span className="block mt-0.5">
                 Summary from {timeAgo(pick.narrative_generated_at)}
@@ -434,6 +436,7 @@ function PickSection({
   storageKey,
   defaultOpen = true,
   hideSubtitle = false,
+  llmEnabled = false,
 }: {
   title: string
   subtitle: string
@@ -444,6 +447,7 @@ function PickSection({
   storageKey?: string
   defaultOpen?: boolean
   hideSubtitle?: boolean
+  llmEnabled?: boolean
 }) {
   const [open, setOpen] = useState(() => {
     if (!collapsible || !storageKey || typeof window === 'undefined') return defaultOpen
@@ -513,7 +517,7 @@ function PickSection({
         <ul id={`${sectionId}-list`} className="space-y-3 mt-2">
           {picks.map((p, i) => (
             <li key={`${p.ticker}-${p.source}`}>
-              <PickCard pick={p} rank={i + 1} />
+              <PickCard pick={p} rank={i + 1} llmEnabled={llmEnabled} />
             </li>
           ))}
         </ul>
@@ -602,12 +606,6 @@ export default function PicksPage() {
   const { data, isLoading, isValidating, mutate } = useSWR<PicksResponse>('/api/picks', fetcher, {
     revalidateOnFocus: false,
     dedupingInterval: 0,
-    refreshInterval: (latest) => {
-      const all = [...(latest?.your_picks ?? []), ...(latest?.discovery_picks ?? [])]
-      if (!latest?.llm_enabled || !all.length) return 0
-      const pendingLlm = all.some((p) => p.narrative_source === 'mechanical')
-      return pendingLlm ? 15_000 : 0
-    },
   })
   const [manualRefresh, setManualRefresh] = useState(false)
 
@@ -678,6 +676,7 @@ export default function PicksPage() {
               storageKey="picks_your_stocks_open"
               defaultOpen
               hideSubtitle
+              llmEnabled={data.llm_enabled}
             />
 
             <PickSection
@@ -689,6 +688,7 @@ export default function PicksPage() {
               collapsible
               storageKey="picks_discovery_open"
               defaultOpen
+              llmEnabled={data.llm_enabled}
             />
 
             <div className="mt-2 flex items-start gap-2 px-1">

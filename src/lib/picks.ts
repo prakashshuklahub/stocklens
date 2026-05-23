@@ -73,17 +73,37 @@ export function mechanicalThesis(pick: ScoredPick): { thesis: string; main_risk:
         ? 'Several signals look positive for this holding.'
         : 'Several signals look positive for this watchlist stock.'
 
-  const head = positives.length
-    ? `${positives[0].charAt(0).toUpperCase() + positives[0].slice(1)}.`
-    : defaultHead
+  const signalParts: string[] = []
+  if (positives.length) {
+    signalParts.push(`${positives[0].charAt(0).toUpperCase() + positives[0].slice(1)}.`)
+    if (positives.length > 1) signalParts.push(`${positives[1].charAt(0).toUpperCase() + positives[1].slice(1)}.`)
+  } else {
+    signalParts.push(defaultHead)
+  }
+
+  const momentumParts: string[] = []
+  if (pick.change_7d_pct != null && pick.change_7d_pct >= 1) {
+    momentumParts.push(`The stock is up ${pick.change_7d_pct.toFixed(1)}% over the past week`)
+  }
+  if (pick.change_30d_pct != null && pick.change_30d_pct >= 2) {
+    momentumParts.push(
+      momentumParts.length
+        ? `and ${pick.change_30d_pct.toFixed(1)}% over 30 days`
+        : `The stock is up ${pick.change_30d_pct.toFixed(1)}% over the past month`,
+    )
+  }
+  if (momentumParts.length) signalParts.push(`${momentumParts.join(' ')}.`)
 
   const copy = pickDisplayCopy(pick.target_label)
   const targetNote = copy.thesisTarget(pick.target_mean, pick.upside_pct)
+  signalParts.push(
+    `${pick.analyst_buy} of ${pick.analyst_total} analysts rate buy, with ${targetNote}.`,
+  )
 
-  const thesis = `${head} ${pick.analyst_buy} of ${pick.analyst_total} analysts rate buy, with ${targetNote}.`
+  const thesis = signalParts.join(' ')
 
   const risk = negatives.length
-    ? `Watch for ${negatives.join(', ')} in the weeks ahead.`
+    ? `Watch for ${negatives.slice(0, 2).join(' and ')} in the weeks ahead. ${copy.defaultRisk}`
     : copy.defaultRisk
 
   return { thesis, main_risk: risk }

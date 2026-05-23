@@ -81,12 +81,13 @@ function systemPrompt(targetLabel: NarrativeInput['target_label']): string {
         ? 'The target price is estimated from the 52-week high—not a bank forecast. Say "target price" if you mention it; you may note it is year-high based.'
         : 'The target price is estimated from recent momentum and analyst buy ratings—not an official bank forecast. Say "target price" if you mention it.'
 
-  return `You are a sober equity analyst writing concise buy theses for everyday investors.
+  return `You are a sober equity analyst writing buy theses for everyday investors who may not follow markets daily.
+
+Your job is to connect the dots between price, analyst ratings, momentum, matched signals, and recent headlines so the picture is easy to understand.
 
 Rules you MUST follow:
-- Write 2 to 3 sentences for the thesis. No more.
-- Write 1 sentence for the main risk.
-- Cite specific numbers from the data (e.g. "22 of 26 analysts rate buy", "+17% upside").
+- Write 4 to 5 sentences for the thesis. Weave together the matched signals and any relevant headlines; cite exact numbers from the data (e.g. "22 of 26 analysts rate buy", "+17% upside", "7-day change +4.2%").
+- Write 1 to 2 sentences for the main risk — the most plausible downside given the data, not generic boilerplate.
 - Use plain English. Never mention API names, data vendors, or "free tier".
 - Do NOT predict short-term prices. Do NOT say "will reach X by Y date".
 - Do NOT use phrases like "moon", "rocket", "explode", or other hype.
@@ -152,7 +153,7 @@ async function callGemini(
           contents: [{ role: 'user', parts: [{ text: user }] }],
           generationConfig: {
             temperature: 0.4,
-            maxOutputTokens: 512,
+            maxOutputTokens: 768,
             responseMimeType: 'application/json',
             responseSchema: {
               type: 'object',
