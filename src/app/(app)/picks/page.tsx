@@ -347,12 +347,9 @@ function PickCard({ pick, rank }: { pick: Pick; rank: number }) {
 
         {pick.factors.length > 0 && (
           <div className="flex flex-wrap gap-1.5 mt-3">
-            {pick.factors.slice(0, 5).map((f, i) => (
+            {pick.factors.map((f, i) => (
               <FactorChip key={i} factor={f} />
             ))}
-            {pick.factors.length > 5 && (
-              <span className="text-[11px] text-zinc-600 self-center">+{pick.factors.length - 5} more</span>
-            )}
           </div>
         )}
 
@@ -394,19 +391,6 @@ function PickCard({ pick, rank }: { pick: Pick; rank: number }) {
                 <p className="text-[11px] font-bold text-yellow-400 uppercase tracking-wide">Main thing to watch</p>
               </div>
               <p className="text-sm text-zinc-300 leading-relaxed">{pick.main_risk}</p>
-            </div>
-          )}
-
-          {pick.factors.length > 5 && (
-            <div>
-              <p className="text-[11px] font-semibold text-zinc-500 uppercase tracking-wide mb-2">
-                All signals
-              </p>
-              <div className="flex flex-wrap gap-1.5">
-                {pick.factors.map((f, i) => (
-                  <FactorChip key={i} factor={f} />
-                ))}
-              </div>
             </div>
           )}
 
