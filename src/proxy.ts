@@ -22,5 +22,5 @@ export default auth((req) => {
 })
 
 export const config = {
-  matcher: ['/((?!_next/static|_next/image|favicon.ico|icon-|manifest.json|firebase-messaging-sw.js).*)'],
+  matcher: ['/((?!_next/static|_next/image|favicon.ico|icon-|manifest|apple-icon|firebase-messaging-sw.js).*)'],
 }

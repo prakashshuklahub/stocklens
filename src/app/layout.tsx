@@ -8,6 +8,15 @@ const inter = Inter({ subsets: ['latin'], variable: '--font-inter' })
 export const metadata: Metadata = {
   title: 'Stocklens',
   description: 'Track the stocks you truly believe in.',
+  applicationName: 'Stocklens',
+  appleWebApp: {
+    capable: true,
+    title: 'Stocklens',
+    statusBarStyle: 'black-translucent',
+  },
+  formatDetection: {
+    telephone: false,
+  },
 }
 
 export const viewport: Viewport = {
