@@ -102,10 +102,10 @@ function ConfidenceBadge({ level }: { level: 'high' | 'medium' | 'low' }) {
   }[level]
   return (
     <span
-      aria-label={`${config.label} confidence`}
+      aria-label={config.label}
       className={cn(
         'shrink-0 whitespace-nowrap type-micro font-bold uppercase tracking-wide',
-        'px-2.5 py-1 rounded-full',
+        'px-2 py-0.5 rounded-full',
         config.styles,
       )}
     >
@@ -216,34 +216,35 @@ function PickCardHero({ pick, rank, upsidePct, isPos }: PickHeroContentProps) {
         aria-hidden="true"
       />
 
-      <div className="relative flex items-start justify-between gap-2 mb-3.5">
-        <div className="flex items-start gap-3 min-w-0 flex-1">
-          <PickRankBadge rank={rank} />
-          <StockLogo ticker={pick.ticker} size="md" inset />
-          <div className="min-w-0 pt-0.5">
-            <div className="flex items-baseline gap-2 flex-wrap">
+      <div className="relative flex items-start gap-2.5 sm:gap-3 mb-3">
+        <PickRankBadge rank={rank} />
+        <StockLogo ticker={pick.ticker} size="md" inset />
+        <div className="min-w-0 flex-1">
+          <div className="flex items-center justify-between gap-2">
+            <div className="flex items-baseline gap-1.5 min-w-0 flex-wrap">
               <span className="text-lg font-bold text-white tracking-tight" translate="no">
                 {pick.ticker}
               </span>
               {rank === 1 && (
-                <span className="type-micro font-bold uppercase tracking-wide text-amber-300/90">
+                <span className="type-micro font-bold uppercase tracking-wide text-amber-300/90 shrink-0">
                   Top pick
                 </span>
               )}
             </div>
-            <p className="text-sm text-zinc-400 truncate leading-snug">{pick.company_name}</p>
-            <div className="flex items-center gap-1.5 mt-1.5 flex-wrap">
-              <span className="type-meta text-zinc-500">{pick.sector ?? 'Unknown'}</span>
-              <span className="type-meta text-zinc-600 tabular-nums">
-                · {pick.analyst_total} analyst{pick.analyst_total === 1 ? '' : 's'}
-              </span>
-              <span className={cn('type-micro font-bold uppercase tracking-wide px-2 py-0.5 rounded-full', sourceStyles(pick.source))}>
-                {sourceLabel(pick.source)}
-              </span>
-            </div>
+            <ConfidenceBadge level={pick.confidence} />
+          </div>
+          <p className="text-sm text-zinc-400 leading-snug line-clamp-2 mt-0.5 [text-wrap:pretty]">
+            {pick.company_name}
+          </p>
+          <div className="flex items-center gap-1.5 mt-1 flex-wrap">
+            {pick.sector && pick.sector !== 'Other' && (
+              <span className="type-meta text-zinc-500">{pick.sector}</span>
+            )}
+            <span className={cn('type-micro font-bold uppercase tracking-wide px-2 py-0.5 rounded-full', sourceStyles(pick.source))}>
+              {sourceLabel(pick.source)}
+            </span>
           </div>
         </div>
-        <ConfidenceBadge level={pick.confidence} />
       </div>
 
       <PickCardHeroStats pick={pick} upsidePct={upsidePct} isPos={isPos} />
@@ -810,6 +811,20 @@ export default function PicksPage() {
         ) : (
           <>
             <PickSection
+              title="Strong movers"
+              subtitle="Quality-filtered ideas not on your watchlist or portfolio"
+              icon={Compass}
+              picks={data.discovery_picks}
+              emptyMessage="No strong movers qualify today. Market data may still be loading — check back in a moment."
+              collapsible
+              storageKey="picks_discovery_open"
+              defaultOpen
+              llmEnabled={data.llm_enabled}
+              marketSession={marketSession}
+              sectorBenchmarks={data.sector_benchmarks ?? {}}
+            />
+
+            <PickSection
               title="Your stocks"
               subtitle=""
               icon={Eye}
@@ -819,20 +834,6 @@ export default function PicksPage() {
               storageKey="picks_your_stocks_open"
               defaultOpen
               hideSubtitle
-              llmEnabled={data.llm_enabled}
-              marketSession={marketSession}
-              sectorBenchmarks={data.sector_benchmarks ?? {}}
-            />
-
-            <PickSection
-              title="Strong movers"
-              subtitle="Quality-filtered ideas not on your watchlist or portfolio"
-              icon={Compass}
-              picks={data.discovery_picks}
-              emptyMessage="No strong movers qualify today. Market data may still be loading — check back in a moment."
-              collapsible
-              storageKey="picks_discovery_open"
-              defaultOpen
               llmEnabled={data.llm_enabled}
               marketSession={marketSession}
               sectorBenchmarks={data.sector_benchmarks ?? {}}

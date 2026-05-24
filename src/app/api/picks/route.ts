@@ -25,6 +25,7 @@ import { ensureSectorBenchmarksLoaded } from '@/lib/sector-benchmarks'
 import { isBenchmarkableSector, type BenchmarkableSector } from '@/lib/sector-relative-strength-scoring'
 import { loadTrendingCachePayload } from '@/lib/trending-cache'
 import { buildGlobalTrendingCache } from '@/lib/trending-cache-build'
+import { fetchYahooSector } from '@/lib/sectors'
 import { normalizeWatchlistSector } from '@/lib/sector-relative-strength-scoring'
 import {
   mechanicalThesis,
@@ -79,6 +80,38 @@ function resolveCandidateSector(
     return { ...candidate, sector: fromQuote }
   }
   return candidate
+}
+
+/** Portfolio-only rows have no sector; batch quotes often omit it too — fetch from Yahoo profile. */
+async function enrichCandidatesWithSector(
+  candidates: PickCandidate[],
+  priceByTicker: Map<string, LivePriceSnapshot>,
+): Promise<PickCandidate[]> {
+  const withQuote = candidates.map((c) => resolveCandidateSector(c, priceByTicker.get(c.ticker)))
+  const needFetch = withQuote.filter(
+    (c) => !c.sector || normalizeWatchlistSector(c.sector) === 'Other',
+  )
+  if (!needFetch.length) return withQuote
+
+  const fetched = await Promise.all(
+    needFetch.map(async (c) => ({
+      key: c.ticker.toUpperCase(),
+      sector: await fetchYahooSector(c.ticker),
+    })),
+  )
+  const byTicker = new Map(
+    fetched
+      .filter((r) => r.sector && r.sector !== 'Other')
+      .map((r) => [r.key, r.sector!]),
+  )
+
+  return withQuote.map((c) => {
+    const sector = byTicker.get(c.ticker.toUpperCase())
+    if (sector && (!c.sector || normalizeWatchlistSector(c.sector) === 'Other')) {
+      return { ...c, sector }
+    }
+    return c
+  })
 }
 
 function sectorForBenchmark(sector: string | null | undefined) {
@@ -320,12 +353,12 @@ export async function GET(req: NextRequest) {
   }
 
   const scoredYour: ScoredPick[] = []
-  for (const raw of candidates) {
-    const live = priceByTicker.get(raw.ticker)
+  const yourCandidates = await enrichCandidatesWithSector(candidates, priceByTicker)
+  for (const candidate of yourCandidates) {
+    const live = priceByTicker.get(candidate.ticker)
     const current_price = live?.price
     if (current_price == null) continue
 
-    const candidate = resolveCandidateSector(raw, live)
     const fundamentals = fundamentalsByTicker.get(candidate.ticker)
     if (!fundamentals) continue
 
