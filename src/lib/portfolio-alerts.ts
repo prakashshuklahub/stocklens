@@ -1,16 +1,27 @@
 // Portfolio review narratives + demo data.
 // Scoring rules live in @/lib/portfolio-alert-scoring.
 
-import type { PickFactor, PortfolioAlert, StockFundamentals } from '@/types'
+import type { HoldingSignalTier, PickFactor, PortfolioAlert, StockFundamentals } from '@/types'
 import type { SellReviewInput } from '@/lib/llm'
-import { ALERT_HEADLINES, type ScoredAlert } from '@/lib/portfolio-alert-scoring'
+import {
+  ALERT_HEADLINES,
+  SIGNAL_HEADLINES,
+  type ScoredAlert,
+} from '@/lib/portfolio-alert-scoring'
 
-export type { AlertScoreInput, ScoredAlert } from '@/lib/portfolio-alert-scoring'
+export type { AlertScoreInput, ScoredAlert, HoldingSignalTier } from '@/lib/portfolio-alert-scoring'
 export {
   scorePortfolioAlert,
+  scoreHoldingSignal,
+  scoreProfitZone,
+  resolveTier,
+  sortBySignalTier,
   rankAlerts,
   ALERT_RULES,
   ALERT_HEADLINES,
+  SIGNAL_HEADLINES,
+  TIER_BADGE_LABELS,
+  PROFIT_ZONE_RULES,
   MIN_BEARISH_FACTORS,
   WATCH_SCORE_THRESHOLD,
   RED_SCORE_THRESHOLD,
@@ -19,8 +30,126 @@ export {
 const DEFAULT_CAVEAT =
   'This is a data check to help you think—not a command to sell. Take your time and decide what fits your plan.'
 
+const PROFIT_CAVEAT =
+  'Targets and trends can change — this is context for your plan, not a prompt to sell or hold.'
+
 function factorLine(f: { label: string; value?: string }): string {
   return f.value ? `${f.label} (${f.value})` : f.label
+}
+
+type FactorContext = {
+  pnlPct: number
+  value?: string
+}
+
+/** Pattern-specific sentences so each factor mix reads differently. */
+const FACTOR_SENTENCES: Record<string, (ctx: FactorContext) => string> = {
+  'Down on cost and still sliding': (ctx) =>
+    `You're down ${Math.abs(ctx.pnlPct).toFixed(0)}% on this position, and recent weeks haven't shown a rebound — price is still drifting lower.`,
+  'Underwater vs your cost': (ctx) =>
+    `The stock is trading below your average cost (${ctx.value ?? `${ctx.pnlPct.toFixed(0)}%`}), so the position hasn't recovered what you paid.`,
+  'No meaningful bounce yet': () =>
+    'Despite being below your cost, the last month has been flat — there is no clear sign of a turnaround yet.',
+  'Sharp 30-day decline': (ctx) =>
+    `The last 30 days have been rough (${ctx.value ?? 'sharp drop'}), which adds pressure on top of your entry price.`,
+  'Recent weeks still weak': (ctx) =>
+    `Short-term momentum is still soft (${ctx.value ?? 'recent weeks down'}), even if the longer picture looks mixed.`,
+  'Heavy sell ratings': (ctx) =>
+    `Analyst sentiment skews cautious${ctx.value ? ` — ${ctx.value} rate it a sell` : ''}.`,
+  'Negative news tone': () =>
+    'Recent news coverage leans negative, which can weigh on sentiment even when the chart looks OK.',
+  'Below recent support': () =>
+    "Price has slipped below a recent support zone, which often means buyers haven't stepped in reliably.",
+  'Near 52-week low': () =>
+    "The stock is trading near its 52-week low — that usually means the market hasn't found a durable floor yet.",
+  'Above typical target': (ctx) =>
+    `Price sits above the typical analyst reference${ctx.value ? ` (${ctx.value})` : ''}, which can mean much of the expected upside is already priced in.`,
+}
+
+function describeFactors(factors: PickFactor[]): string {
+  const negatives = factors.filter((f) => f.tone === 'negative')
+  if (!negatives.length) return ''
+
+  const parts = negatives.map((f) => {
+    const fn = FACTOR_SENTENCES[f.label]
+    const ctx: FactorContext = { pnlPct: 0, value: f.value }
+    if (fn) return fn(ctx)
+    return factorLine(f)
+  })
+
+  if (parts.length === 1) return parts[0]
+  if (parts.length === 2) return `${parts[0]} Also, ${parts[1].charAt(0).toLowerCase()}${parts[1].slice(1)}`
+  return `${parts.slice(0, -1).join(' ')} ${parts[parts.length - 1]}`
+}
+
+function describeOffsets(factors: PickFactor[]): string {
+  const positives = factors.filter((f) => f.tone === 'positive')
+  if (!positives.length) return ''
+  const list = positives.map(factorLine).join('; ')
+  return ` Some positives remain (${list}), but they haven't been enough to clear the weak overall picture.`
+}
+
+function positionOpening(h: ScoredAlert['holding'], ticker: string): string {
+  const pnl = h.position_pnl_pct
+  const pnlWord = pnl >= 0 ? 'up' : 'down'
+  return `You own ${h.quantity} shares of ${ticker} at an average cost of $${h.avg_cost_basis.toFixed(2)}; the stock is at $${h.current_price.toFixed(2)}, so you are ${pnlWord} ${Math.abs(pnl).toFixed(1)}% versus what you paid.`
+}
+
+export function mechanicalSignalReview(
+  alert: ScoredAlert,
+  tier: Extract<HoldingSignalTier, 'soft' | 'attention'>,
+): { review_reason: string; caveat: string } {
+  const opening = positionOpening(alert.holding, alert.ticker)
+  const factorBlock = describeFactors(alert.factors)
+  const offsetBlock = describeOffsets(alert.factors)
+
+  const factorCtx = factorBlock
+    ? ` ${factorBlock.charAt(0).toUpperCase()}${factorBlock.slice(1)}`
+    : ''
+
+  const outlook =
+    tier === 'attention'
+      ? ' Taken together, price action and fundamentals have not shown a dependable recovery pattern — if you were expecting improvement within the next one to three months, the data has not confirmed that yet.'
+      : ' Several signals are soft enough to watch closely; if you need the position to recover within the next quarter, progress so far has been limited.'
+
+  return {
+    review_reason: `${opening}${factorCtx}${offsetBlock}${outlook}`,
+    caveat: DEFAULT_CAVEAT,
+  }
+}
+
+/** @deprecated Use mechanicalSignalReview — kept for alerts route compatibility. */
+export function mechanicalSellReview(alert: ScoredAlert): { review_reason: string; caveat: string } {
+  const tier = alert.severity === 'red' ? 'attention' : 'soft'
+  return mechanicalSignalReview(alert, tier)
+}
+
+export function mechanicalProfitReview(input: {
+  ticker: string
+  quantity: number
+  avg_cost_basis: number
+  current_price: number
+  position_pnl_pct: number
+  factors: PickFactor[]
+}): { review_reason: string; caveat: string } {
+  const { ticker, quantity, avg_cost_basis, current_price, position_pnl_pct, factors } = input
+  const targetChip = factors.find((f) => f.label === 'Target in range')
+  const opening = `You own ${quantity} shares of ${ticker} at an average cost of $${avg_cost_basis.toFixed(2)}; the stock is at $${current_price.toFixed(2)}, so you are up ${position_pnl_pct.toFixed(1)}% versus what you paid.`
+
+  const targetLine = targetChip
+    ? ` The price is near the analyst reference (${targetChip.value ?? 'target in range'}), which suggests much of the expected upside may already be reflected in the market.`
+    : ' The price is near the analyst reference, which suggests much of the expected upside may already be reflected in the market.'
+
+  const healthy = factors.filter((f) => f.label !== 'Target in range' && f.label !== 'Up on your cost')
+  const healthyLine =
+    healthy.length > 0
+      ? ` Conditions still look broadly healthy (${healthy.map(factorLine).join('; ')}), so this is about timing and risk management — not a sign the story has broken.`
+      : ''
+
+  return {
+    review_reason: `${opening}${targetLine}${healthyLine} If you were holding for a specific target, it may be reasonable to think about whether to lock in gains or trim exposure.`,
+    caveat: PROFIT_CAVEAT,
+  }
 }
 
 export function buildSellReviewInput(
@@ -66,43 +195,13 @@ export function buildSellReviewInput(
   }
 }
 
-export function mechanicalSellReview(alert: ScoredAlert): { review_reason: string; caveat: string } {
-  const h = alert.holding
-  const negatives = alert.factors.filter((f: PickFactor) => f.tone === 'negative')
-  const positives = alert.factors.filter((f: PickFactor) => f.tone === 'positive')
-
-  const pnl = h.position_pnl_pct
-  const pnlWord = pnl >= 0 ? 'up' : 'down'
-  const opening = `You own ${h.quantity} shares of ${alert.ticker} at an average cost of $${h.avg_cost_basis.toFixed(2)}; the stock is at $${h.current_price.toFixed(2)}, so you are ${pnlWord} ${Math.abs(pnl).toFixed(1)}% versus what you paid.`
-
-  const concernBlock =
-    negatives.length > 0
-      ? ` The scan flagged ${negatives.length} concern${negatives.length > 1 ? 's' : ''}: ${negatives.map(factorLine).join('; ')}.`
-      : ''
-
-  const offsetBlock =
-    positives.length > 0
-      ? ` Some positives remain (${positives.map(factorLine).join('; ')}), but they have not been enough to clear the weak overall picture.`
-      : ''
-
-  const outlook =
-    alert.severity === 'red'
-      ? ' Taken together, price action and fundamentals have not shown a dependable recovery pattern — if you were expecting improvement within the next one to three months, the data has not confirmed that yet.'
-      : ' Several signals are soft enough to watch closely; if you need the position to recover within the next quarter, progress so far has been limited.'
-
-  return {
-    review_reason: `${opening}${concernBlock}${offsetBlock}${outlook}`,
-    caveat: DEFAULT_CAVEAT,
-  }
-}
-
 export const PORTFOLIO_ALERT_DEMO: PortfolioAlert[] = [
   {
     ticker: 'INTC',
     company_name: 'Intel Corporation',
     severity: 'red',
     score: 58,
-    headline: ALERT_HEADLINES.red,
+    headline: SIGNAL_HEADLINES.attention,
     holding: {
       quantity: 40,
       avg_cost_basis: 28.5,
@@ -116,9 +215,64 @@ export const PORTFOLIO_ALERT_DEMO: PortfolioAlert[] = [
       { label: 'Heavy sell ratings', value: '12 of 35 analysts', tone: 'negative' },
       { label: 'Below recent support', tone: 'negative' },
     ],
-    review_reason:
-      'You own 40 shares of INTC at an average cost of $28.50; the stock is at $21.20, so you are down 25.6% versus what you paid. The scan flagged three concerns: Down on cost and still sliding (-26% position · -14% in 30d); Heavy sell ratings (12 of 35 analysts); Below recent support. Taken together, price action and fundamentals have not shown a dependable recovery pattern — if you were expecting improvement within the next one to three months, the data has not confirmed that yet.',
+    review_reason: mechanicalSignalReview(
+      {
+        ticker: 'INTC',
+        company_name: 'Intel Corporation',
+        severity: 'red',
+        score: 58,
+        headline: SIGNAL_HEADLINES.attention,
+        holding: {
+          quantity: 40,
+          avg_cost_basis: 28.5,
+          current_price: 21.2,
+          position_pnl_pct: -25.6,
+          position_value: 848,
+          invested: 1140,
+        },
+        factors: [
+          { label: 'Down on cost and still sliding', value: '-26% position · -14% in 30d', tone: 'negative' },
+          { label: 'Heavy sell ratings', value: '12 of 35 analysts', tone: 'negative' },
+          { label: 'Below recent support', tone: 'negative' },
+        ],
+      },
+      'attention',
+    ).review_reason,
     caveat: DEFAULT_CAVEAT,
+    narrative_source: 'mechanical',
+  },
+  {
+    ticker: 'OKLO',
+    company_name: 'Oklo Inc.',
+    severity: 'watch',
+    score: 28,
+    headline: SIGNAL_HEADLINES.profit,
+    holding: {
+      quantity: 25,
+      avg_cost_basis: 48,
+      current_price: 65.88,
+      position_pnl_pct: 37.3,
+      position_value: 1647,
+      invested: 1200,
+    },
+    factors: [
+      { label: 'Target in range', value: '$66 vs ref $64', tone: 'positive' },
+      { label: 'Up on your cost', value: '+37%', tone: 'positive' },
+      { label: '30-day trend still OK', value: '+28%', tone: 'positive' },
+    ],
+    review_reason: mechanicalProfitReview({
+      ticker: 'OKLO',
+      quantity: 25,
+      avg_cost_basis: 48,
+      current_price: 65.88,
+      position_pnl_pct: 37.3,
+      factors: [
+        { label: 'Target in range', value: '$66 vs ref $64', tone: 'positive' },
+        { label: 'Up on your cost', value: '+37%', tone: 'positive' },
+        { label: '30-day trend still OK', value: '+28%', tone: 'positive' },
+      ],
+    }).review_reason,
+    caveat: PROFIT_CAVEAT,
     narrative_source: 'mechanical',
   },
   {
@@ -126,7 +280,7 @@ export const PORTFOLIO_ALERT_DEMO: PortfolioAlert[] = [
     company_name: 'PayPal Holdings',
     severity: 'watch',
     score: 32,
-    headline: ALERT_HEADLINES.watch,
+    headline: SIGNAL_HEADLINES.soft,
     holding: {
       quantity: 15,
       avg_cost_basis: 72,
@@ -139,8 +293,28 @@ export const PORTFOLIO_ALERT_DEMO: PortfolioAlert[] = [
       { label: 'No meaningful bounce yet', value: '-10% vs cost · flat 30d', tone: 'negative' },
       { label: 'Negative news tone', tone: 'negative' },
     ],
-    review_reason:
-      'You own 15 shares of PYPL at an average cost of $72.00; the stock is at $64.50, so you are down 10.4% versus what you paid. The scan flagged two concerns: No meaningful bounce yet (-10% vs cost · flat 30d); Negative news tone. Several signals are soft enough to watch closely; if you need the position to recover within the next quarter, progress so far has been limited.',
+    review_reason: mechanicalSignalReview(
+      {
+        ticker: 'PYPL',
+        company_name: 'PayPal Holdings',
+        severity: 'watch',
+        score: 32,
+        headline: SIGNAL_HEADLINES.soft,
+        holding: {
+          quantity: 15,
+          avg_cost_basis: 72,
+          current_price: 64.5,
+          position_pnl_pct: -10.4,
+          position_value: 967.5,
+          invested: 1080,
+        },
+        factors: [
+          { label: 'No meaningful bounce yet', value: '-10% vs cost · flat 30d', tone: 'negative' },
+          { label: 'Negative news tone', tone: 'negative' },
+        ],
+      },
+      'soft',
+    ).review_reason,
     caveat: DEFAULT_CAVEAT,
     narrative_source: 'mechanical',
   },

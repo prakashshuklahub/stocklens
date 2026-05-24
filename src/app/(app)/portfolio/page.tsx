@@ -1,6 +1,6 @@
 'use client'
 
-import { useCallback, useRef, useState } from 'react'
+import { useCallback, useMemo, useRef, useState } from 'react'
 import useSWR from 'swr'
 import * as XLSX from 'xlsx'
 import {
@@ -15,27 +15,29 @@ import {
   Eye,
 } from 'lucide-react'
 import AppNav from '@/components/AppNav'
-import CollapseChevron from '@/components/CollapseChevron'
 import StockLogo from '@/components/StockLogo'
+import { HoldingCard } from '@/components/portfolio/HoldingCard'
 import { RefreshCountdown } from '@/components/LiveRefreshHeader'
 import { useMarketOpen, useMarketSession } from '@/hooks/useMarketOpen'
 import { useLivePriceRefresh } from '@/hooks/useLivePriceRefresh'
 import { PORTFOLIO_ALERT_DEMO } from '@/lib/portfolio-alerts'
-import { createMarketAwareFetcher } from '@/lib/swr-market-fetcher'
+import { mergePriceSnapshots } from '@/lib/portfolio-signals'
 import type { MarketSession } from '@/lib/market-hours'
 import { formatSnapshotAsOfET, liveRefreshSubtitle } from '@/lib/market-hours'
 import { cn } from '@/lib/utils'
 import type {
+  HoldingSignalTier,
   PortfolioAlert,
-  PortfolioAlertsResponse,
   PortfolioHoldingWithPrice,
-  PickFactor,
+  PortfolioHoldingWithSignal,
+  PortfolioSignalsMeta,
+  PortfolioWithSignalsResponse,
   VestedRow,
 } from '@/types'
 
-const portfolioFetcher = createMarketAwareFetcher<PortfolioHoldingWithPrice>()
+type TierFilter = 'all' | 'attention' | 'soft' | 'profit' | 'quiet'
 
-const fetcher = async (url: string) => {
+const signalsFetcher = async (url: string): Promise<PortfolioWithSignalsResponse> => {
   const res = await fetch(url, { cache: 'no-store' })
   if (!res.ok) throw new Error('Request failed')
   return res.json()
@@ -43,12 +45,6 @@ const fetcher = async (url: string) => {
 
 function fmt(n: number, decimals = 2) {
   return n.toLocaleString('en-US', { minimumFractionDigits: decimals, maximumFractionDigits: decimals })
-}
-
-function truncatePreview(text: string, max = 72): string {
-  const t = text.trim()
-  if (t.length <= max) return t
-  return `${t.slice(0, max - 1).trim()}…`
 }
 
 function parseVestedXlsx(file: File): Promise<VestedRow[]> {
@@ -147,415 +143,159 @@ function SummaryBar({
   )
 }
 
-// ── Holding card ──────────────────────────────────────────────────────────────
+function alertToDemoHolding(alert: PortfolioAlert, index: number): PortfolioHoldingWithSignal {
+  const tier: HoldingSignalTier =
+    alert.headline.includes('target') || alert.factors.some((f) => f.label === 'Target in range')
+      ? 'profit'
+      : alert.severity === 'red'
+        ? 'attention'
+        : 'soft'
 
-function PnlPill({
-  pnl,
-  pnlPct,
-  isPos,
-}: {
-  pnl: number
-  pnlPct: number
-  isPos: boolean
-}) {
-  return (
-    <span
-      className={cn(
-        'inline-flex items-center gap-1.5 rounded-full tabular-nums font-bold text-sm px-3 py-1.5',
-        isPos ? 'bg-emerald-500/15 text-emerald-400' : 'bg-red-500/15 text-red-400',
-      )}
-    >
-      {isPos ? '+' : '-'}${fmt(Math.abs(pnl))}
-      <span className="opacity-90">
-        ({isPos ? '+' : ''}{fmt(pnlPct)}%)
-      </span>
-    </span>
-  )
+  return {
+    id: `demo-${index}`,
+    user_id: 'demo',
+    ticker: alert.ticker,
+    company_name: alert.company_name,
+    quantity: alert.holding.quantity,
+    avg_cost_basis: alert.holding.avg_cost_basis,
+    broker: null,
+    synced_at: new Date().toISOString(),
+    snapshot: {
+      price: alert.holding.current_price,
+      change_1d_pct: 0,
+      as_of: Date.now(),
+    },
+    signal: {
+      tier,
+      score: alert.score,
+      headline: alert.headline,
+      factors: alert.factors,
+      review_reason: alert.review_reason,
+      caveat: alert.caveat,
+      narrative_source: alert.narrative_source,
+    },
+  }
 }
 
-function HoldingCard({ h }: { h: PortfolioHoldingWithPrice }) {
-  const price = h.snapshot?.price ?? null
-  const change1d = h.snapshot?.change_1d_pct ?? null
-  const currentValue = price != null ? price * h.quantity : null
-  const invested = h.avg_cost_basis * h.quantity
-  const pnl = currentValue != null ? currentValue - invested : null
-  const pnlPct = invested && pnl != null ? (pnl / invested) * 100 : null
-  const isPos = pnl != null ? pnl >= 0 : null
+const DEMO_HOLDINGS = PORTFOLIO_ALERT_DEMO.map(alertToDemoHolding)
 
-  return (
-    <div className="card-surface px-4 py-3.5 space-y-2.5 active:scale-[0.99] active:brightness-95 transition-all duration-100">
-      <div className="flex items-start gap-3">
-        <StockLogo ticker={h.ticker} size="md" />
-        <div className="flex-1 min-w-0">
-          <span className="text-lg font-bold text-white tracking-tight">{h.ticker}</span>
-          {h.company_name && (
-            <p className="text-sm text-zinc-400 truncate leading-snug">{h.company_name}</p>
-          )}
-        </div>
-        <div className="text-right shrink-0">
-          <p className="text-base font-bold text-white tabular-nums leading-tight">
-            {price != null ? `$${fmt(price)}` : '—'}
-          </p>
-          {change1d != null && (
-            <p
-              className={cn(
-                'text-sm tabular-nums font-semibold mt-0.5',
-                change1d >= 0 ? 'text-emerald-400' : 'text-red-400',
-              )}
-            >
-              {change1d >= 0 ? '+' : ''}{fmt(change1d)}%
-            </p>
-          )}
-        </div>
-      </div>
-
-      <div className="space-y-1">
-        <p className="type-meta text-zinc-300 tabular-nums">
-          <span className="font-semibold text-white">{fmt(h.quantity, 0)} shares</span>
-          {' '}@ ${fmt(h.avg_cost_basis)} avg
-        </p>
-        <p className="type-meta text-muted-preview tabular-nums">
-          Invested ${fmt(invested)}
-          {currentValue != null && (
-            <>
-              {' '}→ worth <span className="text-zinc-200 font-semibold">${fmt(currentValue)}</span>
-            </>
-          )}
-        </p>
-      </div>
-
-      {pnl != null && pnlPct != null && isPos != null && (
-        <div className="pt-0.5">
-          <PnlPill pnl={pnl} pnlPct={pnlPct} isPos={isPos} />
-        </div>
-      )}
-    </div>
-  )
+function holdingsSignalsSubtitle(
+  meta: PortfolioSignalsMeta | null | undefined,
+  session: MarketSession,
+  loading?: boolean,
+): string {
+  if (loading) return 'Scanning holdings…'
+  if (!meta) return liveRefreshSubtitle(session)
+  const flagged = meta.by_tier.attention + meta.by_tier.soft + meta.by_tier.profit
+  if (flagged === 0) return `${meta.holding_count} holding${meta.holding_count === 1 ? '' : 's'} — all look quiet`
+  return `${flagged} flagged · ${meta.quiet_count} look quiet`
 }
 
-// ── Alert factor chip ─────────────────────────────────────────────────────────
-function AlertFactorChip({ factor }: { factor: PickFactor }) {
-  const tone =
-    factor.tone === 'negative' ? 'bg-red-500/10 text-red-300' :
-    factor.tone === 'positive' ? 'bg-emerald-500/10 text-emerald-300' :
-    'bg-zinc-800 text-zinc-400'
-  return (
-    <span className={cn('type-meta font-semibold px-2 py-1 rounded-full whitespace-nowrap', tone)}>
-      {factor.label}
-      {factor.value && <span className="opacity-70 ml-1 font-normal">· {factor.value}</span>}
-    </span>
-  )
-}
+const TIER_FILTERS: { id: TierFilter; label: string }[] = [
+  { id: 'all', label: 'All' },
+  { id: 'attention', label: 'Needs attention' },
+  { id: 'soft', label: 'Worth watching' },
+  { id: 'profit', label: 'Target reached' },
+  { id: 'quiet', label: 'Quiet' },
+]
 
-function reviewPreview(alert: PortfolioAlert): string {
-  if (alert.review_reason) return truncatePreview(alert.review_reason)
-  return 'Tap to read the review'
-}
+const PORTFOLIO_FLAG_HELP =
+  'We flag holdings when price, news, or analyst views look weak, or when you may be near a profit target. Red tags are concerns; green tags are positives. Filters sort by how serious the flag is. Not buy or sell advice.'
 
-function AlertReviewRow({
-  alert,
-  preview,
-  cardId,
-  isRed,
-}: {
-  alert: PortfolioAlert
-  preview?: boolean
-  cardId: string
-  isRed: boolean
-}) {
-  const [open, setOpen] = useState(false)
-  const previewText = reviewPreview(alert)
-
-  return (
-    <div className={cn('border-t bg-black/20', isRed ? 'border-red-500/10' : 'border-amber-500/10')}>
-      <button
-        type="button"
-        id={`${cardId}-review-trigger`}
-        aria-expanded={open}
-        aria-controls={`${cardId}-review-panel`}
-        onClick={() => setOpen((o) => !o)}
-        className={cn(
-          'w-full text-left px-4 py-3 min-h-[48px]',
-          'active:brightness-95 transition-all [touch-action:manipulation]',
-          'focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-blue-500/40',
-        )}
-      >
-        <div className="flex items-start justify-between gap-2">
-          <div className="min-w-0 flex-1">
-            <div className="flex items-center gap-1.5">
-              <Eye className="w-3.5 h-3.5 text-zinc-500 shrink-0" aria-hidden="true" />
-              <span className="type-meta font-semibold text-zinc-300">Why review this holding?</span>
-            </div>
-            {!open && (
-              <p className="type-meta text-muted-preview mt-1 leading-snug truncate">{previewText}</p>
-            )}
-          </div>
-          <CollapseChevron open={open} className="text-muted shrink-0 mt-0.5" />
-        </div>
-      </button>
-      {open && (
-        <div
-          id={`${cardId}-review-panel`}
-          role="region"
-          aria-labelledby={`${cardId}-review-trigger`}
-          className="px-4 pb-4 pt-0 space-y-3"
-        >
-          {alert.review_reason && (
-            <p className="text-sm text-zinc-200 leading-relaxed">{alert.review_reason}</p>
-          )}
-          {alert.caveat && (
-            <p className="text-xs text-zinc-500 leading-relaxed border-l-2 border-zinc-700 pl-3">
-              {alert.caveat}
-            </p>
-          )}
-          <p className="type-micro text-muted">
-            {preview
-              ? 'Sample card for UI preview'
-              : alert.narrative_source === 'llm'
-                ? 'Summary by AI · based on your cost and market data'
-                : 'Summary from matched signals · based on your cost and market data'}
-          </p>
-        </div>
-      )}
-    </div>
-  )
-}
-
-// ── Portfolio review alert card ───────────────────────────────────────────────
-function AlertCard({ alert, preview }: { alert: PortfolioAlert; preview?: boolean }) {
-  const isRed = alert.severity === 'red'
-  const pnl = alert.holding.position_pnl_pct
-  const isPos = pnl >= 0
-  const cardId = `portfolio-alert-${alert.ticker}`
-
-  return (
-    <div
-      className={cn(
-        'rounded-2xl overflow-hidden border',
-        isRed ? 'bg-red-950/30 border-red-500/25' : 'bg-amber-950/20 border-amber-500/20',
-        preview && 'opacity-90',
-      )}
-    >
-      <div className="px-4 pt-4 pb-3">
-        <div className="flex items-start justify-between gap-2 mb-2">
-          <div className="flex items-start gap-2 min-w-0 flex-1">
-            <StockLogo ticker={alert.ticker} size="sm" className="mt-0.5" />
-            <div className="min-w-0 flex-1">
-              <div className="flex items-baseline gap-2">
-                <span className="text-base font-bold text-white">{alert.ticker}</span>
-                <span className="type-caption text-zinc-500 truncate">{alert.company_name ?? ''}</span>
-              </div>
-              <p className={cn('text-xs mt-0.5 leading-snug', isRed ? 'text-red-200/90' : 'text-amber-200/80')}>
-                {alert.headline}
-              </p>
-            </div>
-          </div>
-          <span
-            className={cn(
-              'shrink-0 whitespace-nowrap type-meta font-bold uppercase tracking-wide px-2.5 py-1.5 rounded-full',
-              isRed ? 'bg-red-500/20 text-red-300' : 'bg-amber-500/15 text-amber-300',
-            )}
-          >
-            {isRed ? 'Review' : 'Watch'}
-          </span>
-        </div>
-
-        <div className="grid grid-cols-2 gap-2 bg-black/20 rounded-xl px-3 py-2.5">
-          <div>
-            <p className="type-micro font-semibold text-zinc-500 uppercase tracking-wide">Your P&L</p>
-            <p className={cn('text-sm font-bold tabular-nums', isPos ? 'text-emerald-400' : 'text-red-400')}>
-              {isPos ? '+' : ''}{pnl.toFixed(1)}%
-            </p>
-            <p className="type-meta text-zinc-500 tabular-nums">avg ${fmt(alert.holding.avg_cost_basis)}</p>
-          </div>
-          <div className="text-right">
-            <p className="type-micro font-semibold text-zinc-500 uppercase tracking-wide">Now</p>
-            <p className="text-sm font-bold text-white tabular-nums">${fmt(alert.holding.current_price)}</p>
-            <p className="type-meta text-zinc-500 tabular-nums">{fmt(alert.holding.quantity, 0)} shares</p>
-          </div>
-        </div>
-
-        {alert.factors.length > 0 && (
-          <div className="flex flex-wrap gap-1.5 mt-3">
-            {alert.factors.map((f, i) => (
-              <AlertFactorChip key={i} factor={f} />
-            ))}
-          </div>
-        )}
-      </div>
-
-      <AlertReviewRow alert={alert} preview={preview} cardId={cardId} isRed={isRed} />
-    </div>
-  )
-}
-
-function alertsSectionSubtitle({
-  preview,
-  loading,
-  alerts,
-  clearCount,
-  holdingCount,
-}: {
-  preview?: boolean
-  loading?: boolean
-  alerts: PortfolioAlert[]
-  clearCount: number
-  holdingCount: number
-}): string {
-  if (preview) return 'Sample alerts (not your portfolio)'
-  if (loading) return `Scanning ${holdingCount} holding${holdingCount === 1 ? '' : 's'}…`
-  if (alerts.length) return `${alerts.length} worth a calm review · ${clearCount} look OK`
-  return `Scanned ${holdingCount} holding${holdingCount === 1 ? '' : 's'} — none need review`
-}
-
-function AlertsSection({
-  alerts,
-  clearCount,
-  holdingCount,
-  preview,
-  llmEnabled,
-  loading,
-}: {
-  alerts: PortfolioAlert[]
-  clearCount: number
-  holdingCount: number
-  preview?: boolean
-  llmEnabled?: boolean
-  loading?: boolean
-}) {
-  const [open, setOpen] = useState(true)
-
-  if (!preview && holdingCount === 0) return null
-
-  const subtitle = alertsSectionSubtitle({ preview, loading, alerts, clearCount, holdingCount })
-  const sectionCount = loading ? '…' : String(alerts.length)
-
-  return (
-    <section className="mb-5" aria-label="Portfolio review alerts">
-      <button
-        type="button"
-        onClick={() => setOpen((o) => !o)}
-        aria-expanded={open}
-        className={cn(
-          'w-full min-h-[48px] flex items-center justify-between rounded-2xl px-4 py-3',
-          'border border-white/[0.06] bg-zinc-900/40',
-          'active:bg-zinc-800/50 transition-colors [touch-action:manipulation]',
-          'focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500/40',
-        )}
-      >
-        <div className="flex items-center gap-2.5 min-w-0">
-          <Eye className="w-4 h-4 text-amber-400 shrink-0" aria-hidden="true" />
-          <span className="text-base sm:text-sm font-bold text-white">Portfolio review</span>
-          <span className="type-caption font-semibold tabular-nums text-zinc-500">({sectionCount})</span>
-        </div>
-        <div className="flex items-center gap-2 shrink-0">
-          {!preview && !loading && clearCount > 0 && alerts.length > 0 && (
-            <span className="type-meta text-emerald-400/90 font-semibold">
-              {clearCount} OK
-            </span>
-          )}
-          <CollapseChevron open={open} />
-        </div>
-      </button>
-
-      {open && (
-        <div className="mt-2">
-          <p className="type-caption text-zinc-500 mb-2 px-0.5">{subtitle}</p>
-
-          {preview && (
-            <p className="type-meta text-amber-400/80 mb-2 px-0.5">
-              Preview only — sync Vested to scan your real holdings.
-            </p>
-          )}
-
-          {loading ? (
-            <div className="rounded-2xl bg-zinc-900 px-4 py-5 animate-pulse" aria-busy="true">
-              <div className="h-3 w-40 bg-zinc-800 rounded mb-2" />
-              <div className="h-3 w-full bg-zinc-800/80 rounded" />
-            </div>
-          ) : alerts.length > 0 ? (
-            <ul className="space-y-3">
-              {alerts.map((a) => (
-                <li key={a.ticker}>
-                  <AlertCard alert={a} preview={preview} />
-                </li>
-              ))}
-            </ul>
-          ) : !preview ? (
-            <div className="rounded-xl bg-emerald-500/5 border border-emerald-500/15 px-3.5 py-3 flex items-start gap-2.5">
-              <CheckCircle className="w-5 h-5 text-emerald-400 shrink-0 mt-0.5" aria-hidden="true" />
-              <div className="min-w-0 text-left">
-                <p className="text-sm font-semibold text-emerald-300/90 leading-tight">All clear for now</p>
-                <p className="type-meta text-zinc-500 mt-0.5 leading-snug">
-                  No holdings need review—we flag only when several weak signals line up.
-                </p>
-              </div>
-            </div>
-          ) : null}
-
-          {!preview && !loading && holdingCount > 0 && (
-            <p className="type-micro text-muted mt-2 leading-snug px-0.5">
-              Tap ↻ to rescan.{llmEnabled ? ' AI summaries when available.' : ''}
-            </p>
-          )}
-        </div>
-      )}
-    </section>
-  )
+function filterHoldings(holdings: PortfolioHoldingWithSignal[], filter: TierFilter): PortfolioHoldingWithSignal[] {
+  if (filter === 'all') return holdings
+  return holdings.filter((h) => h.signal.tier === filter)
 }
 
 function HoldingsSection({
   holdings,
+  meta,
   countdown,
   refreshing,
   session,
+  loading,
+  preview,
 }: {
-  holdings: PortfolioHoldingWithPrice[]
+  holdings: PortfolioHoldingWithSignal[]
+  meta?: PortfolioSignalsMeta | null
   countdown: number
   refreshing: boolean
   session: MarketSession
+  loading?: boolean
+  preview?: boolean
 }) {
-  const [open, setOpen] = useState(true)
+  const [tierFilter, setTierFilter] = useState<TierFilter>('all')
   const isLive = session === 'regular'
-  const subtitle = liveRefreshSubtitle(session)
+  const filtered = useMemo(() => filterHoldings(holdings, tierFilter), [holdings, tierFilter])
+  const subtitle = preview
+    ? 'Sample flagged holdings (not your portfolio)'
+    : holdingsSignalsSubtitle(meta, session, loading)
 
   return (
     <section className="mb-5" aria-label="Your holdings">
-      <button
-        type="button"
-        onClick={() => setOpen((o) => !o)}
-        aria-expanded={open}
-        className={cn(
-          'w-full min-h-[48px] flex items-center justify-between rounded-2xl px-4 py-3',
-          'border border-white/[0.06] bg-zinc-900/40',
-          'active:bg-zinc-800/50 transition-colors [touch-action:manipulation]',
-          'focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500/40',
+      <div className="flex items-center justify-between gap-2 mb-2 px-0.5">
+        <p className="type-caption text-zinc-500" aria-live="polite">
+          {subtitle}
+        </p>
+        {isLive && !preview && (
+          <RefreshCountdown seconds={countdown} refreshing={refreshing} />
         )}
-      >
-        <div className="flex items-center gap-2.5 min-w-0">
-          <PieChart className="w-4 h-4 text-blue-400 shrink-0" aria-hidden="true" />
-          <span className="text-base sm:text-sm font-bold text-white">Your holdings</span>
-          <span className="type-caption font-semibold tabular-nums text-zinc-500">({holdings.length})</span>
-        </div>
-        <div className="flex items-center gap-2 shrink-0">
-          {isLive && (
-            <RefreshCountdown seconds={countdown} refreshing={refreshing} />
-          )}
-          <CollapseChevron open={open} />
-        </div>
-      </button>
+      </div>
 
-      {open && (
-        <div className="mt-2">
-          <p className="type-caption text-zinc-500 mb-2 px-0.5" aria-live="polite">
-            {subtitle}
-          </p>
-          <div className="space-y-3">
-            {holdings.map((h) => (
-              <HoldingCard key={h.id} h={h} />
+      {preview && (
+        <p className="type-meta text-amber-400/80 mb-2 px-0.5">
+          Preview only — sync Vested to scan your real holdings.
+        </p>
+      )}
+
+      {!preview && holdings.length > 0 && (
+        <>
+          <div className="flex gap-1.5 overflow-x-auto pb-2 -mx-0.5 px-0.5 scrollbar-none">
+            {TIER_FILTERS.map((f) => (
+              <button
+                key={f.id}
+                type="button"
+                onClick={() => setTierFilter(f.id)}
+                className={cn(
+                  'shrink-0 type-meta font-semibold px-3 py-1.5 rounded-full transition-colors [touch-action:manipulation]',
+                  tierFilter === f.id
+                    ? 'bg-zinc-700 text-white'
+                    : 'bg-zinc-900 text-zinc-400 active:bg-zinc-800',
+                )}
+              >
+                {f.label}
+              </button>
             ))}
           </div>
+          <p className="type-meta text-muted leading-snug mb-2 px-0.5">
+            {PORTFOLIO_FLAG_HELP}
+          </p>
+        </>
+      )}
+
+      {loading ? (
+        <div className="space-y-3" aria-busy="true">
+          {[1, 2, 3].map((n) => (
+            <div key={n} className="h-[120px] rounded-2xl bg-zinc-900 animate-pulse" />
+          ))}
         </div>
+      ) : (
+        <div className="space-y-3">
+          {filtered.map((h) => (
+            <HoldingCard key={h.id} h={h} preview={preview} />
+          ))}
+          {filtered.length === 0 && tierFilter !== 'all' && (
+            <p className="type-meta text-muted text-center py-6">
+              No holdings in this category.
+            </p>
+          )}
+        </div>
+      )}
+
+      {!preview && !loading && holdings.length > 0 && (
+        <p className="type-micro text-muted mt-2 leading-snug px-0.5">
+          Tap ↻ to rescan fundamentals during market hours.
+        </p>
       )}
     </section>
   )
@@ -639,26 +379,23 @@ export default function PortfolioPage() {
   const marketSession = useMarketSession()
 
   const {
-    data: holdings = [],
+    data: portfolioData,
     isLoading,
     isValidating,
     mutate,
-  } = useSWR<PortfolioHoldingWithPrice[]>('/api/portfolio', portfolioFetcher, {
-    revalidateOnFocus: false,
-    onSuccess: (data) => {
-      if (data?.length) setSavedAt(data[0].synced_at)
+  } = useSWR<PortfolioWithSignalsResponse>(
+    '/api/portfolio?include=signals',
+    signalsFetcher,
+    {
+      revalidateOnFocus: false,
+      onSuccess: (data) => {
+        if (data?.holdings?.length) setSavedAt(data.holdings[0].synced_at)
+      },
     },
-  })
-
-  const {
-    data: alertsData,
-    isLoading: alertsLoading,
-    mutate: mutateAlerts,
-  } = useSWR<PortfolioAlertsResponse>(
-    holdings.length > 0 ? '/api/portfolio/alerts' : null,
-    fetcher,
-    { revalidateOnFocus: false, dedupingInterval: 0 },
   )
+
+  const holdings = portfolioData?.holdings ?? []
+  const signalsMeta = portfolioData?.meta ?? null
 
   const refreshing = manualRefresh || (isValidating && !isLoading)
 
@@ -666,25 +403,34 @@ export default function PortfolioPage() {
     if (!marketOpen) return
     setManualRefresh(true)
     try {
-      await mutate()
-      if (holdings.length > 0) {
-        const fresh = await fetch('/api/portfolio/alerts?refresh=1', { cache: 'no-store' })
-        if (fresh.ok) {
-          const json = (await fresh.json()) as PortfolioAlertsResponse
-          await mutateAlerts(json, { revalidate: false })
-        } else {
-          await mutateAlerts()
-        }
-      }
+      await mutate(
+        async () => {
+          const res = await fetch('/api/portfolio?include=signals&refresh=1', { cache: 'no-store' })
+          if (!res.ok) throw new Error('Refresh failed')
+          return res.json() as Promise<PortfolioWithSignalsResponse>
+        },
+        { revalidate: false },
+      )
     } finally {
       setManualRefresh(false)
     }
-  }, [holdings.length, marketOpen, mutate, mutateAlerts])
+  }, [marketOpen, mutate])
 
-  const refreshPrices = useCallback(() => {
-    void mutate()
-    if (holdings.length > 0) void mutateAlerts()
-  }, [holdings.length, mutate, mutateAlerts])
+  const refreshPrices = useCallback(async () => {
+    const res = await fetch('/api/portfolio', { cache: 'no-store' })
+    if (!res.ok) return
+    const prices = (await res.json()) as PortfolioHoldingWithPrice[]
+    mutate(
+      (current) => {
+        if (!current?.holdings?.length) return current
+        return {
+          ...current,
+          holdings: mergePriceSnapshots(current.holdings, prices),
+        }
+      },
+      { revalidate: false },
+    )
+  }, [mutate])
 
   const countdown = useLivePriceRefresh(
     marketSession,
@@ -821,11 +567,12 @@ export default function PortfolioPage() {
           ) : holdings.length === 0 ? (
             <div className="pt-2 pb-12 space-y-4">
               {showPreview ? (
-                <AlertsSection
-                  alerts={PORTFOLIO_ALERT_DEMO}
-                  clearCount={0}
-                  holdingCount={0}
+                <HoldingsSection
+                  holdings={DEMO_HOLDINGS}
                   preview
+                  countdown={0}
+                  refreshing={false}
+                  session={marketSession}
                 />
               ) : (
                 <button
@@ -834,7 +581,7 @@ export default function PortfolioPage() {
                   className="w-full flex items-center justify-center gap-2 h-11 rounded-xl bg-zinc-900 text-zinc-300 text-sm font-semibold active:scale-[0.98] transition-all [touch-action:manipulation]"
                 >
                   <Eye className="w-4 h-4 text-zinc-500" aria-hidden="true" />
-                  Preview sample review alerts
+                  Preview sample flagged holdings
                 </button>
               )}
 
@@ -874,19 +621,13 @@ export default function PortfolioPage() {
             <>
               <SummaryBar holdings={holdings} session={marketSession} />
 
-              <AlertsSection
-                alerts={alertsData?.alerts ?? []}
-                clearCount={alertsData?.clear_count ?? holdings.length}
-                holdingCount={alertsData?.holding_count ?? holdings.length}
-                llmEnabled={alertsData?.llm_enabled}
-                loading={alertsLoading && !alertsData}
-              />
-
               <HoldingsSection
                 holdings={holdings}
+                meta={signalsMeta}
                 countdown={countdown}
                 refreshing={refreshing}
                 session={marketSession}
+                loading={isLoading && !portfolioData}
               />
             </>
           )}

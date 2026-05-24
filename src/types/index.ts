@@ -55,6 +55,37 @@ export interface PortfolioHoldingWithPrice extends PortfolioHolding {
   snapshot: StockSnapshot | null
 }
 
+// ── Portfolio holding signals (inline on holding cards) ───────────────────────
+export type HoldingSignalTier = 'quiet' | 'soft' | 'attention' | 'profit'
+
+export interface HoldingSignal {
+  tier: HoldingSignalTier
+  /** Bearish score when tier is soft or attention. */
+  score?: number
+  headline: string
+  factors: PickFactor[]
+  review_reason: string | null
+  caveat: string | null
+  narrative_source: 'llm' | 'mechanical'
+}
+
+export interface PortfolioHoldingWithSignal extends PortfolioHoldingWithPrice {
+  signal: HoldingSignal
+}
+
+export interface PortfolioSignalsMeta {
+  by_tier: { soft: number; attention: number; profit: number }
+  quiet_count: number
+  holding_count: number
+  llm_enabled: boolean
+  generated_at: string
+}
+
+export interface PortfolioWithSignalsResponse {
+  holdings: PortfolioHoldingWithSignal[]
+  meta: PortfolioSignalsMeta
+}
+
 export interface StockFundamentals {
   ticker: string
   // Historical % changes

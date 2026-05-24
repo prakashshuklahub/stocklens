@@ -81,6 +81,39 @@ export const ALERT_HEADLINES = {
   red: 'Worth a careful review — weak signals may persist for months',
 } as const
 
+/** User-facing headlines for inline holding signals. */
+export const SIGNAL_HEADLINES = {
+  attention: 'Several weak reads aligned. Worth a closer look.',
+  soft: 'A few things look soft. No rush, but worth watching.',
+  profit: 'Price is near the usual analyst target. Much of the expected upside may be priced in.',
+} as const
+
+export const TIER_BADGE_LABELS = {
+  attention: 'Needs attention',
+  soft: 'Worth watching',
+  profit: 'Target reached',
+} as const
+
+/** v1 profit tier: position up ≥20%, price within 5% of analyst target. */
+export const PROFIT_ZONE_RULES = {
+  minPositionPnlPct: 20,
+  /** current_price >= target * this multiplier */
+  targetWithinMultiplier: 0.95,
+} as const
+
+export type HoldingSignalTier = 'quiet' | 'soft' | 'attention' | 'profit'
+
+export interface HoldingSignalScore {
+  tier: HoldingSignalTier
+  score?: number
+  headline: string
+  factors: PickFactor[]
+  position_pnl_pct: number
+  position_value: number
+  /** Populated when tier is soft or attention (for narrative builders). */
+  bearish?: ScoredAlert
+}
+
 // ── Types ─────────────────────────────────────────────────────────────────────
 
 export interface AlertScoreInput {
@@ -306,5 +339,141 @@ export function rankAlerts(alerts: ScoredAlert[]): ScoredAlert[] {
     const byScore = b.score - a.score
     if (byScore !== 0) return byScore
     return severityRank[b.severity] - severityRank[a.severity]
+  })
+}
+
+// ── Profit tier + unified signal resolution ───────────────────────────────────
+
+export function scoreProfitZone(input: AlertScoreInput): { triggered: boolean; factors: PickFactor[] } {
+  const { holding, current_price, fundamentals: f } = input
+  if (current_price <= 0) return { triggered: false, factors: [] }
+
+  const cost = holding.avg_cost_basis
+  const positionPnlPct = cost > 0 ? ((current_price - cost) / cost) * 100 : 0
+  if (positionPnlPct < PROFIT_ZONE_RULES.minPositionPnlPct) {
+    return { triggered: false, factors: [] }
+  }
+
+  const refTarget = f ? resolveRefTarget(f) : null
+  if (!refTarget || current_price < refTarget * PROFIT_ZONE_RULES.targetWithinMultiplier) {
+    return { triggered: false, factors: [] }
+  }
+
+  const factors: PickFactor[] = [
+    {
+      label: 'Target in range',
+      value: `$${current_price.toFixed(0)} vs ref $${refTarget.toFixed(0)}`,
+      tone: 'positive',
+    },
+    {
+      label: 'Up on your cost',
+      value: `+${positionPnlPct.toFixed(0)}%`,
+      tone: 'positive',
+    },
+  ]
+
+  const change30d = f?.change_30d_pct ?? null
+  if (change30d !== null && change30d >= -3) {
+    factors.push({
+      label: '30-day trend still OK',
+      value: `${change30d >= 0 ? '+' : ''}${change30d.toFixed(0)}%`,
+      tone: 'positive',
+    })
+  }
+
+  const buy = f?.analyst_buy ?? 0
+  const hold = f?.analyst_hold ?? 0
+  const sell = f?.analyst_sell ?? 0
+  const analystTotal = buy + hold + sell
+  if (analystTotal >= 5 && buy / analystTotal >= 0.5) {
+    factors.push({
+      label: 'Analyst consensus mostly buy',
+      value: `${buy} of ${analystTotal}`,
+      tone: 'positive',
+    })
+  }
+
+  return { triggered: true, factors }
+}
+
+/** One holding shows at most one tier: attention > soft > profit > quiet. */
+export function resolveTier(
+  bearish: ScoredAlert | null,
+  profitTriggered: boolean,
+): HoldingSignalTier {
+  if (bearish?.severity === 'red') return 'attention'
+  if (bearish?.severity === 'watch') return 'soft'
+  if (profitTriggered) return 'profit'
+  return 'quiet'
+}
+
+export function scoreHoldingSignal(input: AlertScoreInput): HoldingSignalScore {
+  const { holding, current_price } = input
+  const cost = holding.avg_cost_basis
+  const positionPnlPct = cost > 0 ? ((current_price - cost) / cost) * 100 : 0
+  const positionValue = current_price * holding.quantity
+
+  if (current_price <= 0) {
+    return {
+      tier: 'quiet',
+      headline: '',
+      factors: [],
+      position_pnl_pct: positionPnlPct,
+      position_value: positionValue,
+    }
+  }
+
+  const bearish = scorePortfolioAlert(input)
+  const profit = scoreProfitZone(input)
+  const tier = resolveTier(bearish, profit.triggered)
+
+  if (tier === 'attention' || tier === 'soft') {
+    return {
+      tier,
+      score: bearish!.score,
+      headline: tier === 'attention' ? SIGNAL_HEADLINES.attention : SIGNAL_HEADLINES.soft,
+      factors: bearish!.factors,
+      position_pnl_pct: positionPnlPct,
+      position_value: positionValue,
+      bearish: bearish!,
+    }
+  }
+
+  if (tier === 'profit') {
+    return {
+      tier,
+      headline: SIGNAL_HEADLINES.profit,
+      factors: profit.factors,
+      position_pnl_pct: positionPnlPct,
+      position_value: positionValue,
+    }
+  }
+
+  return {
+    tier: 'quiet',
+    headline: '',
+    factors: [],
+    position_pnl_pct: positionPnlPct,
+    position_value: positionValue,
+  }
+}
+
+const TIER_SORT_RANK: Record<HoldingSignalTier, number> = {
+  attention: 4,
+  soft: 3,
+  profit: 2,
+  quiet: 1,
+}
+
+/** Flagged tiers first; within tier, largest position value first. */
+export function sortBySignalTier<T extends { signal: { tier: HoldingSignalTier }; quantity: number; snapshot?: { price?: number | null } | null }>(
+  items: T[],
+): T[] {
+  return [...items].sort((a, b) => {
+    const tierDiff = TIER_SORT_RANK[b.signal.tier] - TIER_SORT_RANK[a.signal.tier]
+    if (tierDiff !== 0) return tierDiff
+    const valA = (a.snapshot?.price ?? 0) * a.quantity
+    const valB = (b.snapshot?.price ?? 0) * b.quantity
+    return valB - valA
   })
 }

@@ -1,16 +1,13 @@
+/**
+ * @deprecated Prefer GET /api/portfolio?include=signals — inline signals on holding cards.
+ * Kept as a thin alias during migration; does not call Gemini (mechanical narratives only).
+ */
 import { auth, getSessionUserId } from '@/lib/auth'
-import { loadFundamentalsForTickers } from '@/lib/load-fundamentals'
+import { loadFundamentalsCacheFirst, refreshFundamentalsForTickers } from '@/lib/load-fundamentals'
 import { fetchRegularSnapshotsForTickers } from '@/lib/live-prices'
-import { isPriceRefreshActive, isUSMarketOpen } from '@/lib/market-hours'
-import { generateSellReview, isLLMEnabled } from '@/lib/llm'
-import {
-  loadFreshNarratives,
-  mapSequential,
-  MECHANICAL_MODEL,
-  narrativeSourceFromModel,
-  upsertNarratives,
-} from '@/lib/narrative-cache'
-import { buildSellReviewInput, mechanicalSellReview } from '@/lib/portfolio-alerts'
+import { isPriceRefreshActive } from '@/lib/market-hours'
+import { isLLMEnabled } from '@/lib/llm'
+import { mechanicalSignalReview } from '@/lib/portfolio-alerts'
 import { rankAlerts, scorePortfolioAlert, type ScoredAlert } from '@/lib/portfolio-alert-scoring'
 import { createServerClient } from '@/lib/supabase'
 import { NextRequest, NextResponse } from 'next/server'
@@ -22,10 +19,8 @@ import type {
 } from '@/types'
 
 const NO_CACHE_HEADERS = { 'Cache-Control': 'private, no-store, max-age=0' } as const
-const LOG_PREFIX = 'portfolio/alerts'
 
 export async function GET(req: NextRequest) {
-  const marketOpen = isUSMarketOpen()
   const forceRefresh = req.nextUrl.searchParams.get('refresh') === '1' && isPriceRefreshActive()
   const session = await auth()
   const userId = getSessionUserId(session)
@@ -53,28 +48,19 @@ export async function GET(req: NextRequest) {
   }
 
   const tickers = list.map((h) => h.ticker)
-
-  const { data: fundamentalsRows, error: fundamentalsError } = await supabase
-    .from('stock_fundamentals')
-    .select('*')
-    .in('ticker', tickers)
-
   const fundamentalsByTicker = new Map<string, StockFundamentals>()
-  for (const row of (fundamentalsRows ?? []) as StockFundamentals[]) {
-    fundamentalsByTicker.set(row.ticker, row)
+
+  const { fundamentals, stale, tableMissing } = await loadFundamentalsCacheFirst(supabase, tickers)
+  for (const [ticker, row] of Object.entries(fundamentals)) {
+    fundamentalsByTicker.set(ticker.toUpperCase(), row)
   }
 
-  const tableMissing = Boolean(
-    fundamentalsError?.message?.includes('PGRST205') ||
-    fundamentalsError?.message?.includes('stock_fundamentals'),
-  )
-
-  const needFundamentals =
-    tableMissing || fundamentalsByTicker.size < tickers.length || forceRefresh
-  if (needFundamentals) {
-    const loaded = await loadFundamentalsForTickers(supabase, tickers, { upsert: !tableMissing })
-    for (const [t, row] of Object.entries(loaded)) {
-      fundamentalsByTicker.set(t, row)
+  if (forceRefresh && (stale.length || tableMissing)) {
+    const refreshed = await refreshFundamentalsForTickers(supabase, stale.length ? stale : tickers, {
+      upsert: !tableMissing,
+    })
+    for (const [ticker, row] of Object.entries(refreshed)) {
+      fundamentalsByTicker.set(ticker.toUpperCase(), row)
     }
   }
 
@@ -87,7 +73,7 @@ export async function GET(req: NextRequest) {
     const alert = scorePortfolioAlert({
       holding,
       current_price: price,
-      fundamentals: fundamentalsByTicker.get(holding.ticker) ?? null,
+      fundamentals: fundamentalsByTicker.get(holding.ticker.toUpperCase()) ?? null,
     })
     if (alert) scored.push(alert)
   }
@@ -95,87 +81,14 @@ export async function GET(req: NextRequest) {
   const ranked = rankAlerts(scored)
   const llmEnabled = isLLMEnabled()
 
-  if (!ranked.length) {
-    const response: PortfolioAlertsResponse = {
-      alerts: [],
-      clear_count: list.length,
-      holding_count: list.length,
-      generated_at: new Date().toISOString(),
-      llm_enabled: llmEnabled,
-    }
-    return NextResponse.json(response, { headers: NO_CACHE_HEADERS })
-  }
-
-  const alertTickers = ranked.map((a) => a.ticker.toUpperCase())
-  const cachedByTicker = forceRefresh
-    ? new Map<string, { ticker: string; review_reason: string; caveat: string; model: string | null }>()
-    : await loadFreshNarratives<{
-        ticker: string
-        review_reason: string
-        caveat: string
-        model: string | null
-      }>(supabase, 'portfolio_sell_narratives', alertTickers, LOG_PREFIX)
-
-  const needGeneration = ranked.filter((a) => !cachedByTicker.has(a.ticker.toUpperCase()))
-
-  if (needGeneration.length) {
-    console.info(
-      `[${LOG_PREFIX}] narratives cache: ${cachedByTicker.size} hit, ${needGeneration.length} miss`,
-    )
-  }
-
-  type GenResult = {
-    ticker: string
-    review_reason: string
-    caveat: string
-    source: 'llm' | 'mechanical'
-    model: string | null
-  }
-
-  const generated: GenResult[] = await mapSequential(needGeneration, async (alert): Promise<GenResult> => {
-      const f = fundamentalsByTicker.get(alert.ticker)
-      const reviewInput = buildSellReviewInput(alert, f)
-      if (llmEnabled) {
-        const narrative = await generateSellReview(reviewInput)
-        if (narrative) {
-          return {
-            ticker: alert.ticker,
-            review_reason: narrative.review_reason,
-            caveat: narrative.caveat,
-            source: 'llm',
-            model: narrative.model,
-          }
-        }
-      }
-      const fallback = mechanicalSellReview(alert)
-      return { ticker: alert.ticker, ...fallback, source: 'mechanical', model: null }
-  })
-
-  if (generated.length) {
-    const narrativeRows = generated.map((g) => ({
-      ticker: g.ticker.toUpperCase(),
-      review_reason: g.review_reason,
-      caveat: g.caveat,
-      model: g.source === 'llm' && g.model ? g.model : MECHANICAL_MODEL,
-      generated_at: new Date().toISOString(),
-    }))
-    await upsertNarratives(supabase, 'portfolio_sell_narratives', narrativeRows, LOG_PREFIX)
-  }
-
-  const generatedByTicker = new Map<string, GenResult>()
-  for (const g of generated) generatedByTicker.set(g.ticker, g)
-
   const alerts: PortfolioAlert[] = ranked.map((a) => {
-    const key = a.ticker.toUpperCase()
-    const cached = cachedByTicker.get(key)
-    const fresh = generatedByTicker.get(a.ticker)
-    const narrative = cached ?? fresh
+    const tier = a.severity === 'red' ? 'attention' : 'soft'
+    const narrative = mechanicalSignalReview(a, tier)
     return {
       ...a,
-      review_reason: narrative?.review_reason ?? null,
-      caveat: narrative?.caveat ?? null,
-      narrative_source:
-        fresh?.source ?? (cached ? narrativeSourceFromModel(cached.model) : 'mechanical'),
+      review_reason: narrative.review_reason,
+      caveat: narrative.caveat,
+      narrative_source: 'mechanical' as const,
     }
   })
 
