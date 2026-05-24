@@ -111,7 +111,7 @@ export default function StockSearchInput({ onSelect, disabled }: Props) {
           placeholder="Search ticker or company…"
           disabled={disabled}
           onFocus={() => results.length > 0 && setOpen(true)}
-          className="w-full card-surface pl-11 pr-10 py-4 text-base text-white placeholder:text-zinc-600 focus:outline-none focus-visible:ring-2 focus-visible:ring-blue-500/40 transition-all disabled:opacity-40 [touch-action:manipulation]"
+          className="w-full card-surface pl-11 pr-10 py-4 text-base text-white placeholder:text-muted focus:outline-none focus-visible:ring-2 focus-visible:ring-blue-500/40 transition-all disabled:opacity-40 [touch-action:manipulation]"
         />
         {loading && (
           <Loader2
@@ -176,7 +176,7 @@ export default function StockSearchInput({ onSelect, disabled }: Props) {
 
       {open && !loading && query.length > 1 && results.length === 0 && (
         <div
-          className="absolute z-50 mt-1.5 w-full bg-zinc-900 shadow-2xl shadow-black/50 rounded-2xl px-4 py-4 text-center text-sm text-zinc-600"
+          className="absolute z-50 mt-1.5 w-full bg-zinc-900 shadow-2xl shadow-black/50 rounded-2xl px-4 py-4 text-center text-sm text-muted"
           aria-live="polite"
         >
           No results for &ldquo;{query}&rdquo;

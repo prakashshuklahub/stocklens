@@ -56,21 +56,25 @@ body {
     border: 1px solid rgb(255 255 255 / 0.05);
   }
 
-  /* Picks tab — distinct from watchlist cards; accordions unchanged inside */
+  /* Picks tab — premium gold shell; inner layout unchanged */
   .pick-card {
     position: relative;
     overflow: hidden;
     border-radius: var(--card-radius);
     background: linear-gradient(
-      155deg,
-      rgb(69 26 3 / 0.28) 0%,
-      rgb(24 24 27) 38%,
-      rgb(24 24 27) 100%
+      152deg,
+      rgb(146 64 14 / 0.32) 0%,
+      rgb(69 26 3 / 0.24) 22%,
+      rgb(24 24 27) 48%,
+      rgb(15 15 18) 100%
     );
-    border: 1px solid rgb(251 191 36 / 0.16);
+    border: 1px solid rgb(251 191 36 / 0.24);
     box-shadow:
-      0 0 0 1px rgb(139 92 246 / 0.06),
-      0 10px 40px rgb(0 0 0 / 0.32);
+      0 0 0 1px rgb(251 191 36 / 0.06),
+      0 0 28px rgb(251 191 36 / 0.05),
+      0 0 56px rgb(167 139 250 / 0.035),
+      0 18px 52px rgb(0 0 0 / 0.42),
+      inset 0 1px 0 rgb(255 255 255 / 0.05);
   }
 
   .pick-card::before {
@@ -78,22 +82,74 @@ body {
     position: absolute;
     inset-inline: 0;
     top: 0;
-    height: 3px;
+    height: 4px;
     background: linear-gradient(
       90deg,
-      rgb(251 191 36 / 0.75),
+      rgb(251 191 36 / 0.9),
+      rgb(245 158 11 / 0.65),
       rgb(167 139 250 / 0.55),
       rgb(96 165 250 / 0.45)
     );
     pointer-events: none;
+    z-index: 1;
+  }
+
+  .pick-card::after {
+    content: '';
+    position: absolute;
+    inset: 0;
+    border-radius: inherit;
+    pointer-events: none;
+    background:
+      radial-gradient(90% 70% at 100% 0%, rgb(251 191 36 / 0.1) 0%, transparent 58%),
+      radial-gradient(60% 50% at 0% 100%, rgb(139 92 246 / 0.06) 0%, transparent 55%);
+    box-shadow: inset 0 0 0 1px rgb(251 191 36 / 0.07);
   }
 
   .pick-card--top {
-    border-color: rgb(251 191 36 / 0.28);
+    border-color: rgb(251 191 36 / 0.42);
     box-shadow:
-      0 0 0 1px rgb(251 191 36 / 0.08),
-      0 0 24px rgb(251 191 36 / 0.06),
-      0 12px 44px rgb(0 0 0 / 0.38);
+      0 0 0 1px rgb(251 191 36 / 0.14),
+      0 0 36px rgb(251 191 36 / 0.14),
+      0 0 72px rgb(251 191 36 / 0.07),
+      0 22px 60px rgb(0 0 0 / 0.48),
+      inset 0 1px 0 rgb(255 255 255 / 0.07);
+  }
+
+  .pick-card--top::before {
+    height: 5px;
+    background: linear-gradient(
+      90deg,
+      rgb(253 224 71 / 0.95),
+      rgb(251 191 36 / 0.85),
+      rgb(167 139 250 / 0.65),
+      rgb(96 165 250 / 0.55)
+    );
+  }
+
+  .pick-card--top::after {
+    background:
+      radial-gradient(95% 75% at 100% 0%, rgb(251 191 36 / 0.16) 0%, transparent 55%),
+      radial-gradient(65% 55% at 0% 100%, rgb(167 139 250 / 0.1) 0%, transparent 52%);
+    box-shadow: inset 0 0 0 1px rgb(251 191 36 / 0.12);
+  }
+
+  .pick-card--ranked {
+    border-color: rgb(167 139 250 / 0.22);
+    box-shadow:
+      0 0 0 1px rgb(167 139 250 / 0.08),
+      0 0 22px rgb(167 139 250 / 0.06),
+      0 16px 48px rgb(0 0 0 / 0.4),
+      inset 0 1px 0 rgb(255 255 255 / 0.04);
+  }
+
+  .pick-card--ranked::before {
+    background: linear-gradient(
+      90deg,
+      rgb(167 139 250 / 0.75),
+      rgb(129 140 248 / 0.5),
+      rgb(96 165 250 / 0.4)
+    );
   }
 
   .pick-card-hero {
@@ -231,6 +287,16 @@ body {
     .type-caption {
       font-size: 0.75rem;
     }
+  }
+
+  /* Muted copy on dark surfaces — zinc-500 (#71717a). Replaces ad-hoc text-zinc-600. */
+  .text-muted {
+    color: #71717a;
+  }
+
+  /* Collapsed accordion previews — zinc-400 (#a1a1aa), one step brighter for small type. */
+  .text-muted-preview {
+    color: #a1a1aa;
   }
 }
 

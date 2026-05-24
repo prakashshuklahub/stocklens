@@ -19,7 +19,9 @@ import {
   Compass,
   Target,
   Activity,
+  Newspaper,
 } from 'lucide-react'
+import NewsRow from '@/components/NewsRow'
 import StockLogo from '@/components/StockLogo'
 import Week52Range from '@/components/Week52Range'
 import { pickDisplayCopy } from '@/lib/picks'
@@ -160,7 +162,7 @@ function PickOwnershipRow({ pick }: { pick: Pick }) {
       <Briefcase className="w-3.5 h-3.5 shrink-0 text-amber-400/70" aria-hidden="true" />
       <p className="type-meta text-zinc-400">
         You own <span className="text-zinc-200 font-semibold tabular-nums">{fmt(pick.ownership.shares, 0)}</span> shares
-        <span className="text-zinc-600"> · paid avg ${fmt(pick.ownership.avg_cost_basis)}</span>
+        <span className="text-muted"> · paid avg ${fmt(pick.ownership.avg_cost_basis)}</span>
       </p>
     </div>
   )
@@ -182,7 +184,7 @@ function PickCardHeroStats({
         <span className="font-bold text-white tabular-nums">
           ${fmt(pick.entry_low)} – ${fmt(pick.entry_high)}
         </span>
-        <span className="text-zinc-600">·</span>
+        <span className="text-muted">·</span>
         <span className="type-meta text-zinc-500 tabular-nums">Now ${fmt(pick.current_price)}</span>
       </div>
       <div className="h-px bg-blue-500/10" />
@@ -281,12 +283,13 @@ function truncatePreview(text: string, max = 72): string {
   return `${t.slice(0, max - 1).trim()}…`
 }
 
-type PickAccordionKey = 'price' | 'momentum' | 'sector' | 'why'
+type PickAccordionKey = 'price' | 'momentum' | 'sector' | 'headlines' | 'why'
 
 const PICK_SECTIONS_CLOSED: Record<PickAccordionKey, boolean> = {
   price: false,
   momentum: false,
   sector: false,
+  headlines: false,
   why: false,
 }
 
@@ -309,6 +312,12 @@ function momentumPreview(pick: Pick): string {
 
 function sectorPreview(pick: Pick): string | null {
   return vsSectorCollapsedPreview(pick.vs_sector, pick.sector)
+}
+
+function headlinesPreview(pick: Pick): string {
+  const top = pick.news?.[0]
+  if (top) return truncatePreview(top.title)
+  return 'No headlines right now'
 }
 
 function whyPreview(pick: Pick): string {
@@ -356,10 +365,10 @@ function PickAccordionRow({
               <span className="type-meta font-semibold text-zinc-300">{label}</span>
             </div>
             {!open && (
-              <p className="type-meta text-zinc-600 mt-1 leading-snug truncate">{preview}</p>
+              <p className="type-meta text-muted-preview mt-1 leading-snug truncate">{preview}</p>
             )}
           </div>
-          <CollapseChevron open={open} className="text-zinc-600 shrink-0 mt-0.5" />
+          <CollapseChevron open={open} className="text-muted shrink-0 mt-0.5" />
         </div>
       </button>
       {open && (
@@ -407,7 +416,13 @@ function PickCard({
   const hasSector = sectorLabel !== 'Other' && isBenchmarkableSector(sectorLabel)
 
   return (
-    <div className={cn('pick-card overflow-hidden', rank === 1 && 'pick-card--top')}>
+    <div
+      className={cn(
+        'pick-card overflow-hidden',
+        rank === 1 && 'pick-card--top',
+        rank >= 2 && rank <= 3 && 'pick-card--ranked',
+      )}
+    >
       <PickCardHero
         pick={pick}
         rank={rank}
@@ -445,7 +460,7 @@ function PickCard({
               </p>
               {subline && <p className="type-meta text-zinc-500">{subline}</p>}
               {showAnalystRange && (
-                <p className="type-micro text-zinc-600 tabular-nums mt-0.5">
+                <p className="type-micro text-muted tabular-nums mt-0.5">
                   Range ${fmt(pick.target_low!)} – ${fmt(pick.target_high!)}
                 </p>
               )}
@@ -497,6 +512,25 @@ function PickCard({
       )}
 
       <PickAccordionRow
+        id={`${cardId}-headlines`}
+        label="Headlines"
+        preview={headlinesPreview(pick)}
+        open={sections.headlines}
+        onToggle={() => toggleSection('headlines')}
+        icon={Newspaper}
+      >
+        {pick.news?.length ? (
+          <div className="space-y-2">
+            {pick.news.map((n, i) => (
+              <NewsRow key={i} item={n} />
+            ))}
+          </div>
+        ) : (
+          <p className="type-meta text-muted px-1 py-2">No headlines for this stock right now.</p>
+        )}
+      </PickAccordionRow>
+
+      <PickAccordionRow
         id={`${cardId}-why`}
         label="Why we picked this"
         preview={whyPreview(pick)}
@@ -540,7 +574,7 @@ function PickCard({
             </div>
           )}
 
-          <p className="type-micro text-zinc-600 pt-1">
+          <p className="type-micro text-muted pt-1">
             {pick.narrative_source === 'llm'
               ? 'Summary written by AI · prices and ratings from public data'
               : llmEnabled
@@ -713,7 +747,7 @@ function SectionHeader({
         )}
       </div>
       {showSubtitle && (
-        <p className={cn('type-caption text-zinc-600 leading-snug', collapsible && 'text-left')}>
+        <p className={cn('type-caption text-muted leading-snug', collapsible && 'text-left')}>
           {subtitleText}
         </p>
       )}
@@ -840,8 +874,8 @@ export default function PicksPage() {
             />
 
             <div className="mt-2 flex items-start gap-2 px-1">
-              <ShieldCheck className="w-3.5 h-3.5 text-zinc-600 shrink-0 mt-0.5" aria-hidden="true" />
-              <p className="type-meta text-zinc-600 leading-relaxed">
+              <ShieldCheck className="w-3.5 h-3.5 text-muted shrink-0 mt-0.5" aria-hidden="true" />
+              <p className="type-meta text-muted leading-relaxed">
                 Not financial advice. Price targets are estimates to help you compare — not promises.
                 Always do your own research before buying.
               </p>

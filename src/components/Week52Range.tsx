@@ -15,7 +15,7 @@ export default function Week52Range({
     <div className="space-y-1.5">
       <div className="flex items-center justify-between">
         <span className="type-meta text-zinc-500 font-medium">52-week range</span>
-        <span className="type-micro text-zinc-600">dot = today</span>
+        <span className="type-micro text-muted">dot = today</span>
       </div>
       <div className="flex items-center gap-2">
         <span className="type-meta text-zinc-500 tabular-nums shrink-0">${low.toFixed(0)}</span>

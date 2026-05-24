@@ -271,14 +271,14 @@ function SectorGroup({
           <span className="text-xs font-bold text-zinc-500 uppercase tracking-[0.1em]">
             {sector}
           </span>
-          <span className="text-xs tabular-nums text-zinc-600 font-medium">
+          <span className="text-xs tabular-nums text-muted font-medium">
             {stocks.length}
           </span>
         </div>
         <ChevronDown
           aria-hidden="true"
           className={cn(
-            'w-3.5 h-3.5 text-zinc-600 transition-transform duration-200',
+            'w-3.5 h-3.5 text-muted transition-transform duration-200',
             open ? 'rotate-0' : '-rotate-90',
           )}
         />

@@ -11,10 +11,10 @@ import {
   TrendingDown,
   Volume2,
   VolumeX,
-  ExternalLink,
   Zap,
   Newspaper,
 } from 'lucide-react'
+import NewsRow from '@/components/NewsRow'
 import { cn } from '@/lib/utils'
 import type { Signal, SignalReason, SignalsResponse, SignalNewsItem } from '@/types'
 
@@ -156,10 +156,10 @@ function SignalHeadlinesRow({ signal, cardId }: { signal: Signal; cardId: string
               <span className="type-meta font-semibold text-zinc-300">Headlines</span>
             </div>
             {!open && (
-              <p className="type-meta text-zinc-600 mt-1 leading-snug truncate">{preview}</p>
+              <p className="type-meta text-muted-preview mt-1 leading-snug truncate">{preview}</p>
             )}
           </div>
-          <CollapseChevron open={open} className="text-zinc-600 shrink-0 mt-0.5" />
+          <CollapseChevron open={open} className="text-muted shrink-0 mt-0.5" />
         </div>
       </button>
       {open && (
@@ -174,7 +174,7 @@ function SignalHeadlinesRow({ signal, cardId }: { signal: Signal; cardId: string
               <NewsRow key={i} item={n} />
             ))
           ) : (
-            <p className="text-xs text-zinc-600 px-1 py-2">No headlines for this stock right now.</p>
+            <p className="text-xs text-muted px-1 py-2">No headlines for this stock right now.</p>
           )}
         </div>
       )}
@@ -202,36 +202,6 @@ function SignalCard({ signal }: { signal: Signal }) {
   )
 }
 
-function NewsRow({ item }: { item: SignalNewsItem }) {
-  return (
-    <a
-      href={item.url}
-      target="_blank"
-      rel="noopener noreferrer"
-      className="block rounded-xl px-3 py-2.5 -mx-1 active:bg-zinc-800/60 transition-colors [touch-action:manipulation]"
-    >
-      <div className="flex items-start gap-2.5">
-        <div
-          className={cn(
-            'w-1 self-stretch rounded-full mt-0.5 shrink-0',
-            item.sentiment === 'bullish' ? 'bg-emerald-500/60' : 'bg-red-500/60',
-          )}
-          aria-hidden="true"
-        />
-        <div className="flex-1 min-w-0">
-          <p className="text-sm text-zinc-200 leading-snug">{item.title}</p>
-          <div className="flex items-center gap-2 mt-1">
-            <span className="type-meta text-zinc-500">{item.source}</span>
-            <span className="type-meta text-zinc-600">·</span>
-            <span className="type-meta text-zinc-600">{timeAgo(item.published_at)}</span>
-          </div>
-        </div>
-        <ExternalLink className="w-3.5 h-3.5 text-zinc-600 shrink-0 mt-0.5" aria-hidden="true" />
-      </div>
-    </a>
-  )
-}
-
 function SignalList({
   signals,
   emptyMsg,
@@ -240,7 +210,7 @@ function SignalList({
   emptyMsg?: string
 }) {
   if (!signals.length) {
-    return emptyMsg ? <p className="text-xs text-zinc-600 px-1 py-1">{emptyMsg}</p> : null
+    return emptyMsg ? <p className="text-xs text-muted px-1 py-1">{emptyMsg}</p> : null
   }
 
   return (

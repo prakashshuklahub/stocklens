@@ -150,7 +150,7 @@ export default function WatchlistSuggestions({
                 <p className="text-sm text-zinc-400 mt-2.5 leading-relaxed line-clamp-2">
                   {s.reason}
                   {s.narrative_source === 'llm' && (
-                    <span className="text-zinc-600"> · AI</span>
+                    <span className="text-muted"> · AI</span>
                   )}
                 </p>
               )}
@@ -183,7 +183,7 @@ export default function WatchlistSuggestions({
       )}
 
       {data?.generated_at && !isLoading && visible.length > 0 && (
-        <p className="text-xs text-zinc-600 mt-3 leading-relaxed">
+        <p className="text-xs text-muted mt-3 leading-relaxed">
           Trending list rescans every 3h
           {marketOpen ? ' · live prices refresh with the market' : ''}
           {data.llm_enabled ? ' · AI context lines' : ''}

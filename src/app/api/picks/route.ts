@@ -4,7 +4,7 @@
 //   1. Load watchlist + portfolio + cached fundamentals + sector benchmarks
 //   2. Fetch live prices (Yahoo)
 //   3. Score section 1 from watchlist ∪ portfolio; section 2 from global trending cache
-//   4. Rank top 5 each; attach narratives (Gemini sync on cache miss, 3h TTL)
+//   4. Rank top 5 each; attach headlines + narratives (Gemini sync on cache miss, 3h TTL)
 
 import { auth, getSessionUserId } from '@/lib/auth'
 import { loadFundamentalsCacheFirst, refreshFundamentalsForTickers } from '@/lib/load-fundamentals'
@@ -12,7 +12,7 @@ import { ensureLogosForTickers } from '@/lib/stock-logo-cache'
 import { fetchLivePricesForTickers, type LivePriceSnapshot } from '@/lib/live-prices'
 import { isPriceRefreshActive } from '@/lib/market-hours'
 import { createServerClient } from '@/lib/supabase'
-import { fetchNewsForTicker } from '@/lib/news'
+import { fetchPickHeadlinesForTickers } from '@/lib/pick-headlines'
 import { generateNarrative, isLLMEnabled } from '@/lib/llm'
 import {
   loadFreshNarratives,
@@ -47,6 +47,7 @@ import type {
   SectorBenchmark,
   StockFundamentals,
   WatchlistStock,
+  SignalNewsItem,
 } from '@/types'
 
 const NO_CACHE_HEADERS = { 'Cache-Control': 'private, no-store, max-age=0' } as const
@@ -159,6 +160,7 @@ async function attachNarratives(
   top: ScoredPick[],
   fundamentalsByTicker: Map<string, StockFundamentals>,
   scoresAt: string,
+  newsByTicker: Map<string, SignalNewsItem[]>,
 ): Promise<{ picks: Pick[]; narrativeTimes: string[] }> {
   if (!top.length) return { picks: [], narrativeTimes: [] }
 
@@ -196,15 +198,12 @@ async function attachNarratives(
   }
 
   const headlinesByTicker = new Map<string, string[]>()
-  if (needGeneration.length) {
-    const headlineResults = await Promise.all(needGeneration.map((p) => fetchNewsForTicker(p.ticker)))
-    needGeneration.forEach((p, i) => {
-      const items = (headlineResults[i] ?? [])
-        .sort((a, b) => new Date(b.published_at).getTime() - new Date(a.published_at).getTime())
-        .slice(0, 3)
-        .map((n) => n.title)
-      headlinesByTicker.set(p.ticker, items)
-    })
+  for (const pick of needGeneration) {
+    const key = pick.ticker.toUpperCase()
+    headlinesByTicker.set(
+      key,
+      (newsByTicker.get(key) ?? []).map((n) => n.title),
+    )
   }
 
   const generated: GenResult[] = needGeneration.length
@@ -231,7 +230,7 @@ async function attachNarratives(
             week52_low: f.week52_low,
             news_sentiment: f.news_sentiment,
             factors: pick.factors.map((x) => x.label),
-            recent_headlines: headlinesByTicker.get(pick.ticker) ?? [],
+            recent_headlines: headlinesByTicker.get(pick.ticker.toUpperCase()) ?? [],
           })
           if (narrative) {
             return {
@@ -278,6 +277,7 @@ async function attachNarratives(
       narrative_source:
         fresh?.source ?? (cached ? narrativeSourceFromModel(cached.model) : 'mechanical'),
       narrative_generated_at: cached?.generated_at ?? (fresh ? scoresAt : null),
+      news: newsByTicker.get(key) ?? [],
     }
   })
 
@@ -452,10 +452,11 @@ export async function GET(req: NextRequest) {
 
   const allTop = [...topYour, ...topDiscovery]
   const narrativeFundamentals = new Map(fundamentalsByTicker)
+  const newsByTicker = await fetchPickHeadlinesForTickers(allTop.map((p) => p.ticker))
 
   const [yourResult, discoveryResult] = await Promise.all([
-    attachNarratives(supabase, topYour, narrativeFundamentals, scoresAt),
-    attachNarratives(supabase, topDiscovery, narrativeFundamentals, scoresAt),
+    attachNarratives(supabase, topYour, narrativeFundamentals, scoresAt, newsByTicker),
+    attachNarratives(supabase, topDiscovery, narrativeFundamentals, scoresAt, newsByTicker),
   ])
 
   const response: PicksResponse = {

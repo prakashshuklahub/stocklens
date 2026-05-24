@@ -137,7 +137,7 @@ function TargetPrice({
         )}
       </div>
       {showRange && (
-        <p className="type-micro text-zinc-600 tabular-nums pt-0.5">
+        <p className="type-micro text-muted tabular-nums pt-0.5">
           Analyst range {formatTargetPrice(targetLow)} – {formatTargetPrice(targetHigh)}
         </p>
       )}
@@ -332,10 +332,10 @@ function WatchlistAccordionRow({
               <span className="type-meta font-semibold text-zinc-300">{label}</span>
             </div>
             {!open && (
-              <p className="type-meta text-zinc-600 mt-1 leading-snug truncate">{preview}</p>
+              <p className="type-meta text-muted-preview mt-1 leading-snug truncate">{preview}</p>
             )}
           </div>
-          <CollapseChevron open={open} className="text-zinc-600 shrink-0 mt-0.5" />
+          <CollapseChevron open={open} className="text-muted shrink-0 mt-0.5" />
         </div>
       </button>
       {open && (
@@ -493,7 +493,7 @@ export default function WatchlistCard({
                 )}
               </>
             ) : (
-              <p className="text-sm text-zinc-600">—</p>
+              <p className="text-sm text-muted">—</p>
             )}
           </div>
         </div>
@@ -598,7 +598,7 @@ export default function WatchlistCard({
           aria-haspopup="menu"
           aria-expanded={menuOpen}
           onClick={() => setMenuOpen((o) => !o)}
-          className="w-11 h-11 flex items-center justify-center rounded-xl text-zinc-600 active:text-zinc-300 active:bg-white/5 transition-colors focus-visible:outline-none [touch-action:manipulation]"
+          className="w-11 h-11 flex items-center justify-center rounded-xl text-muted active:text-zinc-300 active:bg-white/5 transition-colors focus-visible:outline-none [touch-action:manipulation]"
         >
           <MoreVertical className="w-4 h-4" aria-hidden="true" />
         </button>

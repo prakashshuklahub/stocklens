@@ -221,6 +221,9 @@ export interface Pick {
   /** ISO timestamp when thesis/risk was last generated (3h cache). */
   narrative_generated_at: string | null
 
+  /** Up to 3 recent headlines (Google News RSS, 30 min fetch cache). */
+  news: SignalNewsItem[]
+
   // Optional ownership tag
   ownership: PickOwnership | null
 }

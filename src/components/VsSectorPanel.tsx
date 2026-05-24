@@ -20,7 +20,7 @@ function fmtPct(n: number | null | undefined, showPlus = true): string | null {
 
 function VsSectorDelta({ delta }: { delta: number | null }) {
   if (delta == null) {
-    return <span className="text-zinc-600 tabular-nums">—</span>
+    return <span className="text-muted tabular-nums">—</span>
   }
   const isPos = delta >= 0
   return (
@@ -48,9 +48,9 @@ function VsSectorWindowRow({
       <span className="text-zinc-500">{label}</span>
       <div className="flex items-center gap-2 tabular-nums">
         <span className="text-zinc-400">{fmtPct(window.stock, false)}</span>
-        <span className="text-zinc-600">vs</span>
+        <span className="text-muted">vs</span>
         <span className="text-zinc-400">{fmtPct(window.sector, false)}</span>
-        <span className="text-zinc-600">·</span>
+        <span className="text-muted">·</span>
         <VsSectorDelta delta={window.delta} />
       </div>
     </div>
@@ -129,7 +129,7 @@ export default function VsSectorPanel({
             Compared to {vsSector.sector}
           </p>
           {etf && (
-            <p className="type-meta text-zinc-600 mt-0.5 leading-snug">
+            <p className="type-meta text-muted mt-0.5 leading-snug">
               {sectorEtfSubtitle(etf, vsSector.sector)}
               {primaryDelta != null && (
                 <>
@@ -167,7 +167,7 @@ export default function VsSectorPanel({
       )}
 
       {d1Footnote && (
-        <p className="type-micro text-zinc-600 leading-relaxed [text-wrap:pretty]">
+        <p className="type-micro text-muted leading-relaxed [text-wrap:pretty]">
           {d1Footnote}
           {refreshing ? ' · Updating…' : ''}
         </p>

@@ -63,7 +63,7 @@ function LoginContent() {
           Continue with Google
         </button>
 
-        <p className="text-center text-xs text-zinc-600 mt-8">
+        <p className="text-center text-xs text-muted mt-8">
           By signing in you agree to use this tool responsibly.
         </p>
       </div>

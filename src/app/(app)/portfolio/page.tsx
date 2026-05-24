@@ -114,7 +114,7 @@ function SummaryBar({
           <div>
             <p className="text-2xl font-black text-white tabular-nums leading-none">${fmt(totalCurrent)}</p>
             {asOfLabel && (
-              <p className="type-micro text-zinc-600 mt-1">{asOfLabel}</p>
+              <p className="type-micro text-muted mt-1">{asOfLabel}</p>
             )}
           </div>
           <span className={cn(
@@ -243,10 +243,10 @@ function AlertReviewRow({
               <span className="type-meta font-semibold text-zinc-300">Why review this holding?</span>
             </div>
             {!open && (
-              <p className="type-meta text-zinc-600 mt-1 leading-snug truncate">{previewText}</p>
+              <p className="type-meta text-muted-preview mt-1 leading-snug truncate">{previewText}</p>
             )}
           </div>
-          <CollapseChevron open={open} className="text-zinc-600 shrink-0 mt-0.5" />
+          <CollapseChevron open={open} className="text-muted shrink-0 mt-0.5" />
         </div>
       </button>
       {open && (
@@ -264,7 +264,7 @@ function AlertReviewRow({
               {alert.caveat}
             </p>
           )}
-          <p className="type-micro text-zinc-600">
+          <p className="type-micro text-muted">
             {preview
               ? 'Sample card for UI preview'
               : alert.narrative_source === 'llm'
@@ -450,7 +450,7 @@ function AlertsSection({
           ) : null}
 
           {!preview && !loading && holdingCount > 0 && (
-            <p className="type-micro text-zinc-600 mt-2 leading-snug px-0.5">
+            <p className="type-micro text-muted mt-2 leading-snug px-0.5">
               Tap ↻ to rescan.{llmEnabled ? ' AI summaries when available.' : ''}
             </p>
           )}
@@ -756,7 +756,7 @@ export default function PortfolioPage() {
           {syncedLabel ? (
             <p className="type-caption text-zinc-500 mb-4 -mt-2 sm:hidden">Synced {syncedLabel}</p>
           ) : (
-            <p className="type-caption text-zinc-600 mb-4 -mt-2">No holdings synced yet</p>
+            <p className="type-caption text-muted mb-4 -mt-2">No holdings synced yet</p>
           )}
 
           {parseError && (
@@ -811,9 +811,9 @@ export default function PortfolioPage() {
                 <div className="flex-1 min-w-0">
                   <p className="text-sm font-semibold text-white mb-1">How to sync Vested</p>
                   <ol className="text-xs text-zinc-400 space-y-1 list-none">
-                    <li><span className="text-zinc-600 mr-1.5">1.</span>Open the <span className="text-zinc-200 font-medium">Vested Finance</span> app</li>
-                    <li><span className="text-zinc-600 mr-1.5">2.</span>Go to <span className="text-zinc-200 font-medium">Portfolio → Download Holdings</span></li>
-                    <li><span className="text-zinc-600 mr-1.5">3.</span>Save the <span className="text-zinc-200 font-medium">.xlsx</span> file and tap <span className="text-zinc-200 font-medium">Sync</span> above</li>
+                    <li><span className="text-muted mr-1.5">1.</span>Open the <span className="text-zinc-200 font-medium">Vested Finance</span> app</li>
+                    <li><span className="text-muted mr-1.5">2.</span>Go to <span className="text-zinc-200 font-medium">Portfolio → Download Holdings</span></li>
+                    <li><span className="text-muted mr-1.5">3.</span>Save the <span className="text-zinc-200 font-medium">.xlsx</span> file and tap <span className="text-zinc-200 font-medium">Sync</span> above</li>
                   </ol>
                 </div>
               </div>

@@ -112,7 +112,10 @@ export interface DiscoveryPickInput {
   benchmark?: SectorBenchmark | null
 }
 
-export type ScoredPick = Omit<Pick, 'thesis' | 'main_risk' | 'narrative_source' | 'narrative_generated_at'>
+export type ScoredPick = Omit<
+  Pick,
+  'thesis' | 'main_risk' | 'narrative_source' | 'narrative_generated_at' | 'news'
+>
 
 type TargetLabel = Pick['target_label']
 

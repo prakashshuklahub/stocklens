@@ -84,7 +84,7 @@ export default function LiveRefreshHeader({
       <div className="flex items-start justify-between gap-4">
         <div className="min-w-0">
           <h2 className="section-label">{title}</h2>
-          <p className="type-caption text-zinc-600 mt-1" aria-live="polite">
+          <p className="type-caption text-muted mt-1" aria-live="polite">
             {subtitle ?? liveRefreshSubtitle(session)}
           </p>
         </div>
