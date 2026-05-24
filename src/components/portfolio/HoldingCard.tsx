@@ -193,15 +193,6 @@ export function HoldingCard({
             {h.company_name && (
               <p className="text-sm text-zinc-400 truncate leading-snug">{h.company_name}</p>
             )}
-            {flagged && signal.headline && (
-              <p className={cn(
-                'text-xs mt-0.5 leading-snug',
-                signal.tier === 'attention' ? 'text-red-200/90' :
-                signal.tier === 'profit' ? 'text-emerald-200/80' : 'text-amber-200/80',
-              )}>
-                {signal.headline}
-              </p>
-            )}
           </div>
           <div className="text-right shrink-0">
             <p className="text-base font-bold text-white tabular-nums leading-tight">

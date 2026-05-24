@@ -199,9 +199,6 @@ const TIER_FILTERS: { id: TierFilter; label: string }[] = [
   { id: 'quiet', label: 'Quiet' },
 ]
 
-const PORTFOLIO_FLAG_HELP =
-  'We flag holdings when price, news, or analyst views look weak, or when you may be near a profit target. Red tags are concerns; green tags are positives. Filters sort by how serious the flag is. Not buy or sell advice.'
-
 function filterHoldings(holdings: PortfolioHoldingWithSignal[], filter: TierFilter): PortfolioHoldingWithSignal[] {
   if (filter === 'all') return holdings
   return holdings.filter((h) => h.signal.tier === filter)
@@ -249,28 +246,23 @@ function HoldingsSection({
       )}
 
       {!preview && holdings.length > 0 && (
-        <>
-          <div className="flex gap-1.5 overflow-x-auto pb-2 -mx-0.5 px-0.5 scrollbar-none">
-            {TIER_FILTERS.map((f) => (
-              <button
-                key={f.id}
-                type="button"
-                onClick={() => setTierFilter(f.id)}
-                className={cn(
-                  'shrink-0 type-meta font-semibold px-3 py-1.5 rounded-full transition-colors [touch-action:manipulation]',
-                  tierFilter === f.id
-                    ? 'bg-zinc-700 text-white'
-                    : 'bg-zinc-900 text-zinc-400 active:bg-zinc-800',
-                )}
-              >
-                {f.label}
-              </button>
-            ))}
-          </div>
-          <p className="type-meta text-muted leading-snug mb-2 px-0.5">
-            {PORTFOLIO_FLAG_HELP}
-          </p>
-        </>
+        <div className="flex gap-1.5 overflow-x-auto pb-2 mb-2 -mx-0.5 px-0.5 scrollbar-none">
+          {TIER_FILTERS.map((f) => (
+            <button
+              key={f.id}
+              type="button"
+              onClick={() => setTierFilter(f.id)}
+              className={cn(
+                'shrink-0 type-meta font-semibold px-3 py-1.5 rounded-full transition-colors [touch-action:manipulation]',
+                tierFilter === f.id
+                  ? 'bg-zinc-700 text-white'
+                  : 'bg-zinc-900 text-zinc-400 active:bg-zinc-800',
+              )}
+            >
+              {f.label}
+            </button>
+          ))}
+        </div>
       )}
 
       {loading ? (
