@@ -140,14 +140,7 @@ function WatchlistSortBar({
                   : 'text-zinc-500 after:opacity-0 active:text-zinc-400',
               )}
             >
-              {opt.id === 'target_upside' ? (
-                <>
-                  <span className="sm:hidden">Room</span>
-                  <span className="hidden sm:inline">Room to grow</span>
-                </>
-              ) : (
-                opt.label
-              )}
+              {opt.label}
             </button>
           </span>
         )
