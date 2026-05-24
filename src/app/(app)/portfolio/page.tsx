@@ -148,43 +148,87 @@ function SummaryBar({
 }
 
 // ── Holding card ──────────────────────────────────────────────────────────────
+
+function PnlPill({
+  pnl,
+  pnlPct,
+  isPos,
+}: {
+  pnl: number
+  pnlPct: number
+  isPos: boolean
+}) {
+  return (
+    <span
+      className={cn(
+        'inline-flex items-center gap-1.5 rounded-full tabular-nums font-bold text-sm px-3 py-1.5',
+        isPos ? 'bg-emerald-500/15 text-emerald-400' : 'bg-red-500/15 text-red-400',
+      )}
+    >
+      {isPos ? '+' : '-'}${fmt(Math.abs(pnl))}
+      <span className="opacity-90">
+        ({isPos ? '+' : ''}{fmt(pnlPct)}%)
+      </span>
+    </span>
+  )
+}
+
 function HoldingCard({ h }: { h: PortfolioHoldingWithPrice }) {
   const price = h.snapshot?.price ?? null
+  const change1d = h.snapshot?.change_1d_pct ?? null
   const currentValue = price != null ? price * h.quantity : null
   const invested = h.avg_cost_basis * h.quantity
   const pnl = currentValue != null ? currentValue - invested : null
   const pnlPct = invested && pnl != null ? (pnl / invested) * 100 : null
   const isPos = pnl != null ? pnl >= 0 : null
-  const change1d = h.snapshot?.change_1d_pct ?? null
 
   return (
-    <div className="card-surface px-4 py-3.5 flex items-center gap-3 active:scale-[0.99] active:brightness-95 transition-all duration-100">
-      <StockLogo ticker={h.ticker} size="md" />
-      <div className="flex-1 min-w-0">
-        <span className="text-lg font-bold text-white tracking-tight">{h.ticker}</span>
-        {h.company_name && (
-          <p className="text-sm text-zinc-400 truncate leading-snug">{h.company_name}</p>
-        )}
-        <p className="type-meta text-zinc-500 mt-1 tabular-nums">
-          {fmt(h.quantity, 0)} shares · avg ${fmt(h.avg_cost_basis)} · inv ${fmt(invested)}
+    <div className="card-surface px-4 py-3.5 space-y-2.5 active:scale-[0.99] active:brightness-95 transition-all duration-100">
+      <div className="flex items-start gap-3">
+        <StockLogo ticker={h.ticker} size="md" />
+        <div className="flex-1 min-w-0">
+          <span className="text-lg font-bold text-white tracking-tight">{h.ticker}</span>
+          {h.company_name && (
+            <p className="text-sm text-zinc-400 truncate leading-snug">{h.company_name}</p>
+          )}
+        </div>
+        <div className="text-right shrink-0">
+          <p className="text-base font-bold text-white tabular-nums leading-tight">
+            {price != null ? `$${fmt(price)}` : '—'}
+          </p>
+          {change1d != null && (
+            <p
+              className={cn(
+                'text-sm tabular-nums font-semibold mt-0.5',
+                change1d >= 0 ? 'text-emerald-400' : 'text-red-400',
+              )}
+            >
+              {change1d >= 0 ? '+' : ''}{fmt(change1d)}%
+            </p>
+          )}
+        </div>
+      </div>
+
+      <div className="space-y-1">
+        <p className="type-meta text-zinc-300 tabular-nums">
+          <span className="font-semibold text-white">{fmt(h.quantity, 0)} shares</span>
+          {' '}@ ${fmt(h.avg_cost_basis)} avg
+        </p>
+        <p className="type-meta text-muted-preview tabular-nums">
+          Invested ${fmt(invested)}
+          {currentValue != null && (
+            <>
+              {' '}→ worth <span className="text-zinc-200 font-semibold">${fmt(currentValue)}</span>
+            </>
+          )}
         </p>
       </div>
 
-      <div className="text-right shrink-0">
-        <p className="text-base font-bold text-white tabular-nums leading-tight">
-          {price != null ? `$${fmt(price)}` : '—'}
-        </p>
-        {change1d != null && (
-          <p className={cn('text-xs tabular-nums font-semibold mt-0.5', change1d >= 0 ? 'text-emerald-400' : 'text-red-400')}>
-            {change1d >= 0 ? '+' : ''}{fmt(change1d)}%
-          </p>
-        )}
-        {pnl != null && pnlPct != null && (
-          <p className={cn('text-xs tabular-nums font-semibold mt-0.5', isPos ? 'text-emerald-400' : 'text-red-400')}>
-            {isPos ? '+' : '-'}${fmt(Math.abs(pnl))} ({isPos ? '+' : ''}{fmt(pnlPct)}%)
-          </p>
-        )}
-      </div>
+      {pnl != null && pnlPct != null && isPos != null && (
+        <div className="pt-0.5">
+          <PnlPill pnl={pnl} pnlPct={pnlPct} isPos={isPos} />
+        </div>
+      )}
     </div>
   )
 }
