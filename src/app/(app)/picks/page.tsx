@@ -600,21 +600,18 @@ const PICKS_TAB_STORAGE_KEY = 'picks_active_tab'
 const PICKS_TABS: {
   id: PicksTab
   label: string
-  shortLabel: string
   icon: typeof Compass
   subtitle?: string
 }[] = [
   {
     id: 'discovery',
     label: 'Strong movers',
-    shortLabel: 'Movers',
     icon: Compass,
     subtitle: 'Quality-filtered ideas not on your watchlist or portfolio',
   },
   {
     id: 'your',
     label: 'Your stocks',
-    shortLabel: 'Yours',
     icon: Eye,
   },
 ]
@@ -630,7 +627,7 @@ function PicksTabBar({
 }) {
   return (
     <div role="tablist" aria-label="Pick lists" className="flex border-b border-white/[0.06] mb-3">
-      {PICKS_TABS.map(({ id, label, shortLabel, icon: Icon }) => {
+      {PICKS_TABS.map(({ id, label, icon: Icon }) => {
         const isActive = activeTab === id
         const count = counts[id]
         return (
@@ -655,10 +652,7 @@ function PicksTabBar({
               className={cn('w-3.5 h-3.5 shrink-0', isActive ? 'text-blue-400' : 'text-zinc-600')}
               aria-hidden="true"
             />
-            <span className="text-xs font-bold truncate">
-              <span className="sm:hidden">{shortLabel}</span>
-              <span className="hidden sm:inline">{label}</span>
-            </span>
+            <span className="text-xs font-bold truncate">{label}</span>
             <span
               className={cn(
                 'shrink-0 type-micro tabular-nums font-semibold px-1.5 py-px rounded-full',
