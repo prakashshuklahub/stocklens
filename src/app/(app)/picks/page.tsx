@@ -1,7 +1,7 @@
 'use client'
 
 import useSWR from 'swr'
-import { useCallback, useState, type ReactNode } from 'react'
+import { useCallback, useEffect, useRef, useState, type ReactNode } from 'react'
 import AppNav from '@/components/AppNav'
 import AnalystMiniGrid from '@/components/AnalystMiniGrid'
 import RecentMovesPanel, { recentMovesCollapsedPreview } from '@/components/RecentMovesPanel'
@@ -593,188 +593,214 @@ function PickCard({
   )
 }
 
-function PickSection({
-  title,
-  subtitle,
-  icon: Icon,
+type PicksTab = 'discovery' | 'your'
+
+const PICKS_TAB_STORAGE_KEY = 'picks_active_tab'
+
+const PICKS_TABS: {
+  id: PicksTab
+  label: string
+  shortLabel: string
+  icon: typeof Compass
+  subtitle?: string
+}[] = [
+  {
+    id: 'discovery',
+    label: 'Strong movers',
+    shortLabel: 'Movers',
+    icon: Compass,
+    subtitle: 'Quality-filtered ideas not on your watchlist or portfolio',
+  },
+  {
+    id: 'your',
+    label: 'Your stocks',
+    shortLabel: 'Yours',
+    icon: Eye,
+  },
+]
+
+function PicksTabBar({
+  activeTab,
+  onSelect,
+  counts,
+}: {
+  activeTab: PicksTab
+  onSelect: (tab: PicksTab) => void
+  counts: Record<PicksTab, number>
+}) {
+  return (
+    <div role="tablist" aria-label="Pick lists" className="flex border-b border-white/[0.06] mb-3">
+      {PICKS_TABS.map(({ id, label, shortLabel, icon: Icon }) => {
+        const isActive = activeTab === id
+        const count = counts[id]
+        return (
+          <button
+            key={id}
+            type="button"
+            role="tab"
+            id={`picks-tab-${id}`}
+            aria-selected={isActive}
+            aria-controls={`picks-panel-${id}`}
+            onClick={() => onSelect(id)}
+            className={cn(
+              'flex-1 flex items-center justify-center gap-1.5 min-h-[48px] px-2 pb-2.5 pt-1',
+              'border-b-2 transition-colors [touch-action:manipulation]',
+              'focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-blue-500/40',
+              isActive
+                ? 'border-blue-400 text-white'
+                : 'border-transparent text-zinc-500 active:text-zinc-300',
+            )}
+          >
+            <Icon
+              className={cn('w-3.5 h-3.5 shrink-0', isActive ? 'text-blue-400' : 'text-zinc-600')}
+              aria-hidden="true"
+            />
+            <span className="text-xs font-bold truncate">
+              <span className="sm:hidden">{shortLabel}</span>
+              <span className="hidden sm:inline">{label}</span>
+            </span>
+            <span
+              className={cn(
+                'shrink-0 type-micro tabular-nums font-semibold px-1.5 py-px rounded-full',
+                isActive ? 'bg-blue-500/15 text-blue-300' : 'bg-zinc-800/80 text-zinc-500',
+              )}
+            >
+              {count}
+            </span>
+          </button>
+        )
+      })}
+    </div>
+  )
+}
+
+function PickListPanel({
+  panelId,
+  labelledBy,
   picks,
   emptyMessage,
-  collapsible = false,
-  storageKey,
-  defaultOpen = true,
-  hideSubtitle = false,
-  llmEnabled = false,
+  llmEnabled,
   marketSession,
   sectorBenchmarks,
 }: {
-  title: string
-  subtitle: string
-  icon: typeof Eye
+  panelId: string
+  labelledBy: string
   picks: Pick[]
   emptyMessage: string
-  collapsible?: boolean
-  storageKey?: string
-  defaultOpen?: boolean
-  hideSubtitle?: boolean
-  llmEnabled?: boolean
+  llmEnabled: boolean
   marketSession: MarketSession
   sectorBenchmarks: Record<string, SectorBenchmark>
 }) {
-  const [open, setOpen] = useState(() => {
-    if (!collapsible || !storageKey || typeof window === 'undefined') return defaultOpen
-    try {
-      const saved = localStorage.getItem(storageKey)
-      if (saved === '0') return false
-      if (saved === '1') return true
-    } catch {
-      /* ignore */
-    }
-    return defaultOpen
-  })
-
-  const toggle = useCallback(() => {
-    setOpen((prev) => {
-      const next = !prev
-      if (storageKey) {
-        try {
-          localStorage.setItem(storageKey, next ? '1' : '0')
-        } catch {
-          /* ignore */
-        }
-      }
-      return next
-    })
-  }, [storageKey])
-
-  const sectionId = `picks-section-${title.replace(/\s+/g, '-').toLowerCase()}`
-
   if (!picks.length) {
     return (
-      <section className="mb-5" aria-labelledby={sectionId}>
-        <SectionHeader
-          id={sectionId}
-          title={title}
-          subtitle={subtitle}
-          icon={Icon}
-          collapsible={collapsible}
-          open={open}
-          onToggle={toggle}
-          count={0}
-          hideSubtitle={hideSubtitle}
-        />
-        {(!collapsible || open) && (
-          <p className="text-sm text-zinc-500 text-center py-8 px-4 rounded-2xl bg-zinc-900/50 border border-white/[0.04]">
-            {emptyMessage}
-          </p>
-        )}
-      </section>
+      <div role="tabpanel" id={panelId} aria-labelledby={labelledBy}>
+        <p className="text-sm text-zinc-500 text-center py-8 px-4 rounded-2xl bg-zinc-900/50 border border-white/[0.04]">
+          {emptyMessage}
+        </p>
+      </div>
     )
   }
 
   return (
-    <section className="mb-5" aria-labelledby={sectionId}>
-      <SectionHeader
-        id={sectionId}
-        title={title}
-        subtitle={subtitle}
-        icon={Icon}
-        collapsible={collapsible}
-        open={open}
-        onToggle={toggle}
-        count={picks.length}
-        hideSubtitle={hideSubtitle}
-      />
-      {(!collapsible || open) && (
-        <ul id={`${sectionId}-list`} className="space-y-3 mt-2">
-          {picks.map((p, i) => (
-            <li key={`${p.ticker}-${p.source}`}>
-              <PickCard
-                pick={p}
-                rank={i + 1}
-                llmEnabled={llmEnabled}
-                marketSession={marketSession}
-                sectorBenchmarks={sectorBenchmarks}
-              />
-            </li>
-          ))}
-        </ul>
-      )}
-    </section>
+    <div role="tabpanel" id={panelId} aria-labelledby={labelledBy}>
+      <ul className="space-y-3">
+        {picks.map((p, i) => (
+          <li key={`${p.ticker}-${p.source}`}>
+            <PickCard
+              pick={p}
+              rank={i + 1}
+              llmEnabled={llmEnabled}
+              marketSession={marketSession}
+              sectorBenchmarks={sectorBenchmarks}
+            />
+          </li>
+        ))}
+      </ul>
+    </div>
   )
 }
 
-function SectionHeader({
-  id,
-  title,
-  subtitle,
-  icon: Icon,
-  collapsible = false,
-  open = true,
-  onToggle,
-  count,
-  hideSubtitle = false,
+function PicksTabbedLists({
+  data,
+  marketSession,
 }: {
-  id: string
-  title: string
-  subtitle: string
-  icon: typeof Eye
-  collapsible?: boolean
-  open?: boolean
-  onToggle?: () => void
-  count?: number
-  hideSubtitle?: boolean
+  data: PicksResponse
+  marketSession: MarketSession
 }) {
-  const showCollapsedHint = collapsible && !open
-  const showSubtitle =
-    showCollapsedHint ||
-    (!hideSubtitle && (collapsible ? open && Boolean(subtitle) : Boolean(subtitle)))
-  const subtitleText =
-    collapsible && !open
-      ? `${count ?? 0} pick${count === 1 ? '' : 's'} · tap to expand`
-      : subtitle
+  const [activeTab, setActiveTab] = useState<PicksTab>('discovery')
+  const tabResolvedRef = useRef(false)
+  const sectorBenchmarks = data.sector_benchmarks ?? {}
 
-  const inner = (
-    <>
-      <div className={cn('flex items-center gap-2 min-w-0', showSubtitle && 'mb-0.5')}>
-        <Icon className="w-3.5 h-3.5 text-blue-400 shrink-0" aria-hidden="true" />
-        <h2 id={id} className="text-base sm:text-sm font-bold text-white truncate">
-          {title}
-        </h2>
-        {count != null && count > 0 && (
-          <span className="shrink-0 type-micro font-semibold tabular-nums text-zinc-500 bg-zinc-800/80 px-1.5 py-0.5 rounded-full">
-            {count}
-          </span>
-        )}
-      </div>
-      {showSubtitle && (
-        <p className={cn('type-caption text-muted leading-snug', collapsible && 'text-left')}>
-          {subtitleText}
-        </p>
-      )}
-    </>
-  )
+  useEffect(() => {
+    if (tabResolvedRef.current) return
+    tabResolvedRef.current = true
+    try {
+      const saved = localStorage.getItem(PICKS_TAB_STORAGE_KEY)
+      if (saved === 'discovery' || saved === 'your') {
+        setActiveTab(saved)
+        return
+      }
+    } catch {
+      /* ignore */
+    }
+    setActiveTab(data.discovery_picks.length > 0 ? 'discovery' : 'your')
+  }, [data])
 
-  if (!collapsible) {
-    return <div className="mb-2">{inner}</div>
+  const selectTab = useCallback((tab: PicksTab) => {
+    setActiveTab(tab)
+    try {
+      localStorage.setItem(PICKS_TAB_STORAGE_KEY, tab)
+    } catch {
+      /* ignore */
+    }
+  }, [])
+
+  const activeTabMeta = PICKS_TABS.find((t) => t.id === activeTab)
+  const tabCounts: Record<PicksTab, number> = {
+    discovery: data.discovery_picks.length,
+    your: data.your_picks.length,
   }
 
   return (
-    <button
-      type="button"
-      aria-expanded={open}
-      aria-controls={`${id}-list`}
-      onClick={onToggle}
-      className={cn(
-        'w-full text-left mb-1 rounded-xl -mx-1 px-1 py-0.5 min-h-[40px]',
-        'active:bg-zinc-800/40 transition-colors [touch-action:manipulation]',
-        'focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500/40',
+    <section aria-label="Stock picks">
+      <PicksTabBar activeTab={activeTab} onSelect={selectTab} counts={tabCounts} />
+
+      {activeTabMeta?.subtitle && (
+        <p className="type-caption text-muted leading-snug mb-3 px-1 border-l-2 border-blue-500/25 pl-2.5">
+          {activeTabMeta.subtitle}
+        </p>
       )}
-    >
-      <div className="flex items-start justify-between gap-2">
-        <div className="min-w-0 flex-1">{inner}</div>
-        <CollapseChevron open={open} className="mt-0.5" />
+
+      {activeTab === 'discovery' ? (
+        <PickListPanel
+          panelId="picks-panel-discovery"
+          labelledBy="picks-tab-discovery"
+          picks={data.discovery_picks}
+          emptyMessage="No strong movers qualify today. Market data may still be loading — check back in a moment."
+          llmEnabled={data.llm_enabled}
+          marketSession={marketSession}
+          sectorBenchmarks={sectorBenchmarks}
+        />
+      ) : (
+        <PickListPanel
+          panelId="picks-panel-your"
+          labelledBy="picks-tab-your"
+          picks={data.your_picks}
+          emptyMessage="None of your watchlist or portfolio stocks qualify as a buy today."
+          llmEnabled={data.llm_enabled}
+          marketSession={marketSession}
+          sectorBenchmarks={sectorBenchmarks}
+        />
+      )}
+
+      <div className="mt-4 flex items-start gap-2 px-1">
+        <ShieldCheck className="w-3.5 h-3.5 text-muted shrink-0 mt-0.5" aria-hidden="true" />
+        <p className="type-meta text-muted leading-relaxed">
+          Not financial advice. Price targets are estimates to help you compare — not promises.
+          Always do your own research before buying.
+        </p>
       </div>
-    </button>
+    </section>
   )
 }
 
@@ -843,44 +869,7 @@ export default function PicksPage() {
             </p>
           </div>
         ) : (
-          <>
-            <PickSection
-              title="Strong movers"
-              subtitle="Quality-filtered ideas not on your watchlist or portfolio"
-              icon={Compass}
-              picks={data.discovery_picks}
-              emptyMessage="No strong movers qualify today. Market data may still be loading — check back in a moment."
-              collapsible
-              storageKey="picks_discovery_open"
-              defaultOpen
-              llmEnabled={data.llm_enabled}
-              marketSession={marketSession}
-              sectorBenchmarks={data.sector_benchmarks ?? {}}
-            />
-
-            <PickSection
-              title="Your stocks"
-              subtitle=""
-              icon={Eye}
-              picks={data.your_picks}
-              emptyMessage="None of your watchlist or portfolio stocks qualify as a buy today."
-              collapsible
-              storageKey="picks_your_stocks_open"
-              defaultOpen
-              hideSubtitle
-              llmEnabled={data.llm_enabled}
-              marketSession={marketSession}
-              sectorBenchmarks={data.sector_benchmarks ?? {}}
-            />
-
-            <div className="mt-2 flex items-start gap-2 px-1">
-              <ShieldCheck className="w-3.5 h-3.5 text-muted shrink-0 mt-0.5" aria-hidden="true" />
-              <p className="type-meta text-muted leading-relaxed">
-                Not financial advice. Price targets are estimates to help you compare — not promises.
-                Always do your own research before buying.
-              </p>
-            </div>
-          </>
+          <PicksTabbedLists data={data} marketSession={marketSession} />
         )}
       </main>
     </div>
