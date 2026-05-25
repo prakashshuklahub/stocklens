@@ -32,6 +32,22 @@ function tierBorderClass(tier: HoldingSignalTier): string {
   return 'border-white/[0.06]'
 }
 
+function PnlPill({ pnl, pnlPct, isPos }: { pnl: number; pnlPct: number; isPos: boolean }) {
+  return (
+    <span
+      className={cn(
+        'inline-flex items-center gap-1.5 rounded-full tabular-nums font-bold text-sm px-3 py-1.5',
+        isPos ? 'bg-emerald-500/15 text-emerald-400' : 'bg-red-500/15 text-red-400',
+      )}
+    >
+      {isPos ? '+' : '-'}${fmt(Math.abs(pnl))}
+      <span className="opacity-90">
+        ({isPos ? '+' : ''}{fmt(pnlPct)}%)
+      </span>
+    </span>
+  )
+}
+
 function SignalFactorChip({ factor }: { factor: PickFactor }) {
   const tone =
     factor.tone === 'negative' ? 'bg-red-500/10 text-red-300' :
@@ -178,37 +194,19 @@ export function HoldingCard({
               <p className="text-sm text-zinc-400 truncate leading-snug">{h.company_name}</p>
             )}
           </div>
-          <div className="text-right shrink-0 flex flex-col items-end gap-1">
+          <div className="text-right shrink-0">
             <p className="text-base font-bold text-white tabular-nums leading-tight">
               {price != null ? `$${fmt(price)}` : '—'}
             </p>
             {change1d != null && (
-              <div className="flex items-baseline justify-end gap-1.5">
-                <span className="type-meta text-muted-preview shrink-0">Today</span>
-                <span
-                  className={cn(
-                    'text-xs tabular-nums font-semibold leading-tight',
-                    change1d >= 0 ? 'text-emerald-400' : 'text-red-400',
-                  )}
-                >
-                  {change1d >= 0 ? '+' : ''}{fmt(change1d)}%
-                </span>
-              </div>
-            )}
-            {pnl != null && pnlPct != null && isPos != null && (
-              <div className="flex items-baseline justify-end gap-1.5">
-                <span className="type-meta text-muted-preview shrink-0">P&L</span>
-                <span
-                  className={cn(
-                    'text-xs tabular-nums font-semibold leading-tight',
-                    isPos ? 'text-emerald-400' : 'text-red-400',
-                  )}
-                >
-                  {isPos ? '+' : '-'}${fmt(Math.abs(pnl))}
-                  {' '}
-                  <span className="opacity-90">({isPos ? '+' : ''}{fmt(pnlPct)}%)</span>
-                </span>
-              </div>
+              <p
+                className={cn(
+                  'text-sm tabular-nums font-semibold mt-0.5',
+                  change1d >= 0 ? 'text-emerald-400' : 'text-red-400',
+                )}
+              >
+                {change1d >= 0 ? '+' : ''}{fmt(change1d)}%
+              </p>
             )}
           </div>
         </div>
@@ -225,6 +223,12 @@ export function HoldingCard({
             )}
           </p>
         </div>
+
+        {pnl != null && pnlPct != null && isPos != null && (
+          <div className="pt-0.5">
+            <PnlPill pnl={pnl} pnlPct={pnlPct} isPos={isPos} />
+          </div>
+        )}
       </div>
 
       {flagged && (
