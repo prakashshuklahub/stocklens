@@ -76,22 +76,37 @@ function parseVestedXlsx(file: File): Promise<VestedRow[]> {
 }
 
 // ── Summary card ──────────────────────────────────────────────────────────────
-function SummaryBar({
-  holdings,
-  session,
-}: {
-  holdings: PortfolioHoldingWithPrice[]
-  session: MarketSession
-}) {
+interface PortfolioSummaryStats {
+  totalInvested: number
+  totalCurrent: number
+  pnl: number
+  pnlPct: number
+  dayGain: number | null
+  dayPct: number | null
+  asOfLabel: string | null
+}
+
+function computePortfolioSummary(
+  holdings: PortfolioHoldingWithPrice[],
+  session: MarketSession,
+): PortfolioSummaryStats {
   let totalInvested = 0
   let totalCurrent = 0
+  let totalDayGain = 0
+  let totalPrevCloseValue = 0
   let latestAsOf: number | null = null
 
   for (const h of holdings) {
     totalInvested += h.avg_cost_basis * h.quantity
     const price = h.snapshot?.price
+    const change1d = h.snapshot?.change_1d_pct
     if (price != null) {
       totalCurrent += price * h.quantity
+      if (change1d != null) {
+        const prevClose = price / (1 + change1d / 100)
+        totalDayGain += (price - prevClose) * h.quantity
+        totalPrevCloseValue += prevClose * h.quantity
+      }
       const asOf = h.snapshot?.as_of
       if (asOf != null && (latestAsOf == null || asOf > latestAsOf)) latestAsOf = asOf
     }
@@ -99,41 +114,92 @@ function SummaryBar({
 
   const pnl = totalCurrent - totalInvested
   const pnlPct = totalInvested ? (pnl / totalInvested) * 100 : 0
-  const isPos = pnl >= 0
-  const asOfLabel = session === 'closed' ? formatSnapshotAsOfET(latestAsOf) : null
+  const hasDayData = totalPrevCloseValue > 0
+
+  return {
+    totalInvested,
+    totalCurrent,
+    pnl,
+    pnlPct,
+    dayGain: hasDayData ? totalDayGain : null,
+    dayPct: hasDayData ? (totalDayGain / totalPrevCloseValue) * 100 : null,
+    asOfLabel: session === 'closed' ? formatSnapshotAsOfET(latestAsOf) : null,
+  }
+}
+
+function signedPct(n: number) {
+  return `${n >= 0 ? '+' : ''}${fmt(n)}%`
+}
+
+function signedDollar(n: number) {
+  return `${n >= 0 ? '+' : '-'}$${fmt(Math.abs(n))}`
+}
+
+function pnlTone(positive: boolean) {
+  return positive
+    ? { text: 'text-emerald-400', bg: 'bg-emerald-500/15 text-emerald-400' }
+    : { text: 'text-red-400', bg: 'bg-red-500/15 text-red-400' }
+}
+
+function PctBadge({ pct, positive }: { pct: number; positive: boolean }) {
+  const tone = pnlTone(positive)
+  return (
+    <span className={cn('text-xs font-bold px-2 py-0.5 rounded-full shrink-0', tone.bg)}>
+      {signedPct(pct)}
+    </span>
+  )
+}
+
+function SummaryBar({
+  holdings,
+  session,
+}: {
+  holdings: PortfolioHoldingWithPrice[]
+  session: MarketSession
+}) {
+  const stats = computePortfolioSummary(holdings, session)
+  const allTimePos = stats.pnl >= 0
+  const dayPos = (stats.dayGain ?? 0) >= 0
+  const allTone = pnlTone(allTimePos)
+  const dayTone = pnlTone(dayPos)
 
   return (
     <div className="portfolio-summary mb-4">
       <div className="portfolio-summary-inner px-4 py-3">
         <p className="type-micro font-semibold text-blue-400/55 uppercase tracking-[0.1em] mb-1">Portfolio Value</p>
-        <div className="flex items-end justify-between gap-2">
-          <div>
-            <p className="text-2xl font-black text-white tabular-nums leading-none">${fmt(totalCurrent)}</p>
-            {asOfLabel && (
-              <p className="type-micro text-muted mt-1">{asOfLabel}</p>
+        <div className="flex items-start justify-between gap-2">
+          <div className="min-w-0">
+            <p className="text-2xl font-black text-white tabular-nums leading-none">${fmt(stats.totalCurrent)}</p>
+            {stats.dayGain != null && stats.dayPct != null ? (
+              <p className={cn('text-sm font-bold tabular-nums mt-1.5', dayTone.text)}>
+                {signedDollar(stats.dayGain)}
+                <span className="text-zinc-600 font-semibold mx-1.5">·</span>
+                {signedPct(stats.dayPct)} today
+              </p>
+            ) : (
+              <p className="type-micro text-zinc-600 mt-1.5">Today —</p>
             )}
+            {stats.asOfLabel && <p className="type-micro text-muted mt-1">{stats.asOfLabel}</p>}
           </div>
-          <span className={cn(
-            'text-xs font-bold px-2 py-0.5 rounded-full shrink-0',
-            isPos ? 'bg-emerald-500/15 text-emerald-400' : 'bg-red-500/15 text-red-400',
-          )}>
-            {isPos ? '+' : ''}{fmt(pnlPct)}%
-          </span>
+          <div className="text-right shrink-0">
+            <p className="type-micro text-zinc-500 mb-1">All-time</p>
+            <PctBadge pct={stats.pnlPct} positive={allTimePos} />
+          </div>
         </div>
 
         <div className="mt-2 flex items-center justify-between pt-2 border-t border-white/[0.06] gap-3">
           <div>
             <p className="type-micro text-zinc-500">Invested</p>
-            <p className="text-sm font-bold text-zinc-200 tabular-nums leading-tight">${fmt(totalInvested)}</p>
+            <p className="text-sm font-bold text-zinc-200 tabular-nums leading-tight">${fmt(stats.totalInvested)}</p>
           </div>
           <div className="text-right">
             <p className="type-micro text-zinc-500">Total P&L</p>
             <div className="flex items-center justify-end gap-1">
-              {isPos
+              {allTimePos
                 ? <TrendingUp className="w-3 h-3 text-emerald-400" />
                 : <TrendingDown className="w-3 h-3 text-red-400" />}
-              <p className={cn('text-sm font-bold tabular-nums leading-tight', isPos ? 'text-emerald-400' : 'text-red-400')}>
-                {isPos ? '+' : '-'}${fmt(Math.abs(pnl))}
+              <p className={cn('text-sm font-bold tabular-nums leading-tight', allTone.text)}>
+                {signedDollar(stats.pnl)}
               </p>
             </div>
           </div>
