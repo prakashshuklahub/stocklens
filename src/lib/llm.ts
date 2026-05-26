@@ -411,6 +411,9 @@ export async function generateSellReview(input: SellReviewInput): Promise<SellRe
 
 export interface SuggestionBlurbInput {
   ticker: string
+  company_name: string
+  company_blurb: string | null
+  top_headline: string | null
   analyst_consensus: 'strong buy' | 'buy' | 'mixed'
   mover_screen: 'day gainers' | 'most active'
   sector: string | null
@@ -424,17 +427,18 @@ export interface SuggestionBlurbOutput {
   model: string
 }
 
-const SUGGESTION_BLURB_SYSTEM = `You write one supplemental sentence under a stock suggestion card.
+const SUGGESTION_BLURB_SYSTEM = `You write a 2-sentence context blurb under a trending stock card.
 
-The card ALREADY shows: ticker, company name, price, today's % change, analyst buy ratio (X/Y), 30-day %, upside reference, and a headline. Do NOT repeat any of that.
+The card ALREADY shows: ticker, company name, sector badge, price, today's % change, analyst buy ratio, and a momentum headline. Never repeat those — no ticker, sector/industry labels, prices, percentages, "strong buy", "day gainer", "momentum", or analyst counts.
 
-Rules:
-- Exactly 1 sentence, max 22 words.
-- Add only NEW context: strong-buy vs buy quality (no X/Y counts), why it surfaced (day gainers / most active), sector angle, news tone, month trend, or 52-week-high caution.
-- Never include: company name, ticker symbol, dollar price, percentages, or analyst fractions like 29/33.
-- Use "strong buy" when analyst_consensus is strong buy.
-- Sound informative, not hype. Never say "buy now", "moon", "worth tracking", or "don't miss".
-- Plain text only. No markdown, no emojis.`
+Write EXACTLY 2 sentences (55–90 words total):
+1) WHAT THEY DO — concrete products, services, customers, or business model. Use the business summary when provided. If none, infer from the company name (e.g. Intuitive Machines → lunar landers and space missions; T1 Energy → energy/solar infrastructure). Never say "[sector] stock" or "[sector] company".
+2) WHY TODAY — what news or event is driving the move. Summarize the headline theme in plain English (analyst upgrade, earnings beat, contract win, etc.). Say what happened and why traders care.
+
+BAD: "This industrial stock is a strong buy and surfaced as a day gainer with a strong multi-week uptrend."
+GOOD: "T1 Energy develops solar and energy infrastructure for utility-scale projects. Shares are jumping after upbeat analyst coverage highlighted accelerating project pipeline growth."
+
+Plain text only. No markdown, quotes, or emojis.`
 
 async function callGeminiSuggestionBlurb(
   model: string,
@@ -454,8 +458,8 @@ async function callGeminiSuggestionBlurb(
           systemInstruction: { parts: [{ text: SUGGESTION_BLURB_SYSTEM }] },
           contents: [{ role: 'user', parts: [{ text: user }] }],
           generationConfig: {
-            temperature: 0.72,
-            maxOutputTokens: 80,
+            temperature: 0.45,
+            maxOutputTokens: 180,
             responseMimeType: 'application/json',
             responseSchema: {
               type: 'object',
@@ -488,13 +492,14 @@ export async function generateSuggestionBlurb(
   if (!isLLMEnabled()) return null
 
   const user = [
-    `Ticker (do not mention in output): ${input.ticker}`,
-    `Analyst consensus: ${input.analyst_consensus}`,
-    `Surfaced on: ${input.mover_screen}`,
-    input.sector ? `Sector: ${input.sector}` : '',
-    input.month_trend ? `Month trend: ${input.month_trend}` : '',
-    input.news_tone ? `News: ${input.news_tone}` : '',
-    input.near_52w_high ? 'Near 52-week high: yes' : '',
+    `Company: ${input.company_name}`,
+    input.company_blurb
+      ? `Business summary (sentence 1 — use this): ${input.company_blurb}`
+      : 'Business summary: unavailable — infer what they do from the company name for sentence 1.',
+    input.top_headline
+      ? `News catalyst (sentence 2 — summarize, do not quote): ${input.top_headline}`
+      : 'News catalyst: none specific — explain why heavy trading or a big daily move might be happening.',
+    'Do not mention sector badge, price change, analyst ratings, or mover list labels.',
   ]
     .filter(Boolean)
     .join('\n')

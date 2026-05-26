@@ -15,6 +15,7 @@ import {
   Eye,
 } from 'lucide-react'
 import AppNav from '@/components/AppNav'
+import FilterChipBar, { type FilterChipOption } from '@/components/FilterChipBar'
 import StockLogo from '@/components/StockLogo'
 import { HoldingCard } from '@/components/portfolio/HoldingCard'
 import { RefreshCountdown } from '@/components/LiveRefreshHeader'
@@ -35,7 +36,7 @@ import type {
   VestedRow,
 } from '@/types'
 
-type TierFilter = 'all' | 'attention' | 'soft' | 'profit' | 'quiet'
+type TierFilter = 'all' | 'attention' | 'soft' | 'profit'
 
 const signalsFetcher = async (url: string): Promise<PortfolioWithSignalsResponse> => {
   const res = await fetch(url, { cache: 'no-store' })
@@ -257,12 +258,11 @@ function holdingsSignalsSubtitle(
   return `${flagged} flagged · ${meta.quiet_count} look quiet`
 }
 
-const TIER_FILTERS: { id: TierFilter; label: string }[] = [
+const TIER_FILTERS: FilterChipOption<TierFilter>[] = [
   { id: 'all', label: 'All' },
-  { id: 'attention', label: 'Needs attention' },
-  { id: 'soft', label: 'Worth watching' },
-  { id: 'profit', label: 'Target reached' },
-  { id: 'quiet', label: 'Quiet' },
+  { id: 'attention', label: 'Needs attention', tone: 'attention' },
+  { id: 'soft', label: 'Worth watching', tone: 'soft' },
+  { id: 'profit', label: 'Target reached', tone: 'profit' },
 ]
 
 function filterHoldings(holdings: PortfolioHoldingWithSignal[], filter: TierFilter): PortfolioHoldingWithSignal[] {
@@ -312,23 +312,13 @@ function HoldingsSection({
       )}
 
       {!preview && holdings.length > 0 && (
-        <div className="flex gap-1.5 overflow-x-auto pb-2 mb-2 -mx-0.5 px-0.5 scrollbar-none">
-          {TIER_FILTERS.map((f) => (
-            <button
-              key={f.id}
-              type="button"
-              onClick={() => setTierFilter(f.id)}
-              className={cn(
-                'shrink-0 type-meta font-semibold px-3 py-1.5 rounded-full transition-colors [touch-action:manipulation]',
-                tierFilter === f.id
-                  ? 'bg-zinc-700 text-white'
-                  : 'bg-zinc-900 text-zinc-400 active:bg-zinc-800',
-              )}
-            >
-              {f.label}
-            </button>
-          ))}
-        </div>
+        <FilterChipBar
+          label="Filter"
+          value={tierFilter}
+          options={TIER_FILTERS}
+          onChange={setTierFilter}
+          ariaLabel="Filter holdings by signal"
+        />
       )}
 
       {loading ? (

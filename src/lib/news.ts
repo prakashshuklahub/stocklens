@@ -1,6 +1,14 @@
 // Shared news fetching + sentiment scoring.
 // Source: Google News RSS (free, no key needed).
-// Used by /api/news and /api/signals.
+// Used by /api/signals, /api/picks/headlines, and pick narratives.
+
+import {
+  companyNameTokens,
+  headlineRelevanceScore,
+  HEADLINE_RELEVANCE_MIN,
+  HEADLINE_RELEVANCE_RELAXED_MIN,
+  isGenericMarketRoundup,
+} from '@/lib/news-relevance'
 
 const BULLISH_WORDS = [
   'beat', 'beats', 'beating', 'topped', 'topped estimates', 'topped expectations',
@@ -101,9 +109,29 @@ export interface RawNewsItem {
   published_at: string
   sentiment_score: number
   sentiment: 'bullish' | 'bearish'
+  relevance_score?: number
 }
 
-function parseRSS(xml: string, ticker: string): RawNewsItem[] {
+export interface NewsFetchContext {
+  companyName?: string | null
+}
+
+/** Fetch enough candidates before slicing to HEADLINES_LIMIT in pick-headlines. */
+const HEADLINES_FETCH_TARGET = 8
+
+function resolveSentiment(title: string): { sentiment_score: number; sentiment: 'bullish' | 'bearish' } | null {
+  const sentiment_score = scoreSentiment(title)
+  if (sentiment_score > 0) return { sentiment_score, sentiment: 'bullish' }
+  if (sentiment_score < 0) return { sentiment_score, sentiment: 'bearish' }
+  return null
+}
+
+function parseRSS(
+  xml: string,
+  ticker: string,
+  context: NewsFetchContext = {},
+  minRelevance = HEADLINE_RELEVANCE_MIN,
+): RawNewsItem[] {
   const items: RawNewsItem[] = []
   const itemMatches = xml.matchAll(/<item>([\s\S]*?)<\/item>/g)
   const sevenDaysAgo = Date.now() - 7 * 24 * 60 * 60 * 1000
@@ -127,8 +155,12 @@ function parseRSS(xml: string, ticker: string): RawNewsItem[] {
     const pubDate = new Date(pub)
     if (isNaN(pubDate.getTime()) || pubDate.getTime() < sevenDaysAgo) continue
 
-    const score = scoreSentiment(title)
-    if (score === 0) continue
+    const relevance = headlineRelevanceScore(title, ticker, context.companyName)
+    if (relevance < minRelevance) continue
+    if (isGenericMarketRoundup(title) && relevance < HEADLINE_RELEVANCE_MIN) continue
+
+    const tone = resolveSentiment(title)
+    if (!tone) continue
 
     items.push({
       ticker,
@@ -136,25 +168,90 @@ function parseRSS(xml: string, ticker: string): RawNewsItem[] {
       url,
       source,
       published_at: pubDate.toISOString(),
-      sentiment_score: score,
-      sentiment: score > 0 ? 'bullish' : 'bearish',
+      sentiment_score: tone.sentiment_score,
+      sentiment: tone.sentiment,
+      relevance_score: relevance,
     })
   }
 
   return items
 }
 
-export async function fetchNewsForTicker(ticker: string): Promise<RawNewsItem[]> {
+function sortNewsItems(items: RawNewsItem[]): RawNewsItem[] {
+  return items.sort((a, b) => {
+    const rel = (b.relevance_score ?? 0) - (a.relevance_score ?? 0)
+    if (rel !== 0) return rel
+    const age = new Date(b.published_at).getTime() - new Date(a.published_at).getTime()
+    if (age !== 0) return age
+    return Math.abs(b.sentiment_score) - Math.abs(a.sentiment_score)
+  })
+}
+
+function dedupeNewsItems(items: RawNewsItem[]): RawNewsItem[] {
+  const seen = new Set<string>()
+  return items.filter((item) => {
+    const key = item.title.slice(0, 80).toLowerCase()
+    if (seen.has(key)) return false
+    seen.add(key)
+    return true
+  })
+}
+
+async function fetchNewsRss(ticker: string, query: string): Promise<string | null> {
+  const url = `https://news.google.com/rss/search?q=${encodeURIComponent(query)}&hl=en-US&gl=US&ceid=US:en&tbs=qdr:w`
+  const res = await fetch(url, {
+    headers: { 'User-Agent': 'Mozilla/5.0' },
+    next: { revalidate: 1800 },
+  })
+  if (!res.ok) return null
+  return res.text()
+}
+
+function buildNewsQueries(ticker: string, companyName?: string | null): string[] {
+  const sym = ticker.toUpperCase()
+  const tokens = companyNameTokens(companyName)
+  const queries = [`${sym} stock`]
+
+  if (tokens.length >= 2) {
+    queries.push(`${tokens[0]} ${tokens[1]} stock`)
+  } else if (tokens.length === 1) {
+    queries.push(`${tokens[0]} stock`)
+  }
+
+  return [...new Set(queries)]
+}
+
+export async function fetchNewsForTicker(
+  ticker: string,
+  context: NewsFetchContext = {},
+): Promise<RawNewsItem[]> {
   try {
-    const q = encodeURIComponent(`${ticker} stock`)
-    const url = `https://news.google.com/rss/search?q=${q}&hl=en-US&gl=US&ceid=US:en&tbs=qdr:w`
-    const res = await fetch(url, {
-      headers: { 'User-Agent': 'Mozilla/5.0' },
-      next: { revalidate: 1800 },
-    })
-    if (!res.ok) return []
-    const xml = await res.text()
-    return parseRSS(xml, ticker)
+    const sym = ticker.toUpperCase()
+    const queries = buildNewsQueries(sym, context.companyName)
+    const merged: RawNewsItem[] = []
+
+    for (const query of queries) {
+      const xml = await fetchNewsRss(sym, query)
+      if (!xml) continue
+      merged.push(...parseRSS(xml, sym, context, HEADLINE_RELEVANCE_MIN))
+      if (merged.length >= HEADLINES_FETCH_TARGET) break
+    }
+
+    let items = dedupeNewsItems(merged)
+
+    if (items.length < HEADLINES_FETCH_TARGET) {
+      for (const query of queries) {
+        const xml = await fetchNewsRss(sym, query)
+        if (!xml) continue
+        items = dedupeNewsItems([
+          ...items,
+          ...parseRSS(xml, sym, context, HEADLINE_RELEVANCE_RELAXED_MIN),
+        ])
+        if (items.length >= HEADLINES_FETCH_TARGET) break
+      }
+    }
+
+    return sortNewsItems(items)
   } catch {
     return []
   }

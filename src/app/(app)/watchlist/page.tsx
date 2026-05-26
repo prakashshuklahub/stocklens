@@ -1,12 +1,14 @@
 'use client'
 
 import { useCallback, useState, useEffect, useMemo } from 'react'
+import { useSearchParams } from 'next/navigation'
 import useSWR from 'swr'
 import { TrendingUp, ChevronDown, BarChart2 } from 'lucide-react'
 import WatchlistCard, { type WatchlistStock } from '@/components/watchlist/WatchlistCard'
 import StockSearchInput, { type StockResult } from '@/components/watchlist/StockSearchInput'
 import WatchlistSuggestions from '@/components/watchlist/WatchlistSuggestions'
 import AppNav from '@/components/AppNav'
+import FilterChipBar, { type FilterChipOption } from '@/components/FilterChipBar'
 import { useMarketOpen, useMarketSession } from '@/hooks/useMarketOpen'
 import { RefreshCountdown } from '@/components/LiveRefreshHeader'
 import { useLivePriceRefresh } from '@/hooks/useLivePriceRefresh'
@@ -17,7 +19,8 @@ import {
 } from '@/lib/target-price-display'
 import { vsSectorSortKey } from '@/lib/sector-relative-strength'
 import { cn } from '@/lib/utils'
-import type { FundamentalsBatchResponse, SectorBenchmark, SectorRelativeStrength, StockFundamentals } from '@/types'
+import { compareSignalsByScore } from '@/lib/signals-scoring'
+import type { FundamentalsBatchResponse, SectorBenchmark, SectorRelativeStrength, Signal, SignalsResponse, StockFundamentals } from '@/types'
 import type { MarketSession } from '@/lib/market-hours'
 
 // Deterministic sector order
@@ -36,7 +39,7 @@ const SECTOR_ORDER = [
   'Other',
 ]
 
-type WatchlistSort = 'sector' | 'day_change' | 'target_upside' | 'alphabetical' | 'vs_sector'
+type WatchlistSort = 'sector' | 'day_change' | 'target_upside' | 'alphabetical' | 'vs_sector' | 'bullish' | 'bearish'
 
 const SORT_STORAGE_KEY = 'watchlist-sort'
 
@@ -48,11 +51,42 @@ function loadSortMode(): WatchlistSort {
     saved === 'target_upside' ||
     saved === 'alphabetical' ||
     saved === 'sector' ||
-    saved === 'vs_sector'
+    saved === 'vs_sector' ||
+    saved === 'bullish' ||
+    saved === 'bearish'
   ) {
     return saved
   }
   return 'sector'
+}
+
+function sortBySignalBias(
+  stocks: WatchlistStock[],
+  signalsByTicker: Map<string, Signal>,
+  bias: 'bullish' | 'bearish',
+): WatchlistStock[] {
+  return stocks
+    .filter((s) => signalsByTicker.get(s.ticker.toUpperCase())?.bias === bias)
+    .sort((a, b) => {
+      const sa = signalsByTicker.get(a.ticker.toUpperCase())!
+      const sb = signalsByTicker.get(b.ticker.toUpperCase())!
+      return compareSignalsByScore(sa, sb)
+    })
+}
+
+function signalsByTickerFromResponse(data: SignalsResponse | undefined): Map<string, Signal> {
+  const map = new Map<string, Signal>()
+  if (!data) return map
+  for (const s of [...data.bullish, ...data.bearish, ...data.quiet]) {
+    map.set(s.ticker.toUpperCase(), s)
+  }
+  return map
+}
+
+const signalsFetcher = async (url: string): Promise<SignalsResponse> => {
+  const res = await fetch(url, { cache: 'no-store' })
+  if (!res.ok) throw new Error('Request failed')
+  return res.json()
 }
 
 function sortByDailyChange(stocks: WatchlistStock[]): WatchlistStock[] {
@@ -101,53 +135,24 @@ function WatchlistSortBar({
   value: WatchlistSort
   onChange: (mode: WatchlistSort) => void
 }) {
-  const options: { id: WatchlistSort; label: string }[] = [
+  const options: FilterChipOption<WatchlistSort>[] = [
     { id: 'sector', label: 'Sector' },
     { id: 'day_change', label: 'Day %' },
+    { id: 'bullish', label: 'Bullish', tone: 'bullish' },
+    { id: 'bearish', label: 'Bearish', tone: 'bearish' },
     { id: 'vs_sector', label: 'Vs sector' },
     { id: 'target_upside', label: 'Room to grow' },
     { id: 'alphabetical', label: 'A–Z' },
   ]
 
   return (
-    <div
-      className={cn(
-        '-mx-[var(--page-px)] px-[var(--page-px)] mt-2.5',
-        'overflow-x-auto overscroll-x-contain',
-        '[scrollbar-width:none] [-ms-overflow-style:none] [&::-webkit-scrollbar]:hidden',
-      )}
-      role="group"
-      aria-label="Sort watchlist"
-    >
-      <div className="flex items-center flex-nowrap w-max min-w-full pb-0.5">
-      {options.map((opt, i) => {
-        const active = value === opt.id
-        return (
-          <span key={opt.id} className="inline-flex items-center shrink-0">
-            {i > 0 && (
-              <span className="text-zinc-700 px-0.5 select-none text-xs" aria-hidden>
-                ·
-              </span>
-            )}
-            <button
-              type="button"
-              aria-pressed={active}
-              onClick={() => onChange(opt.id)}
-              className={cn(
-                'relative min-h-[44px] px-1 sm:px-1.5 whitespace-nowrap text-sm sm:text-sm transition-colors [touch-action:manipulation]',
-                'after:absolute after:left-1 after:right-1 sm:after:left-1.5 sm:after:right-1.5 after:bottom-2 after:h-0.5 after:rounded-full after:transition-opacity',
-                active
-                  ? 'text-zinc-300 font-semibold after:bg-zinc-500/80 after:opacity-100'
-                  : 'text-zinc-500 after:opacity-0 active:text-zinc-400',
-              )}
-            >
-              {opt.label}
-            </button>
-          </span>
-        )
-      })}
-      </div>
-    </div>
+    <FilterChipBar
+      label="Sort by"
+      value={value}
+      options={options}
+      onChange={onChange}
+      ariaLabel="Sort watchlist"
+    />
   )
 }
 
@@ -170,6 +175,8 @@ function StockList({
   sectorBenchmarks,
   regularChange1dByTicker,
   sectorBenchmarksRefreshing,
+  signalsByTicker,
+  signalsLoading,
 }: {
   stocks: WatchlistStock[]
   onRemove: (ticker: string) => void
@@ -180,6 +187,8 @@ function StockList({
   sectorBenchmarks: Record<string, SectorBenchmark>
   regularChange1dByTicker: Record<string, number>
   sectorBenchmarksRefreshing: boolean
+  signalsByTicker: Map<string, Signal>
+  signalsLoading: boolean
 }) {
   return (
     <ul className="space-y-3" aria-label="Watchlist stocks">
@@ -195,6 +204,8 @@ function StockList({
             sectorBenchmark={sectorBenchmarkForStock(stock, sectorBenchmarks)}
             regularChange1dPct={regularChange1dByTicker[stock.ticker] ?? null}
             sectorBenchmarksRefreshing={sectorBenchmarksRefreshing}
+            signal={signalsByTicker.get(stock.ticker.toUpperCase()) ?? null}
+            signalLoading={signalsLoading}
           />
         </li>
       ))}
@@ -234,6 +245,8 @@ function SectorGroup({
   sectorBenchmarks,
   regularChange1dByTicker,
   sectorBenchmarksRefreshing,
+  signalsByTicker,
+  signalsLoading,
   defaultOpen = true,
 }: {
   sector: string
@@ -246,6 +259,8 @@ function SectorGroup({
   sectorBenchmarks: Record<string, SectorBenchmark>
   regularChange1dByTicker: Record<string, number>
   sectorBenchmarksRefreshing: boolean
+  signalsByTicker: Map<string, Signal>
+  signalsLoading: boolean
   defaultOpen?: boolean
 }) {
   const [open, setOpen] = useState(defaultOpen)
@@ -292,6 +307,8 @@ function SectorGroup({
                 sectorBenchmark={sectorBenchmarkForStock(stock, sectorBenchmarks)}
                 regularChange1dPct={regularChange1dByTicker[stock.ticker] ?? null}
                 sectorBenchmarksRefreshing={sectorBenchmarksRefreshing}
+                signal={signalsByTicker.get(stock.ticker.toUpperCase()) ?? null}
+                signalLoading={signalsLoading}
               />
             </li>
           ))}
@@ -353,6 +370,8 @@ async function fundamentalsBatchFetcher(url: string): Promise<FundamentalsBatchR
 export default function WatchlistPage() {
   const marketOpen = useMarketOpen()
   const marketSession = useMarketSession()
+  const searchParams = useSearchParams()
+  const suggestionsRefreshToken = searchParams.get('refresh') === '1' ? 1 : 0
 
   const { data: stocks = [], isLoading, isValidating, mutate } = useSWR<WatchlistStock[]>(
     '/api/watchlist',
@@ -376,6 +395,21 @@ export default function WatchlistPage() {
     refreshInterval: (latest) => (latest?.refreshing ? 10_000 : 0),
   })
 
+  const signalsKey = stocks.length > 0 ? '/api/signals' : null
+  const {
+    data: signalsData,
+    isLoading: signalsLoading,
+    mutate: mutateSignals,
+  } = useSWR<SignalsResponse>(signalsKey, signalsFetcher, {
+    revalidateOnFocus: false,
+    refreshInterval: marketOpen ? 60_000 : 0,
+  })
+
+  const signalsByTicker = useMemo(
+    () => signalsByTickerFromResponse(signalsData),
+    [signalsData],
+  )
+
   const fundamentalsByTicker = fundamentalsBatch?.fundamentals ?? {}
   const vsSectorByTicker = fundamentalsBatch?.vs_sector ?? {}
   const sectorBenchmarks = fundamentalsBatch?.sector_benchmarks ?? {}
@@ -387,6 +421,8 @@ export default function WatchlistPage() {
     sectorBenchmarks,
     regularChange1dByTicker,
     sectorBenchmarksRefreshing,
+    signalsByTicker,
+    signalsLoading,
   }
   const [adding, setAdding] = useState(false)
   const [error, setError] = useState('')
@@ -395,7 +431,8 @@ export default function WatchlistPage() {
   const refreshPrices = useCallback(() => {
     void mutate()
     void mutateFundamentals()
-  }, [mutate, mutateFundamentals])
+    void mutateSignals()
+  }, [mutate, mutateFundamentals, mutateSignals])
 
   const refreshing = isValidating && !isLoading
   const countdown = useLivePriceRefresh(
@@ -413,6 +450,13 @@ export default function WatchlistPage() {
   }, [sortMode])
 
   const layout = useMemo(() => {
+    if (sortMode === 'bullish' || sortMode === 'bearish') {
+      return {
+        type: 'flat' as const,
+        stocks: sortBySignalBias(stocks, signalsByTicker, sortMode),
+        emptyFilter: sortMode,
+      }
+    }
     if (sortMode === 'sector') {
       return { type: 'sector' as const, groups: groupBySector(stocks) }
     }
@@ -432,7 +476,7 @@ export default function WatchlistPage() {
       }
     }
     return { type: 'flat' as const, stocks: sortAlphabetical(stocks) }
-  }, [stocks, sortMode, fundamentalsByTicker, vsSectorByTicker])
+  }, [stocks, sortMode, fundamentalsByTicker, vsSectorByTicker, signalsByTicker])
 
   async function handleAdd(result: StockResult) {
     setError('')
@@ -453,6 +497,7 @@ export default function WatchlistPage() {
         return
       }
       await mutate()
+      void mutateSignals()
     } finally {
       setAdding(false)
     }
@@ -477,6 +522,7 @@ export default function WatchlistPage() {
       { revalidate: false },
     )
     void mutateFundamentals()
+    void mutateSignals()
   }
 
   const ownedTickers = useMemo(
@@ -526,6 +572,7 @@ export default function WatchlistPage() {
             onAdd={handleAdd}
             adding={adding}
             marketOpen={marketOpen}
+            refreshToken={suggestionsRefreshToken}
           />
 
           {/* Content */}
@@ -552,7 +599,7 @@ export default function WatchlistPage() {
                 </div>
               )}
 
-              <div className="mb-3">
+              <div className="mb-1">
                 <WatchlistSortBar value={sortMode} onChange={setSortMode} />
               </div>
 
@@ -570,6 +617,10 @@ export default function WatchlistPage() {
                     defaultOpen
                   />
                 ))
+              ) : layout.stocks.length === 0 && (sortMode === 'bullish' || sortMode === 'bearish') ? (
+                <p className="text-sm text-muted text-center py-12">
+                  No {sortMode} signals in your watchlist right now.
+                </p>
               ) : (
                 <StockList
                   stocks={layout.stocks}

@@ -1,16 +1,9 @@
+'use client'
+
 import { ExternalLink } from 'lucide-react'
+import ClientTimeAgo from '@/components/ClientTimeAgo'
 import { cn } from '@/lib/utils'
 import type { SignalNewsItem } from '@/types'
-
-function timeAgo(iso: string): string {
-  const s = Math.floor((Date.now() - new Date(iso).getTime()) / 1000)
-  if (s < 60) return `${s}s ago`
-  const m = Math.floor(s / 60)
-  if (m < 60) return `${m}m ago`
-  const h = Math.floor(m / 60)
-  if (h < 24) return `${h}h ago`
-  return `${Math.floor(h / 24)}d ago`
-}
 
 export default function NewsRow({ item }: { item: SignalNewsItem }) {
   return (
@@ -33,7 +26,7 @@ export default function NewsRow({ item }: { item: SignalNewsItem }) {
           <div className="flex items-center gap-2 mt-1">
             <span className="type-meta text-zinc-500">{item.source}</span>
             <span className="type-meta text-muted">·</span>
-            <span className="type-meta text-muted">{timeAgo(item.published_at)}</span>
+            <ClientTimeAgo iso={item.published_at} className="type-meta text-muted" />
           </div>
         </div>
         <ExternalLink className="w-3.5 h-3.5 text-muted shrink-0 mt-0.5" aria-hidden="true" />

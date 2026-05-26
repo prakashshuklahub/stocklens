@@ -18,7 +18,7 @@ export async function GET() {
 
   const tickers = watchlist.map((w) => w.ticker)
   const topTickers = tickers.slice(0, 20)
-  const allNews = (await Promise.all(topTickers.map(fetchNewsForTicker))).flat()
+  const allNews = (await Promise.all(topTickers.map((t) => fetchNewsForTicker(t)))).flat()
 
   const seen = new Set<string>()
   const unique = allNews.filter((item) => {

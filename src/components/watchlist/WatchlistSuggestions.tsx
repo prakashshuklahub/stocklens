@@ -147,7 +147,7 @@ export default function WatchlistSuggestions({
               </div>
 
               {s.reason && (
-                <p className="text-sm text-zinc-400 mt-2.5 leading-relaxed line-clamp-2">
+                <p className="text-sm text-zinc-400 mt-2.5 leading-relaxed [text-wrap:pretty]">
                   {s.reason}
                   {s.narrative_source === 'llm' && (
                     <span className="text-muted"> · AI</span>

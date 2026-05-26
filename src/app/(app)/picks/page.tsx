@@ -3,6 +3,7 @@
 import useSWR from 'swr'
 import { useCallback, useMemo, useState, type ReactNode } from 'react'
 import AppNav from '@/components/AppNav'
+import PicksLoadingState from '@/components/picks/PicksLoadingState'
 import AnalystMiniGrid from '@/components/AnalystMiniGrid'
 import RecentMovesPanel, { recentMovesCollapsedPreview } from '@/components/RecentMovesPanel'
 import VsSectorPanel, { vsSectorCollapsedPreview } from '@/components/VsSectorPanel'
@@ -643,22 +644,7 @@ function PicksRankedList({
   const sectorBenchmarks = data.sector_benchmarks ?? {}
 
   if (loading) {
-    return (
-      <section aria-label="Stock picks" aria-busy="true">
-        <p className="type-caption text-muted mb-3 px-1">
-          Top 10 ranked by score across your watchlist, portfolio, and today&apos;s strong movers.
-        </p>
-        <div className="space-y-3">
-          {[1, 2, 3].map((n) => (
-            <div
-              key={n}
-              className="pick-card h-[260px] animate-pulse opacity-60"
-              style={{ animationDelay: `${n * 80}ms` }}
-            />
-          ))}
-        </div>
-      </section>
-    )
+    return <PicksLoadingState />
   }
 
   if (!data.picks.length) {
@@ -799,11 +785,16 @@ export default function PicksPage() {
             <h1 className="text-2xl sm:text-xl font-bold text-white tracking-tight">Picks</h1>
             <Sparkles className="w-4 h-4 text-blue-400 shrink-0" aria-hidden="true" />
           </div>
-          {displayData?.scores_at && !isLoading && (
+          {isLoading && !displayData ? (
+            <p className="type-meta text-amber-400/80 shrink-0 flex items-center gap-1.5">
+              <span className="inline-block w-1.5 h-1.5 rounded-full bg-amber-400 animate-pulse" aria-hidden="true" />
+              Scoring…
+            </p>
+          ) : displayData?.scores_at ? (
             <p className="type-meta text-zinc-500 tabular-nums shrink-0">
               Updated {timeAgo(displayData.scores_at)}
             </p>
-          )}
+          ) : null}
         </div>
 
         {error ? (

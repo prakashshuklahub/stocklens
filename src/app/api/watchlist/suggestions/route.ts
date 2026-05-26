@@ -26,8 +26,10 @@ import {
 } from '@/lib/watchlist-suggestions-scoring'
 import {
   isRedundantBlurb,
+  loadSuggestionBlurbExtras,
   mechanicalReason,
   suggestionBlurbContext,
+  type SuggestionBlurbExtras,
 } from '@/lib/watchlist-suggestions'
 import { createServerClient } from '@/lib/supabase'
 import { NextRequest, NextResponse } from 'next/server'
@@ -95,27 +97,40 @@ async function enrichWithBlurbs(
   const reasons = { ...existing }
   const llmEnabled = isLLMEnabled()
   const targets = ranked.slice(0, LLM_BLURB_COUNT)
+  const extrasByTicker = await loadSuggestionBlurbExtras(targets)
 
   for (let i = 0; i < targets.length; i++) {
     const s = targets[i]
     const key = s.ticker.toUpperCase()
+    const extras = extrasByTicker.get(key)
+    const mech = mechanicalReason(s, extras)
     const cached = reasons[key] ?? reasons[s.ticker]
     const staleBlurb =
       cached?.reason &&
-      (isRedundantBlurb(s, cached.reason) ||
-        (cached.narrative_source === 'mechanical' && cached.reason !== mechanicalReason(s)))
+      (isRedundantBlurb(s, cached.reason, extras) ||
+        (cached.narrative_source === 'mechanical' && cached.reason !== mech))
     if (cached?.narrative_source === 'llm' && !staleBlurb) continue
 
     if (llmEnabled) {
       if (i > 0) await new Promise((r) => setTimeout(r, LLM_BLURB_DELAY_MS))
-      const blurb = await generateSuggestionBlurb(suggestionBlurbContext(s))
-      if (blurb && !isRedundantBlurb(s, blurb.reason)) {
+      const blurb = await generateSuggestionBlurb(suggestionBlurbContext(s, extras))
+      if (blurb && !isRedundantBlurb(s, blurb.reason, extras)) {
         reasons[key] = { reason: blurb.reason, narrative_source: 'llm' }
         continue
       }
     }
 
-    reasons[key] = { reason: mechanicalReason(s), narrative_source: 'mechanical' }
+    reasons[key] = { reason: mech, narrative_source: 'mechanical' }
+  }
+
+  for (const s of ranked.slice(LLM_BLURB_COUNT)) {
+    const key = s.ticker.toUpperCase()
+    const extras = extrasByTicker.get(key)
+    if (reasons[key]?.reason && !isRedundantBlurb(s, reasons[key].reason, extras)) continue
+    reasons[key] = {
+      reason: mechanicalReason(s, extrasByTicker.get(key)),
+      narrative_source: 'mechanical',
+    }
   }
 
   return reasons
@@ -207,23 +222,65 @@ async function buildGlobalRanked(
   return payload
 }
 
-function resolveNarrative(s: ScoredSuggestion, cached: CachedReason | undefined): CachedReason {
+function resolveNarrative(
+  s: ScoredSuggestion,
+  cached: CachedReason | undefined,
+  extras?: SuggestionBlurbExtras,
+): CachedReason {
+  const mech = mechanicalReason(s, extras)
   const resolved = cached ?? undefined
   const stale =
     resolved?.reason &&
-    (isRedundantBlurb(s, resolved.reason) ||
-      (resolved.narrative_source === 'mechanical' && resolved.reason !== mechanicalReason(s)))
+    (isRedundantBlurb(s, resolved.reason, extras) ||
+      (resolved.narrative_source === 'mechanical' && resolved.reason !== mech))
   if (!resolved || stale) {
-    return { reason: mechanicalReason(s), narrative_source: 'mechanical' }
+    return { reason: mech, narrative_source: 'mechanical' }
   }
   if (resolved.narrative_source === 'mechanical') {
-    return { reason: mechanicalReason(s), narrative_source: 'mechanical' }
+    return { reason: mech, narrative_source: 'mechanical' }
   }
   return resolved
 }
 
-function toSuggestion(s: ScoredSuggestion, cached: CachedReason | undefined): WatchlistSuggestion {
-  const narrative = resolveNarrative(s, cached)
+/** Regenerate weak cached blurbs with Gemini on read (visible cards only). */
+async function ensureQualityBlurbs(
+  top: ScoredSuggestion[],
+  reasons: Record<string, CachedReason>,
+  extrasByTicker: Map<string, SuggestionBlurbExtras>,
+): Promise<Record<string, CachedReason>> {
+  const out = { ...reasons }
+  if (!isLLMEnabled() || !top.length) return out
+
+  for (let i = 0; i < top.length; i++) {
+    const s = top[i]
+    const key = s.ticker.toUpperCase()
+    const extras = extrasByTicker.get(key)
+    const cached = out[key] ?? out[s.ticker]
+    const preview = resolveNarrative(s, cached, extras)
+    if (!isRedundantBlurb(s, preview.reason, extras)) continue
+
+    if (i > 0) await new Promise((r) => setTimeout(r, LLM_BLURB_DELAY_MS))
+    const blurb = await generateSuggestionBlurb(suggestionBlurbContext(s, extras))
+    if (blurb && !isRedundantBlurb(s, blurb.reason, extras)) {
+      out[key] = { reason: blurb.reason, narrative_source: 'llm' }
+      continue
+    }
+
+    const mech = mechanicalReason(s, extras)
+    if (!isRedundantBlurb(s, mech, extras)) {
+      out[key] = { reason: mech, narrative_source: 'mechanical' }
+    }
+  }
+
+  return out
+}
+
+function toSuggestion(
+  s: ScoredSuggestion,
+  cached: CachedReason | undefined,
+  extras?: SuggestionBlurbExtras,
+): WatchlistSuggestion {
+  const narrative = resolveNarrative(s, cached, extras)
   return {
     ticker: s.ticker,
     company_name: s.company_name,
@@ -303,10 +360,16 @@ export async function GET(req: NextRequest) {
   // Only per-user filter: exclude tickers already on this user's watchlist.
   const notOnWatchlist = cached.ranked.filter((s) => !owned.has(s.ticker.toUpperCase()))
   const top = notOnWatchlist.slice(0, USER_TRENDING_LIMIT)
+  const extrasByTicker = await loadSuggestionBlurbExtras(top)
+  const reasons = await ensureQualityBlurbs(top, cached.reasons, extrasByTicker)
 
   let suggestions: WatchlistSuggestion[] = top.map((s) => {
     const key = s.ticker.toUpperCase()
-    return toSuggestion(s, cached!.reasons[key] ?? cached!.reasons[s.ticker])
+    return toSuggestion(
+      s,
+      reasons[key] ?? reasons[s.ticker],
+      extrasByTicker.get(key),
+    )
   })
 
   suggestions = await overlayLivePrices(suggestions)

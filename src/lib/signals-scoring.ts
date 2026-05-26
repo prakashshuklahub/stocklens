@@ -12,14 +12,21 @@
  */
 
 import type { Signal, SignalNewsItem, SignalReason, StockFundamentals } from '@/types'
+import { formatUpsidePct } from '@/lib/target-price-display'
 
 // ── Tunable constants (review changes here) ───────────────────────────────────
 
-/** |score| must exceed this to land in bullish/bearish bucket. */
-export const BIAS_THRESHOLD = 20
+/** Score above this → bullish bucket. Slightly higher bar than bearish. */
+export const BULLISH_BIAS_THRESHOLD = 18
+
+/** Score below this → bearish bucket. Easier than bullish so weak names surface. */
+export const BEARISH_BIAS_THRESHOLD = -14
+
+/** @deprecated Use signalBiasFromScore() thresholds instead. */
+export const BIAS_THRESHOLD = BULLISH_BIAS_THRESHOLD
 
 /** |score| must exceed this to be included in the movers news pool. */
-export const NEWS_MOVER_THRESHOLD = 20
+export const NEWS_MOVER_THRESHOLD = 16
 
 /** Max tickers to fetch Google News for in each pool (movers + quiet). */
 export const NEWS_TARGET_LIMIT = 30
@@ -35,21 +42,23 @@ export const FRESH_NEWS_TIERS = [
 ] as const
 
 export const SCORING_RULES = {
-  dayMove: { minAbsPct: 5, points: 25 },
+  dayMove: { minAbsPctBullish: 5, minAbsPctBearish: 3, points: 25 },
   week52High: { maxPctFromHigh: 3, points: 20 },
   week52Low: { maxPctFromLow: 3, points: 20 },
   targetUpside: { minPct: 20, points: 15 },
-  targetDownside: { maxPct: -10, points: 15 },
+  targetDownside: { maxPct: -8, points: 15 },
   analyst: {
     minCount: 5,
-    strongBuyRatio: 0.6,
+    strongBuyRatio: 0.65,
     buyPoints: 10,
-    /** Symmetric-ish to strongBuyRatio — needs 40%+ sell ratings to fire bearish. */
-    strongSellRatio: 0.4,
+    strongSellRatio: 0.32,
     sellPoints: 15,
+    weakBuyRatio: 0.38,
+    weakBuyPoints: 8,
   },
-  trend30d: { minAbsPct: 15, points: 10 },
-  finnhubSentiment: { bullishMin: 0.5, bearishMax: -0.3, points: 15 },
+  trend30d: { minAbsPctBullish: 15, minAbsPctBearish: 10, points: 10 },
+  trend7d: { minAbsPctBearish: 5, points: 8 },
+  finnhubSentiment: { bullishMin: 0.55, bearishMax: -0.2, points: 15 },
 } as const
 
 // ── Types ─────────────────────────────────────────────────────────────────────
@@ -108,15 +117,20 @@ export function computeBaseScore(input: SignalScoreInput): BaseScoreResult {
   const d1 = input.change_1d_pct
   const rules = SCORING_RULES
 
-  if (d1 != null && Math.abs(d1) > rules.dayMove.minAbsPct) {
-    const points = rules.dayMove.points
-    const label = dayMoveLabel(d1, input.extendedSession)
-    if (d1 > 0) {
-      score += points
-      reasons.push({ label, tone: 'bullish' })
-    } else {
-      score -= points
-      reasons.push({ label, tone: 'bearish' })
+  if (d1 != null) {
+    const abs = Math.abs(d1)
+    const bullishMove = d1 > 0 && abs > rules.dayMove.minAbsPctBullish
+    const bearishMove = d1 < 0 && abs > rules.dayMove.minAbsPctBearish
+    if (bullishMove || bearishMove) {
+      const points = rules.dayMove.points
+      const label = dayMoveLabel(d1, input.extendedSession)
+      if (d1 > 0) {
+        score += points
+        reasons.push({ label, tone: 'bullish' })
+      } else {
+        score -= points
+        reasons.push({ label, tone: 'bearish' })
+      }
     }
   }
 
@@ -137,10 +151,10 @@ export function computeBaseScore(input: SignalScoreInput): BaseScoreResult {
     const upside = ((refTarget - price) / price) * 100
     if (upside > rules.targetUpside.minPct) {
       score += rules.targetUpside.points
-      reasons.push({ label: `+${upside.toFixed(0)}% to target`, tone: 'bullish' })
+      reasons.push({ label: `Room to grow ${formatUpsidePct(upside)}`, tone: 'bullish' })
     } else if (upside < rules.targetDownside.maxPct) {
       score -= rules.targetDownside.points
-      reasons.push({ label: `${upside.toFixed(0)}% to target`, tone: 'bearish' })
+      reasons.push({ label: `Room to grow ${formatUpsidePct(upside)}`, tone: 'bearish' })
     }
   }
 
@@ -157,14 +171,25 @@ export function computeBaseScore(input: SignalScoreInput): BaseScoreResult {
     } else if (sellRatio > rules.analyst.strongSellRatio) {
       score -= rules.analyst.sellPoints
       reasons.push({ label: 'Sell consensus', tone: 'bearish' })
+    } else if (buyRatio < rules.analyst.weakBuyRatio) {
+      score -= rules.analyst.weakBuyPoints
+      reasons.push({ label: 'Weak buy support', tone: 'bearish' })
     }
   }
 
-  if (f?.change_30d_pct != null && Math.abs(f.change_30d_pct) > rules.trend30d.minAbsPct) {
-    if (f.change_30d_pct > 0) {
+  if (f?.change_7d_pct != null && f.change_7d_pct < -rules.trend7d.minAbsPctBearish) {
+    score -= rules.trend7d.points
+    reasons.push({ label: `${f.change_7d_pct.toFixed(0)}% in 7d`, tone: 'bearish' })
+  }
+
+  if (f?.change_30d_pct != null) {
+    const abs30 = Math.abs(f.change_30d_pct)
+    const bullishTrend = f.change_30d_pct > 0 && abs30 > rules.trend30d.minAbsPctBullish
+    const bearishTrend = f.change_30d_pct < 0 && abs30 > rules.trend30d.minAbsPctBearish
+    if (bullishTrend) {
       score += rules.trend30d.points
       reasons.push({ label: `+${f.change_30d_pct.toFixed(0)}% in 30d`, tone: 'bullish' })
-    } else {
+    } else if (bearishTrend) {
       score -= rules.trend30d.points
       reasons.push({ label: `${f.change_30d_pct.toFixed(0)}% in 30d`, tone: 'bearish' })
     }
@@ -249,9 +274,16 @@ export function applyFreshNewsBonus(
 }
 
 export function signalBiasFromScore(finalScore: number): Signal['bias'] {
-  if (finalScore > BIAS_THRESHOLD) return 'bullish'
-  if (finalScore < -BIAS_THRESHOLD) return 'bearish'
+  if (finalScore > BULLISH_BIAS_THRESHOLD) return 'bullish'
+  if (finalScore < BEARISH_BIAS_THRESHOLD) return 'bearish'
   return 'quiet'
+}
+
+/** Deterministic sort for bullish/bearish watchlist filters. */
+export function compareSignalsByScore(a: Pick<Signal, 'score' | 'ticker'>, b: Pick<Signal, 'score' | 'ticker'>): number {
+  const scoreDiff = Math.abs(b.score) - Math.abs(a.score)
+  if (scoreDiff !== 0) return scoreDiff
+  return a.ticker.localeCompare(b.ticker)
 }
 
 interface SignalsResponseBuckets {
@@ -263,7 +295,7 @@ interface SignalsResponseBuckets {
 // ── Stage 4: bucket sorting ───────────────────────────────────────────────────
 
 export function sortSignalsIntoBuckets(signals: Signal[]): Pick<SignalsResponseBuckets, 'bullish' | 'bearish' | 'quiet'> {
-  const byAbsScore = (a: Signal, b: Signal) => Math.abs(b.score) - Math.abs(a.score)
+  const byAbsScore = (a: Signal, b: Signal) => compareSignalsByScore(a, b)
   const byAbsDayMove = (a: Signal, b: Signal) =>
     Math.abs(b.change_1d_pct ?? 0) - Math.abs(a.change_1d_pct ?? 0) ||
     a.ticker.localeCompare(b.ticker)

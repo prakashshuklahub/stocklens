@@ -1,9 +1,9 @@
 /**
  * Picks scoring — edit this file to change how buy ideas are ranked.
  *
- * Watchlist + portfolio: scorePick().
- * Strong movers (not owned): scoreDiscoveryPick().
- * API merges all qualifiers and returns the top 10 by score via rankAllPicks().
+ * All candidates (watchlist, portfolio, strong movers) use the same scoreUnifiedPick().
+ * Source tags are metadata only — they do not change the score formula.
+ * Strong movers must pass discovery pool gates before scoring; then rank via rankAllPicks().
  */
 
 import type { MarketSession } from '@/lib/market-hours'
@@ -480,11 +480,59 @@ function buildScoredPick(input: PickScoreInput, options: BuildPickOptions): Scor
 }
 
 export function scorePick(input: PickScoreInput): ScoredPick | null {
-  return buildScoredPick(input, {
+  return scoreUnifiedPick(input)
+}
+
+function applyDayMoveAndTrendBonuses(
+  pick: ScoredPick,
+  f: StockFundamentals,
+  change_1d_pct: number | null,
+): ScoredPick {
+  const dRules = PICKS_DISCOVERY_RULES
+  let score = pick.score
+  let factors = pick.factors
+
+  if (change_1d_pct != null && change_1d_pct >= dRules.minDayMovePct) {
+    const dayTier = dRules.dayMoveTiers.find((t) => change_1d_pct >= t.min)
+    if (dayTier) {
+      score += dayTier.points
+      factors = [
+        {
+          label: 'Big move today',
+          value: `${change_1d_pct >= 0 ? '+' : ''}${change_1d_pct.toFixed(1)}% today`,
+          tone: 'positive',
+        },
+        ...factors.filter((x) => x.label !== 'Big move today'),
+      ]
+    }
+  }
+
+  const d30 = f.change_30d_pct
+  if (d30 != null && d30 > dRules.monthTrend.strongMin) {
+    score += dRules.monthTrend.strongPoints
+    factors = [
+      ...factors,
+      { label: 'Up over 30 days', value: `+${d30.toFixed(0)}%`, tone: 'positive' },
+    ]
+  } else if (d30 != null && d30 > dRules.monthTrend.moderateMin) {
+    score += dRules.monthTrend.moderatePoints
+  }
+
+  return { ...pick, score, factors }
+}
+
+/** Same formula for every source — watchlist membership only changes the source badge. */
+export function scoreUnifiedPick(input: PickScoreInput): ScoredPick | null {
+  const base = buildScoredPick(input, {
     minScore: PICKS_MIN_SCORE,
     allowMomentumTarget: true,
     momentumUpsidePointsCap: PICKS_MOMENTUM_TARGET_MAX_UPSIDE_POINTS,
   })
+  if (!base) return null
+
+  const withBonuses = applyDayMoveAndTrendBonuses(base, input.fundamentals, input.change_1d_pct)
+  if (withBonuses.score < PICKS_MIN_SCORE) return null
+  return withBonuses
 }
 
 export function scoreDiscoveryPick(input: DiscoveryPickInput): ScoredPick | null {
@@ -501,9 +549,6 @@ export function scoreDiscoveryPick(input: DiscoveryPickInput): ScoredPick | null
   if (total < dRules.minAnalysts) return null
   if (buy / total < dRules.minBuyRatio) return null
 
-  const dayTier = dRules.dayMoveTiers.find((t) => change_1d_pct >= t.min)
-  if (!dayTier) return null
-
   const candidate: PickCandidate = {
     ticker: mover.ticker,
     company_name: mover.company_name,
@@ -511,45 +556,18 @@ export function scoreDiscoveryPick(input: DiscoveryPickInput): ScoredPick | null
     source: 'discovery',
   }
 
-  const base = buildScoredPick(
-    {
-      candidate,
-      current_price,
-      change_1d_pct,
-      change_1d_session: input.change_1d_session,
-      fundamentals: f,
-      ownership: null,
-      benchmark,
-    },
-    {
-      minScore: PICKS_DISCOVERY_MIN_SCORE,
-      allowMomentumTarget: false,
-      momentumUpsidePointsCap: PICKS_MOMENTUM_TARGET_MAX_UPSIDE_POINTS,
-    },
-  )
-  if (!base) return null
+  const pick = scoreUnifiedPick({
+    candidate,
+    current_price,
+    change_1d_pct,
+    change_1d_session: input.change_1d_session,
+    fundamentals: f,
+    ownership: null,
+    benchmark,
+  })
 
-  let score = base.score + dayTier.points
-  const factors: PickFactor[] = [
-    {
-      label: 'Big move today',
-      value: `+${change_1d_pct.toFixed(1)}% today`,
-      tone: 'positive',
-    },
-    ...base.factors.filter((x) => x.label !== 'Big move today'),
-  ]
-
-  const d30 = f.change_30d_pct
-  if (d30 != null && d30 > dRules.monthTrend.strongMin) {
-    score += dRules.monthTrend.strongPoints
-    factors.push({ label: 'Up over 30 days', value: `+${d30.toFixed(0)}%`, tone: 'positive' })
-  } else if (d30 != null && d30 > dRules.monthTrend.moderateMin) {
-    score += dRules.monthTrend.moderatePoints
-  }
-
-  if (score < PICKS_DISCOVERY_MIN_SCORE) return null
-
-  return { ...base, score, factors, source: 'discovery' }
+  if (!pick) return null
+  return { ...pick, source: 'discovery' }
 }
 
 const CONFIDENCE_RANK: Record<Pick['confidence'], number> = {

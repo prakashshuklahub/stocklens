@@ -1,7 +1,5 @@
-// /api/signals — produces a ranked, scored list of "important" stocks from the
-// user's watchlist. Used by the News (Signals) page.
-//
-// Scoring rules live in @/lib/signals-scoring — edit that file to tune logic.
+// /api/signals — scored watchlist signals + headlines for watchlist cards.
+// Scoring rules: @/lib/signals-scoring
 
 import { auth, getSessionUserId } from '@/lib/auth'
 import { fetchRegularSnapshotsForTickers } from '@/lib/live-prices'
@@ -9,18 +7,16 @@ import { isPriceRefreshActive } from '@/lib/market-hours'
 import { fetchStockFundamentals, mapPool } from '@/lib/fundamentals-fetch'
 import { ensureLogosForTickers } from '@/lib/stock-logo-cache'
 import { createServerClient } from '@/lib/supabase'
-import { fetchNewsForTicker } from '@/lib/news'
+import { fetchHeadlinesForTickers } from '@/lib/pick-headlines'
 import {
   applyFreshNewsBonus,
   computeBaseScore,
-  pickNewsTargetTickers,
   signalBiasFromScore,
   sortSignalsIntoBuckets,
 } from '@/lib/signals-scoring'
 import { NextResponse } from 'next/server'
 import type {
   Signal,
-  SignalNewsItem,
   SignalsResponse,
   StockFundamentals,
   WatchlistStock,
@@ -45,14 +41,18 @@ export async function GET() {
 
   const stocks = watchlist as WatchlistStock[]
   const tickers = stocks.map((s) => s.ticker)
+  const companyNameByTicker = Object.fromEntries(
+    stocks.map((s) => [s.ticker.toUpperCase(), s.company_name]),
+  )
 
   void ensureLogosForTickers(supabase, tickers).catch(() => {})
 
   const priceLive = isPriceRefreshActive()
 
-  const [priceByTicker, fundamentalsResult] = await Promise.all([
+  const [priceByTicker, fundamentalsResult, newsByTicker] = await Promise.all([
     fetchRegularSnapshotsForTickers(tickers),
     supabase.from('stock_fundamentals').select('*').in('ticker', tickers),
+    fetchHeadlinesForTickers(tickers, { companyNameByTicker }),
   ])
 
   const fundamentalsByTicker = new Map<string, StockFundamentals>()
@@ -62,7 +62,7 @@ export async function GET() {
 
   const tableMissing = Boolean(
     fundamentalsResult.error?.message?.includes('PGRST205') ||
-    fundamentalsResult.error?.message?.includes('stock_fundamentals')
+    fundamentalsResult.error?.message?.includes('stock_fundamentals'),
   )
   if (tableMissing || fundamentalsByTicker.size < tickers.length * 0.5) {
     const missing = tickers.filter((t) => !fundamentalsByTicker.has(t))
@@ -93,35 +93,8 @@ export async function GET() {
     }
   })
 
-  const newsTargets = pickNewsTargetTickers(
-    scored.map((x) => ({
-      ticker: x.stock.ticker,
-      score: x.score,
-      change_1d_pct: x.change_1d_pct,
-    })),
-  )
-
-  const newsByTicker = new Map<string, SignalNewsItem[]>()
-  if (newsTargets.length) {
-    const newsResults = await Promise.all(newsTargets.map(fetchNewsForTicker))
-    newsTargets.forEach((ticker, i) => {
-      const items = newsResults[i] ?? []
-      items.sort((a, b) => new Date(b.published_at).getTime() - new Date(a.published_at).getTime())
-      newsByTicker.set(
-        ticker,
-        items.slice(0, 5).map((n) => ({
-          title: n.title,
-          url: n.url,
-          source: n.source,
-          published_at: n.published_at,
-          sentiment: n.sentiment,
-        })),
-      )
-    })
-  }
-
   const signals: Signal[] = scored.map((x) => {
-    const news = newsByTicker.get(x.stock.ticker) ?? []
+    const news = newsByTicker.get(x.stock.ticker.toUpperCase()) ?? []
     const finalScore = applyFreshNewsBonus(x.score, news)
     return {
       ticker: x.stock.ticker,

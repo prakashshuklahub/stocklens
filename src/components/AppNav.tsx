@@ -1,14 +1,13 @@
 'use client'
 
 import { signOut, useSession } from 'next-auth/react'
-import { TrendingUp, LogOut, BarChart2, Zap, Sparkles, PieChart } from 'lucide-react'
+import { TrendingUp, LogOut, BarChart2, Sparkles, PieChart } from 'lucide-react'
 import Link from 'next/link'
 import { usePathname } from 'next/navigation'
 import { cn } from '@/lib/utils'
 
 const BOTTOM_TABS = [
   { href: '/watchlist', label: 'Watchlist', Icon: BarChart2 },
-  { href: '/news',      label: 'Signals',   Icon: Zap },
   { href: '/picks',     label: 'Picks',     Icon: Sparkles },
   { href: '/portfolio', label: 'Portfolio', Icon: PieChart },
 ]

@@ -10,6 +10,8 @@ import VsSectorPanel, { vsSectorCollapsedPreview } from '@/components/VsSectorPa
 import SessionPriceBadge from '@/components/SessionPriceBadge'
 import CollapseChevron from '@/components/CollapseChevron'
 import Week52Range from '@/components/Week52Range'
+import SignalReasonChips from '@/components/signals/SignalReasonChips'
+import SignalHeadlinesAccordion from '@/components/signals/SignalHeadlinesAccordion'
 import {
   computeTargetUpsidePct,
   formatDisplayTargetPrice,
@@ -22,7 +24,7 @@ import { priceBadgeSession, type MarketSession } from '@/lib/market-hours'
 import { vsSectorBadgeLabel } from '@/lib/sector-relative-strength'
 import { isBenchmarkableSector, normalizeWatchlistSector } from '@/lib/sector-relative-strength-scoring'
 import { cn } from '@/lib/utils'
-import type { SectorBenchmark, SectorRelativeStrength, StockFundamentals, StockSnapshot } from '@/types'
+import type { SectorBenchmark, SectorRelativeStrength, Signal, SignalReason, StockFundamentals, StockSnapshot } from '@/types'
 
 const SECTOR_COLORS: Record<string, { bg: string; text: string }> = {
   Technology:               { bg: 'bg-blue-500/10',    text: 'text-blue-400' },
@@ -60,6 +62,8 @@ interface Props {
   /** Regular-session 1d % — never extended hours (from batch API). */
   regularChange1dPct?: number | null
   sectorBenchmarksRefreshing?: boolean
+  signal?: Signal | null
+  signalLoading?: boolean
 }
 
 const fetcher = (url: string) => fetch(url).then((r) => r.json())
@@ -145,6 +149,86 @@ function TargetPrice({
   )
 }
 
+function signalCovers7d(reasons: SignalReason[]): boolean {
+  return reasons.some((r) => /\b7d\b|in 7d/i.test(r.label))
+}
+
+function signalCovers30d(reasons: SignalReason[]): boolean {
+  return reasons.some((r) => /\b30d\b|in 30d/i.test(r.label))
+}
+
+function signalCoversTarget(reasons: SignalReason[]): boolean {
+  return reasons.some((r) => /target|room to grow/i.test(r.label))
+}
+
+function SupplementalSummaryChips({
+  fundamentals,
+  currentPrice,
+  signalReasons,
+}: {
+  fundamentals: StockFundamentals | null | undefined
+  currentPrice: number | null
+  signalReasons: SignalReason[]
+}) {
+  if (!fundamentals) return null
+
+  const showTarget = hasDisplayTargetPrice(
+    fundamentals.target_price,
+    fundamentals.target_source ?? null,
+  )
+  const upside = showTarget
+    ? formatDisplayUpsidePct(
+        fundamentals.target_price,
+        currentPrice,
+        fundamentals.target_source ?? null,
+      )
+    : null
+
+  const chipClass = 'text-sm sm:text-xs font-semibold px-2 py-0.5 rounded-full whitespace-nowrap'
+
+  return (
+    <>
+      {fundamentals.change_7d_pct != null && !signalCovers7d(signalReasons) && (
+        <span
+          className={cn(
+            chipClass,
+            'tabular-nums',
+            fundamentals.change_7d_pct >= 0
+              ? 'bg-emerald-500/10 text-emerald-400'
+              : 'bg-red-500/10 text-red-400',
+          )}
+        >
+          7d {fmtPct(fundamentals.change_7d_pct)}
+        </span>
+      )}
+      {fundamentals.change_30d_pct != null && !signalCovers30d(signalReasons) && (
+        <span
+          className={cn(
+            chipClass,
+            'tabular-nums',
+            fundamentals.change_30d_pct >= 0
+              ? 'bg-emerald-500/10 text-emerald-400'
+              : 'bg-red-500/10 text-red-400',
+          )}
+        >
+          30d {fmtPct(fundamentals.change_30d_pct)}
+        </span>
+      )}
+      {!signalCoversTarget(signalReasons) && (
+        showTarget && upside && upside !== '—' ? (
+          <span className={cn(chipClass, 'tabular-nums bg-zinc-800 text-zinc-300')}>
+            Room to grow {upside}
+          </span>
+        ) : (
+          <span className={cn(chipClass, 'font-medium bg-zinc-800/80 text-zinc-500')}>
+            No target
+          </span>
+        )
+      )}
+    </>
+  )
+}
+
 function CollapsedSummary({
   fundamentals,
   currentPrice,
@@ -187,10 +271,11 @@ function CollapsedSummary({
   }
 
   const badgeLabel = vsSectorBadgeLabel(vsSector?.badge ?? null)
+  const showSectorBadge = Boolean(badgeLabel && vsSector?.sector !== 'Other')
 
   return (
     <div className={cn('flex flex-wrap items-center gap-1.5 pb-1', inset ? 'px-0' : 'px-5 pb-1')}>
-      {badgeLabel && vsSector?.sector !== 'Other' && (
+      {showSectorBadge && (
         <span
           className={cn(
             'text-sm sm:text-xs font-semibold px-2 py-0.5 rounded-full',
@@ -379,6 +464,8 @@ export default function WatchlistCard({
   sectorBenchmark,
   regularChange1dPct,
   sectorBenchmarksRefreshing,
+  signal,
+  signalLoading,
 }: Props) {
   const cardId = `watchlist-${stock.ticker}`
 
@@ -436,6 +523,8 @@ export default function WatchlistCard({
   const sectorLabel = vsSector?.sector ?? normalizeWatchlistSector(stock.sector)
   const hasSector = sectorLabel !== 'Other' && isBenchmarkableSector(sectorLabel)
   const sectorPreviewText = sectorPreview(vsSector, stock.sector)
+  const sectorBadgeLabel = vsSectorBadgeLabel(vsSector?.badge ?? null)
+  const showSectorBadge = Boolean(sectorBadgeLabel && vsSector?.sector !== 'Other')
   const change1d = regularChange1dPct ?? snap?.change_1d_pct ?? null
   const analystTotal =
     (fundamentals?.analyst_buy ?? 0) +
@@ -522,15 +611,45 @@ export default function WatchlistCard({
           </div>
         </div>
 
-        <div className="mt-2">
-          <CollapsedSummary
-            fundamentals={fundamentals}
-            currentPrice={currentPrice}
-            loading={fundamentalsPending}
-            vsSector={vsSector}
-            sectorBenchmarksRefreshing={sectorBenchmarksRefreshing}
-            inset
-          />
+        <div className="mt-2 flex flex-wrap items-center gap-1.5">
+          {signalLoading && !signal ? (
+            <>
+              <div className="h-6 w-20 rounded-full bg-zinc-800 animate-pulse" aria-hidden="true" />
+              <div className="h-6 w-24 rounded-full bg-zinc-800 animate-pulse" aria-hidden="true" />
+              <div className="h-6 w-16 rounded-full bg-zinc-800 animate-pulse" aria-hidden="true" />
+            </>
+          ) : signal?.reasons.length ? (
+            <>
+              {showSectorBadge && (
+                <span
+                  className={cn(
+                    'text-sm sm:text-xs font-semibold px-2 py-0.5 rounded-full whitespace-nowrap',
+                    vsSector?.badge === 'leader' && 'bg-emerald-500/10 text-emerald-400',
+                    vsSector?.badge === 'lagger' && 'bg-red-500/10 text-red-400',
+                    vsSector?.badge === 'inline' && 'bg-zinc-800 text-zinc-400',
+                    sectorBenchmarksRefreshing && 'opacity-70',
+                  )}
+                >
+                  {sectorBenchmarksRefreshing ? 'Updating sector…' : sectorBadgeLabel}
+                </span>
+              )}
+              <SupplementalSummaryChips
+                fundamentals={fundamentals}
+                currentPrice={currentPrice}
+                signalReasons={signal.reasons}
+              />
+              <SignalReasonChips reasons={signal.reasons} className="contents" />
+            </>
+          ) : (
+            <CollapsedSummary
+              fundamentals={fundamentals}
+              currentPrice={currentPrice}
+              loading={fundamentalsPending}
+              vsSector={vsSector}
+              sectorBenchmarksRefreshing={sectorBenchmarksRefreshing}
+              inset
+            />
+          )}
         </div>
       </div>
 
@@ -612,6 +731,15 @@ export default function WatchlistCard({
           loading={fundamentalsPending}
         />
       </WatchlistAccordionRow>
+
+      {(signal || signalLoading) && (
+        <SignalHeadlinesAccordion
+          cardId={cardId}
+          news={signal?.news ?? []}
+          bias={signal?.bias}
+          inset
+        />
+      )}
 
       {/* ── 3-dot menu ── */}
       <div ref={menuRef} className="absolute right-1 top-2">

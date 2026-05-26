@@ -15,6 +15,7 @@ import {
   rankPicks,
   scoreDiscoveryPick,
   scorePick,
+  scoreUnifiedPick,
 } from '@/lib/picks-scoring'
 
 export type { DiscoveryPickInput, PickCandidate, PickScoreInput, ScoredPick } from '@/lib/picks-scoring'
@@ -29,6 +30,7 @@ export {
   rankPicks,
   scoreDiscoveryPick,
   scorePick,
+  scoreUnifiedPick,
 }
 
 /** Plain-language labels for the Picks UI. */
