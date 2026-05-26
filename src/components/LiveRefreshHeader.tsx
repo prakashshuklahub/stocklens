@@ -5,7 +5,7 @@ import { liveRefreshSubtitle, type MarketSession } from '@/lib/market-hours'
 import { cn } from '@/lib/utils'
 
 /** Live session price polling — pre/post use PRICE_REFRESH_MS without a bar. */
-export const LIVE_REFRESH_SEC = 15
+export const LIVE_REFRESH_SEC = 13
 
 export function RefreshCountdown({
   seconds,

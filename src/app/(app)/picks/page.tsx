@@ -6,7 +6,7 @@ import AppNav from '@/components/AppNav'
 import AnalystMiniGrid from '@/components/AnalystMiniGrid'
 import RecentMovesPanel, { recentMovesCollapsedPreview } from '@/components/RecentMovesPanel'
 import VsSectorPanel, { vsSectorCollapsedPreview } from '@/components/VsSectorPanel'
-import { useMarketOpen, useMarketSession } from '@/hooks/useMarketOpen'
+import { useMarketSession } from '@/hooks/useMarketOpen'
 import CollapseChevron from '@/components/CollapseChevron'
 import {
   Sparkles,
@@ -799,37 +799,16 @@ function PicksTabbedLists({
 }
 
 export default function PicksPage() {
-  const marketOpen = useMarketOpen()
   const marketSession = useMarketSession()
-  const { data, isLoading, isValidating, mutate } = useSWR<PicksResponse>('/api/picks', fetcher, {
+  const { data, isLoading, mutate } = useSWR<PicksResponse>('/api/picks', fetcher, {
     revalidateOnFocus: false,
     dedupingInterval: 0,
   })
-  const [manualRefresh, setManualRefresh] = useState(false)
-
-  const handleRefresh = useCallback(async () => {
-    if (!marketOpen) return
-    setManualRefresh(true)
-    try {
-      const fresh = await fetch('/api/picks?refresh=1', { cache: 'no-store' })
-      if (!fresh.ok) throw new Error('refresh failed')
-      const json = (await fresh.json()) as PicksResponse
-      scoresFingerprintRef.current = allPicksFingerprint(json)
-      stableScoresAtRef.current = json.scores_at
-      await mutate(json, { revalidate: false })
-    } catch {
-      await mutate(undefined, { revalidate: true })
-    } finally {
-      setManualRefresh(false)
-    }
-  }, [marketOpen, mutate])
-
-  const refreshing = manualRefresh || (isValidating && !isLoading)
   const hasAnyPicks = Boolean(data?.your_picks.length || data?.discovery_picks.length)
 
   return (
     <div className="min-h-screen bg-zinc-950">
-      <AppNav onRefresh={handleRefresh} refreshing={refreshing} marketOpen={marketOpen} showRefresh />
+      <AppNav />
 
       <main id="main" className="page-shell !pt-3">
         <div className="mb-3 flex items-center justify-between gap-3">

@@ -286,7 +286,7 @@ function HoldingsSection({
 
       {!preview && !loading && holdings.length > 0 && (
         <p className="type-micro text-muted mt-2 leading-snug px-0.5">
-          Tap ↻ to rescan fundamentals during market hours.
+          Live prices update every 13s during market hours.
         </p>
       )}
     </section>
@@ -365,7 +365,6 @@ export default function PortfolioPage() {
   const [saving, setSaving] = useState(false)
   const [savedAt, setSavedAt] = useState<string | null>(null)
   const [showPreview, setShowPreview] = useState(false)
-  const [manualRefresh, setManualRefresh] = useState(false)
 
   const marketOpen = useMarketOpen()
   const marketSession = useMarketSession()
@@ -389,24 +388,7 @@ export default function PortfolioPage() {
   const holdings = portfolioData?.holdings ?? []
   const signalsMeta = portfolioData?.meta ?? null
 
-  const refreshing = manualRefresh || (isValidating && !isLoading)
-
-  const handleRefresh = useCallback(async () => {
-    if (!marketOpen) return
-    setManualRefresh(true)
-    try {
-      await mutate(
-        async () => {
-          const res = await fetch('/api/portfolio?include=signals&refresh=1', { cache: 'no-store' })
-          if (!res.ok) throw new Error('Refresh failed')
-          return res.json() as Promise<PortfolioWithSignalsResponse>
-        },
-        { revalidate: false },
-      )
-    } finally {
-      setManualRefresh(false)
-    }
-  }, [marketOpen, mutate])
+  const refreshing = isValidating && !isLoading
 
   const refreshPrices = useCallback(async () => {
     const res = await fetch('/api/portfolio', { cache: 'no-store' })
@@ -500,12 +482,7 @@ export default function PortfolioPage() {
       )}
 
       <div className="min-h-screen bg-zinc-950">
-        <AppNav
-          onRefresh={handleRefresh}
-          refreshing={refreshing}
-          marketOpen={marketOpen}
-          showRefresh={holdings.length > 0}
-        />
+        <AppNav />
 
         <main id="main" className="page-shell !pt-3">
           <div className="flex items-center justify-between gap-3 mb-4">

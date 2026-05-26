@@ -1,7 +1,7 @@
 'use client'
 
 import useSWR from 'swr'
-import { useCallback, useEffect, useState, type ReactNode } from 'react'
+import { useEffect, useState, type ReactNode } from 'react'
 import AppNav from '@/components/AppNav'
 import CollapseChevron from '@/components/CollapseChevron'
 import StockLogo from '@/components/StockLogo'
@@ -320,14 +320,9 @@ function QuietSection({ quiet }: { quiet: Signal[] }) {
 
 export default function NewsPage() {
   const marketOpen = useMarketOpen()
-  const { data, isLoading, isValidating, mutate } = useSWR<SignalsResponse>('/api/signals', fetcher, {
+  const { data, isLoading, mutate } = useSWR<SignalsResponse>('/api/signals', fetcher, {
     revalidateOnFocus: false,
   })
-  const refreshing = isValidating && !isLoading
-
-  const handleRefresh = useCallback(() => {
-    void mutate()
-  }, [mutate])
 
   useEffect(() => {
     if (!marketOpen) return
@@ -341,7 +336,7 @@ export default function NewsPage() {
 
   return (
     <div className="min-h-screen bg-zinc-950">
-      <AppNav onRefresh={handleRefresh} refreshing={refreshing} marketOpen={marketOpen} showRefresh />
+      <AppNav />
 
       <main id="main" className="page-shell !pt-3">
         <div className="mb-3 flex items-center justify-between gap-3">

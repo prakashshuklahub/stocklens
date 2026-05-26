@@ -1,7 +1,7 @@
 'use client'
 
 import { signOut, useSession } from 'next-auth/react'
-import { TrendingUp, LogOut, RefreshCw, BarChart2, Zap, Sparkles, PieChart } from 'lucide-react'
+import { TrendingUp, LogOut, BarChart2, Zap, Sparkles, PieChart } from 'lucide-react'
 import Link from 'next/link'
 import { usePathname } from 'next/navigation'
 import { cn } from '@/lib/utils'
@@ -13,23 +13,7 @@ const BOTTOM_TABS = [
   { href: '/portfolio', label: 'Portfolio', Icon: PieChart },
 ]
 
-interface AppNavProps {
-  onRefresh?: () => void
-  refreshing?: boolean
-  showRefresh?: boolean
-  /** When false, manual refresh is disabled (overnight / weekend). */
-  priceRefreshActive?: boolean
-}
-
-export default function AppNav({
-  onRefresh,
-  refreshing,
-  showRefresh,
-  priceRefreshActive = true,
-  /** @deprecated use priceRefreshActive */
-  marketOpen,
-}: AppNavProps & { marketOpen?: boolean }) {
-  const canRefresh = priceRefreshActive ?? marketOpen ?? true
+export default function AppNav() {
   const { data: session } = useSession()
   const pathname = usePathname()
   const user = session?.user
@@ -52,23 +36,6 @@ export default function AppNav({
           </div>
 
           <div className="flex items-center gap-0.5">
-            {showRefresh && (
-              <button
-                onClick={onRefresh}
-                disabled={refreshing || !canRefresh}
-                aria-label={canRefresh ? 'Refresh data' : 'Refresh unavailable — market closed'}
-                title={canRefresh ? undefined : 'Refreshes during pre-market, regular, and after-hours (4 AM–8 PM ET)'}
-                className={cn(
-                  'w-11 h-11 flex items-center justify-center rounded-xl transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-zinc-500 [touch-action:manipulation]',
-                  canRefresh
-                    ? 'text-zinc-500 hover:text-zinc-300 active:bg-zinc-800/80'
-                    : 'text-zinc-700 cursor-not-allowed opacity-50',
-                )}
-              >
-                <RefreshCw className={cn('w-5 h-5', refreshing && 'animate-spin')} aria-hidden="true" />
-              </button>
-            )}
-
             {user?.image ? (
               <img
                 src={user.image}

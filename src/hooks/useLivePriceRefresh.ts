@@ -6,7 +6,7 @@ import { useBackgroundPriceRefresh } from '@/hooks/useBackgroundPriceRefresh'
 import { useEffect, useState } from 'react'
 
 /**
- * Regular session: 15s countdown bar + fetch every 15s.
+ * Regular session: 13s countdown bar + fetch every 13s.
  * Pre/post: silent 2 min background refresh, no bar.
  */
 export function useLivePriceRefresh(

@@ -8,6 +8,7 @@ import StockSearchInput, { type StockResult } from '@/components/watchlist/Stock
 import WatchlistSuggestions from '@/components/watchlist/WatchlistSuggestions'
 import AppNav from '@/components/AppNav'
 import { useMarketOpen, useMarketSession } from '@/hooks/useMarketOpen'
+import { RefreshCountdown } from '@/components/LiveRefreshHeader'
 import { useLivePriceRefresh } from '@/hooks/useLivePriceRefresh'
 import { createMarketAwareFetcher } from '@/lib/swr-market-fetcher'
 import {
@@ -389,17 +390,15 @@ export default function WatchlistPage() {
   }
   const [adding, setAdding] = useState(false)
   const [error, setError] = useState('')
-  const [suggestionsRefresh, setSuggestionsRefresh] = useState(0)
   const [sortMode, setSortMode] = useState<WatchlistSort>('sector')
-
-  const refreshing = isValidating && !isLoading
 
   const refreshPrices = useCallback(() => {
     void mutate()
     void mutateFundamentals()
   }, [mutate, mutateFundamentals])
 
-  useLivePriceRefresh(
+  const refreshing = isValidating && !isLoading
+  const countdown = useLivePriceRefresh(
     marketSession,
     marketOpen && stocks.length > 0,
     refreshPrices,
@@ -495,15 +494,7 @@ export default function WatchlistPage() {
       </a>
 
       <div className="min-h-screen bg-zinc-950">
-        <AppNav
-          onRefresh={() => {
-            refreshPrices()
-            if (marketOpen) setSuggestionsRefresh((n) => n + 1)
-          }}
-          refreshing={refreshing}
-          marketOpen={marketOpen}
-          showRefresh
-        />
+        <AppNav />
 
         {/* Main — bottom padding clears fixed bottom tab bar + safe area */}
         <main id="main" className="page-shell !pt-3">
@@ -534,7 +525,6 @@ export default function WatchlistPage() {
             ownedTickers={ownedTickers}
             onAdd={handleAdd}
             adding={adding}
-            refreshToken={suggestionsRefresh}
             marketOpen={marketOpen}
           />
 
@@ -555,6 +545,13 @@ export default function WatchlistPage() {
             </div>
           ) : (
             <div>
+              {marketSession === 'regular' && (
+                <div className="flex items-center justify-between gap-2 mb-2 px-0.5">
+                  <p className="type-caption text-zinc-500">Live prices</p>
+                  <RefreshCountdown seconds={countdown} refreshing={refreshing} />
+                </div>
+              )}
+
               <div className="mb-3">
                 <WatchlistSortBar value={sortMode} onChange={setSortMode} />
               </div>
