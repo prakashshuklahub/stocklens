@@ -1,8 +1,9 @@
 /**
  * Picks scoring — edit this file to change how buy ideas are ranked.
  *
- * Section 1 (your_picks): watchlist + portfolio union.
- * Section 2 (discovery_picks): market movers not on your list — see scoreDiscoveryPick().
+ * Watchlist + portfolio: scorePick().
+ * Strong movers (not owned): scoreDiscoveryPick().
+ * API merges all qualifiers and returns the top 10 by score via rankAllPicks().
  */
 
 import type { MarketSession } from '@/lib/market-hours'
@@ -24,8 +25,10 @@ import type {
 
 export const PICKS_MIN_ANALYSTS = 3
 export const PICKS_MIN_SCORE = 20
-export const PICKS_MAX_RESULTS = 5
-export const PICKS_DISCOVERY_MAX = 5
+/** Top picks returned across watchlist, portfolio, and strong movers combined. */
+export const PICKS_MAX_RESULTS = 10
+/** @deprecated Pre-rank cap removed — all discovery qualifiers compete in rankAllPicks(). */
+export const PICKS_DISCOVERY_MAX = 10
 export const PICKS_DISCOVERY_MIN_SCORE = 18
 /** Cap upside-tier points when target is momentum-derived (avoids circular inflation). */
 export const PICKS_MOMENTUM_TARGET_MAX_UPSIDE_POINTS = 20
@@ -555,17 +558,25 @@ const CONFIDENCE_RANK: Record<Pick['confidence'], number> = {
   low: 1,
 }
 
-export function rankPicks(scored: ScoredPick[], limit = PICKS_MAX_RESULTS): ScoredPick[] {
+/** Rank 1 = highest score across all sources (watchlist, portfolio, strong movers). */
+export function rankAllPicks(scored: ScoredPick[], limit = PICKS_MAX_RESULTS): ScoredPick[] {
   return [...scored]
     .sort((a, b) => {
       if (b.score !== a.score) return b.score - a.score
-      return CONFIDENCE_RANK[b.confidence] - CONFIDENCE_RANK[a.confidence]
+      const conf = CONFIDENCE_RANK[b.confidence] - CONFIDENCE_RANK[a.confidence]
+      if (conf !== 0) return conf
+      if (b.upside_pct !== a.upside_pct) return b.upside_pct - a.upside_pct
+      return (b.change_1d_pct ?? 0) - (a.change_1d_pct ?? 0)
     })
     .slice(0, limit)
 }
 
+/** @deprecated Use rankAllPicks() */
+export function rankPicks(scored: ScoredPick[], limit = PICKS_MAX_RESULTS): ScoredPick[] {
+  return rankAllPicks(scored, limit)
+}
+
+/** @deprecated Use rankAllPicks() */
 export function rankDiscoveryPicks(scored: ScoredPick[], limit = PICKS_DISCOVERY_MAX): ScoredPick[] {
-  return [...scored]
-    .sort((a, b) => b.score - a.score || (b.change_1d_pct ?? 0) - (a.change_1d_pct ?? 0))
-    .slice(0, limit)
+  return rankAllPicks(scored, limit)
 }

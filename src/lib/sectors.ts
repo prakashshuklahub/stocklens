@@ -49,8 +49,10 @@ export function normalizeSector(raw: string | null | undefined): WatchlistSector
   return 'Other'
 }
 
-/** Resolve sector from Yahoo when screener/search did not provide one. */
-export async function fetchYahooSector(ticker: string): Promise<WatchlistSector | null> {
+const SECTOR_CACHE_TTL_MS = 24 * 60 * 60 * 1000
+const sectorCache = new Map<string, { sector: WatchlistSector | null; at: number }>()
+
+async function fetchYahooSectorUncached(ticker: string): Promise<WatchlistSector | null> {
   const sym = ticker.toUpperCase()
 
   try {
@@ -88,6 +90,17 @@ export async function fetchYahooSector(ticker: string): Promise<WatchlistSector 
   }
 
   return null
+}
+
+/** Resolve sector from Yahoo when screener/search did not provide one (24h in-memory cache). */
+export async function fetchYahooSector(ticker: string): Promise<WatchlistSector | null> {
+  const key = ticker.toUpperCase()
+  const hit = sectorCache.get(key)
+  if (hit && Date.now() - hit.at < SECTOR_CACHE_TTL_MS) return hit.sector
+
+  const sector = await fetchYahooSectorUncached(key)
+  sectorCache.set(key, { sector, at: Date.now() })
+  return sector
 }
 
 export async function resolveSectorForTicker(

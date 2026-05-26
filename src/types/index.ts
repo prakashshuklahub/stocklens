@@ -260,12 +260,12 @@ export interface Pick {
 }
 
 export interface PicksResponse {
-  /** Top buy ideas from your watchlist and portfolio (max 5). */
-  your_picks: Pick[]
-  /** Strong market movers you are not tracking yet (max 5). */
-  discovery_picks: Pick[]
-  /** @deprecated use your_picks + discovery_picks */
+  /** Top 10 buy ideas ranked across watchlist, portfolio, and strong movers. */
   picks: Pick[]
+  /** @deprecated subset of picks — non-discovery sources only */
+  your_picks: Pick[]
+  /** @deprecated subset of picks — discovery source only */
+  discovery_picks: Pick[]
   /** When prices, scores, and ranking were last computed */
   scores_at: string
   /** When pick summaries were last generated (3h narrative cache) */
@@ -273,6 +273,22 @@ export interface PicksResponse {
   llm_enabled: boolean
   /** Sector ETF benchmarks for client-side d1 vs-sector rows. */
   sector_benchmarks: Record<string, SectorBenchmark>
+}
+
+export interface PickNarrativePayload {
+  thesis: string
+  main_risk: string
+  narrative_source: 'llm' | 'mechanical'
+  narrative_generated_at: string
+}
+
+export interface PickNarrativesResponse {
+  narratives: Record<string, PickNarrativePayload>
+  llm_enabled: boolean
+}
+
+export interface PickHeadlinesResponse {
+  headlines: Record<string, SignalNewsItem[]>
 }
 
 export interface VestedRow {

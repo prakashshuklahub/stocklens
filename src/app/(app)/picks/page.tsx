@@ -1,7 +1,7 @@
 'use client'
 
 import useSWR from 'swr'
-import { useCallback, useEffect, useRef, useState, type ReactNode } from 'react'
+import { useCallback, useMemo, useState, type ReactNode } from 'react'
 import AppNav from '@/components/AppNav'
 import AnalystMiniGrid from '@/components/AnalystMiniGrid'
 import RecentMovesPanel, { recentMovesCollapsedPreview } from '@/components/RecentMovesPanel'
@@ -16,7 +16,6 @@ import {
   Briefcase,
   Eye,
   BarChart3,
-  Compass,
   Target,
   Activity,
   Newspaper,
@@ -33,30 +32,57 @@ import {
   TARGET_UNAVAILABLE,
 } from '@/lib/target-price-display'
 import { cn } from '@/lib/utils'
-import type { Pick, PicksResponse, PickFactor, PickSourceTag, SectorBenchmark } from '@/types'
+import type {
+  Pick,
+  PickHeadlinesResponse,
+  PickNarrativePayload,
+  PickNarrativesResponse,
+  PicksResponse,
+  PickFactor,
+  PickSourceTag,
+  SectorBenchmark,
+  SignalNewsItem,
+} from '@/types'
 import type { MarketSession } from '@/lib/market-hours'
 
 function allPicksFingerprint(data: PicksResponse): string {
-  const rows = [...data.your_picks, ...data.discovery_picks]
-  return rows.map((p) => `${p.ticker}:${p.score}:${p.current_price}:${p.upside_pct}`).join('|')
+  return data.picks.map((p) => `${p.ticker}:${p.score}:${p.current_price}:${p.upside_pct}`).join('|')
 }
 
 const scoresFingerprintRef = { current: '' }
 const stableScoresAtRef = { current: null as string | null }
 
-const fetcher = async (u: string): Promise<PicksResponse> => {
-  const res = await fetch(u, { cache: 'no-store' })
+async function fetchJson<T>(url: string): Promise<T> {
+  const res = await fetch(url, { cache: 'no-store' })
   if (!res.ok) throw new Error('Failed to load picks')
-  const fresh = (await res.json()) as PicksResponse
-  const fp = allPicksFingerprint(fresh)
-  if (fp && fp === scoresFingerprintRef.current && stableScoresAtRef.current) {
-    fresh.scores_at = stableScoresAtRef.current
-  } else {
-    scoresFingerprintRef.current = fp
-    stableScoresAtRef.current = fresh.scores_at
-  }
-  return fresh
+  return res.json() as Promise<T>
 }
+
+function mergePickNarratives(picks: Pick[], narratives: Record<string, PickNarrativePayload>): Pick[] {
+  if (!Object.keys(narratives).length) return picks
+  return picks.map((pick) => {
+    const narrative = narratives[pick.ticker.toUpperCase()]
+    if (!narrative) return pick
+    return {
+      ...pick,
+      thesis: narrative.thesis,
+      main_risk: narrative.main_risk,
+      narrative_source: narrative.narrative_source,
+      narrative_generated_at: narrative.narrative_generated_at,
+    }
+  })
+}
+
+function mergePickHeadlines(picks: Pick[], headlines: Record<string, SignalNewsItem[]>): Pick[] {
+  if (!Object.keys(headlines).length) return picks
+  return picks.map((pick) => ({
+    ...pick,
+    news: headlines[pick.ticker.toUpperCase()] ?? pick.news ?? [],
+  }))
+}
+
+const narrativesFetcher = (url: string) => fetchJson<PickNarrativesResponse>(url)
+const headlinesFetcher = (url: string) => fetchJson<PickHeadlinesResponse>(url)
 
 function fmt(n: number, digits = 2): string {
   return n.toLocaleString('en-US', { minimumFractionDigits: digits, maximumFractionDigits: digits })
@@ -83,7 +109,7 @@ function sourceLabel(source: PickSourceTag): string {
     case 'watchlist': return 'Watchlist'
     case 'portfolio': return 'Portfolio'
     case 'both': return 'Watchlist · Portfolio'
-    case 'discovery': return 'New idea'
+    case 'discovery': return 'Strong mover'
   }
 }
 
@@ -578,7 +604,7 @@ function PickCard({
             {pick.narrative_source === 'llm'
               ? 'Summary written by AI · prices and ratings from public data'
               : llmEnabled
-                ? 'Signal-based summary · AI unavailable right now'
+                ? 'Signal-based summary · AI summary loading…'
                 : 'Summary from the signals above · prices and ratings from public data'}
             {pick.narrative_generated_at && (
               <span className="block mt-0.5">
@@ -593,199 +619,70 @@ function PickCard({
   )
 }
 
-type PicksTab = 'discovery' | 'your'
-
-const PICKS_TAB_STORAGE_KEY = 'picks_active_tab'
-
-const PICKS_TABS: {
-  id: PicksTab
-  label: string
-  icon: typeof Compass
-  subtitle?: string
-}[] = [
-  {
-    id: 'discovery',
-    label: 'Strong movers',
-    icon: Compass,
-    subtitle: 'Quality-filtered ideas not on your watchlist or portfolio',
-  },
-  {
-    id: 'your',
-    label: 'Your stocks',
-    icon: Eye,
-  },
-]
-
-function PicksTabBar({
-  activeTab,
-  onSelect,
-  counts,
-}: {
-  activeTab: PicksTab
-  onSelect: (tab: PicksTab) => void
-  counts: Record<PicksTab, number>
-}) {
-  return (
-    <div role="tablist" aria-label="Pick lists" className="flex border-b border-white/[0.06] mb-3">
-      {PICKS_TABS.map(({ id, label, icon: Icon }) => {
-        const isActive = activeTab === id
-        const count = counts[id]
-        return (
-          <button
-            key={id}
-            type="button"
-            role="tab"
-            id={`picks-tab-${id}`}
-            aria-selected={isActive}
-            aria-controls={`picks-panel-${id}`}
-            onClick={() => onSelect(id)}
-            className={cn(
-              'flex-1 flex items-center justify-center gap-1.5 min-h-[48px] px-2 pb-2.5 pt-1',
-              'border-b-2 transition-colors [touch-action:manipulation]',
-              'focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-blue-500/40',
-              isActive
-                ? 'border-blue-400 text-white'
-                : 'border-transparent text-zinc-500 active:text-zinc-300',
-            )}
-          >
-            <Icon
-              className={cn('w-3.5 h-3.5 shrink-0', isActive ? 'text-blue-400' : 'text-zinc-600')}
-              aria-hidden="true"
-            />
-            <span className="text-xs font-bold truncate">{label}</span>
-            <span
-              className={cn(
-                'shrink-0 type-micro tabular-nums font-semibold px-1.5 py-px rounded-full',
-                isActive ? 'bg-blue-500/15 text-blue-300' : 'bg-zinc-800/80 text-zinc-500',
-              )}
-            >
-              {count}
-            </span>
-          </button>
-        )
-      })}
-    </div>
-  )
-}
-
-function PickListPanel({
-  panelId,
-  labelledBy,
-  picks,
-  emptyMessage,
-  llmEnabled,
+function PicksRankedList({
+  data,
   marketSession,
-  sectorBenchmarks,
+  loading,
 }: {
-  panelId: string
-  labelledBy: string
-  picks: Pick[]
-  emptyMessage: string
-  llmEnabled: boolean
+  data: PicksResponse
   marketSession: MarketSession
-  sectorBenchmarks: Record<string, SectorBenchmark>
+  loading?: boolean
 }) {
-  if (!picks.length) {
+  const sectorBenchmarks = data.sector_benchmarks ?? {}
+
+  if (loading) {
     return (
-      <div role="tabpanel" id={panelId} aria-labelledby={labelledBy}>
-        <p className="text-sm text-zinc-500 text-center py-8 px-4 rounded-2xl bg-zinc-900/50 border border-white/[0.04]">
-          {emptyMessage}
+      <section aria-label="Stock picks" aria-busy="true">
+        <p className="type-caption text-muted mb-3 px-1">
+          Top 10 ranked by score across your watchlist, portfolio, and today&apos;s strong movers.
         </p>
-      </div>
+        <div className="space-y-3">
+          {[1, 2, 3].map((n) => (
+            <div
+              key={n}
+              className="pick-card h-[260px] animate-pulse opacity-60"
+              style={{ animationDelay: `${n * 80}ms` }}
+            />
+          ))}
+        </div>
+      </section>
+    )
+  }
+
+  if (!data.picks.length) {
+    return (
+      <section aria-label="Stock picks">
+        <div className="text-center py-24">
+          <div className="w-16 h-16 rounded-3xl bg-zinc-900 flex items-center justify-center mx-auto mb-5">
+            <Sparkles className="w-7 h-7 text-zinc-700" aria-hidden="true" />
+          </div>
+          <p className="text-white text-base font-semibold mb-1">No picks right now</p>
+          <p className="text-zinc-500 text-sm max-w-[280px] mx-auto [text-wrap:pretty]">
+            None of your stocks or today&apos;s movers match our buy checklist. Check again after the market moves.
+          </p>
+        </div>
+      </section>
     )
   }
 
   return (
-    <div role="tabpanel" id={panelId} aria-labelledby={labelledBy}>
+    <section aria-label="Stock picks">
+      <p className="type-caption text-muted mb-3 px-1">
+        Top {data.picks.length} ranked by score — #1 is the strongest signal today.
+      </p>
       <ul className="space-y-3">
-        {picks.map((p, i) => (
+        {data.picks.map((p, i) => (
           <li key={`${p.ticker}-${p.source}`}>
             <PickCard
               pick={p}
               rank={i + 1}
-              llmEnabled={llmEnabled}
+              llmEnabled={data.llm_enabled}
               marketSession={marketSession}
               sectorBenchmarks={sectorBenchmarks}
             />
           </li>
         ))}
       </ul>
-    </div>
-  )
-}
-
-function PicksTabbedLists({
-  data,
-  marketSession,
-}: {
-  data: PicksResponse
-  marketSession: MarketSession
-}) {
-  const [activeTab, setActiveTab] = useState<PicksTab>('discovery')
-  const tabResolvedRef = useRef(false)
-  const sectorBenchmarks = data.sector_benchmarks ?? {}
-
-  useEffect(() => {
-    if (tabResolvedRef.current) return
-    tabResolvedRef.current = true
-    try {
-      const saved = localStorage.getItem(PICKS_TAB_STORAGE_KEY)
-      if (saved === 'discovery' || saved === 'your') {
-        setActiveTab(saved)
-        return
-      }
-    } catch {
-      /* ignore */
-    }
-    setActiveTab(data.discovery_picks.length > 0 ? 'discovery' : 'your')
-  }, [data])
-
-  const selectTab = useCallback((tab: PicksTab) => {
-    setActiveTab(tab)
-    try {
-      localStorage.setItem(PICKS_TAB_STORAGE_KEY, tab)
-    } catch {
-      /* ignore */
-    }
-  }, [])
-
-  const activeTabMeta = PICKS_TABS.find((t) => t.id === activeTab)
-  const tabCounts: Record<PicksTab, number> = {
-    discovery: data.discovery_picks.length,
-    your: data.your_picks.length,
-  }
-
-  return (
-    <section aria-label="Stock picks">
-      <PicksTabBar activeTab={activeTab} onSelect={selectTab} counts={tabCounts} />
-
-      {activeTabMeta?.subtitle && (
-        <p className="type-caption text-muted leading-snug mb-3 px-1 border-l-2 border-blue-500/25 pl-2.5">
-          {activeTabMeta.subtitle}
-        </p>
-      )}
-
-      {activeTab === 'discovery' ? (
-        <PickListPanel
-          panelId="picks-panel-discovery"
-          labelledBy="picks-tab-discovery"
-          picks={data.discovery_picks}
-          emptyMessage="No strong movers qualify today. Market data may still be loading — check back in a moment."
-          llmEnabled={data.llm_enabled}
-          marketSession={marketSession}
-          sectorBenchmarks={sectorBenchmarks}
-        />
-      ) : (
-        <PickListPanel
-          panelId="picks-panel-your"
-          labelledBy="picks-tab-your"
-          picks={data.your_picks}
-          emptyMessage="None of your watchlist or portfolio stocks qualify as a buy today."
-          llmEnabled={data.llm_enabled}
-          marketSession={marketSession}
-          sectorBenchmarks={sectorBenchmarks}
-        />
-      )}
 
       <div className="mt-4 flex items-start gap-2 px-1">
         <ShieldCheck className="w-3.5 h-3.5 text-muted shrink-0 mt-0.5" aria-hidden="true" />
@@ -800,11 +697,85 @@ function PicksTabbedLists({
 
 export default function PicksPage() {
   const marketSession = useMarketSession()
-  const { data, isLoading, mutate } = useSWR<PicksResponse>('/api/picks', fetcher, {
+  const { data, isLoading, error } = useSWR<PicksResponse>('/api/picks', fetchJson, {
     revalidateOnFocus: false,
     dedupingInterval: 0,
   })
-  const hasAnyPicks = Boolean(data?.your_picks.length || data?.discovery_picks.length)
+
+  const baseData = useMemo((): PicksResponse | null => {
+    if (!data) return null
+    const fp = allPicksFingerprint(data)
+    if (fp && fp === scoresFingerprintRef.current && stableScoresAtRef.current) {
+      return { ...data, scores_at: stableScoresAtRef.current }
+    }
+    if (fp) {
+      scoresFingerprintRef.current = fp
+      stableScoresAtRef.current = data.scores_at
+    }
+    return data
+  }, [data])
+
+  const headlineTickers = useMemo(() => {
+    if (!baseData?.picks.length) return ''
+    return [...new Set(baseData.picks.map((p) => p.ticker.toUpperCase()))].join(',')
+  }, [baseData])
+
+  const { data: headlineData } = useSWR<PickHeadlinesResponse>(
+    headlineTickers ? `/api/picks/headlines?tickers=${headlineTickers}` : null,
+    headlinesFetcher,
+    { revalidateOnFocus: false, dedupingInterval: 0 },
+  )
+
+  const pendingNarrativeTickers = useMemo(() => {
+    if (!baseData?.llm_enabled) return ''
+    const pending = baseData.picks
+      .filter((p) => p.narrative_source === 'mechanical')
+      .map((p) => p.ticker.toUpperCase())
+    return [...new Set(pending)].join(',')
+  }, [baseData])
+
+  const { data: narrativeData } = useSWR<PickNarrativesResponse>(
+    pendingNarrativeTickers ? `/api/picks/narratives?tickers=${pendingNarrativeTickers}` : null,
+    narrativesFetcher,
+    {
+      revalidateOnFocus: false,
+      dedupingInterval: 0,
+      refreshInterval: (latest) => {
+        if (!latest?.narratives || !pendingNarrativeTickers) return 0
+        const pending = pendingNarrativeTickers.split(',')
+        const allReady = pending.every(
+          (ticker) => latest.narratives[ticker]?.narrative_source === 'llm',
+        )
+        return allReady ? 0 : 3000
+      },
+    },
+  )
+
+  const displayData = useMemo(() => {
+    if (!baseData) return null
+
+    let merged = baseData
+    if (narrativeData?.narratives && Object.keys(narrativeData.narratives).length) {
+      const picks = mergePickNarratives(merged.picks, narrativeData.narratives)
+      merged = {
+        ...merged,
+        picks,
+        your_picks: picks.filter((p) => p.source !== 'discovery'),
+        discovery_picks: picks.filter((p) => p.source === 'discovery'),
+      }
+    }
+    if (headlineData?.headlines && Object.keys(headlineData.headlines).length) {
+      const picks = mergePickHeadlines(merged.picks, headlineData.headlines)
+      merged = {
+        ...merged,
+        picks,
+        your_picks: picks.filter((p) => p.source !== 'discovery'),
+        discovery_picks: picks.filter((p) => p.source === 'discovery'),
+      }
+    }
+
+    return merged
+  }, [baseData, narrativeData, headlineData])
 
   return (
     <div className="min-h-screen bg-zinc-950">
@@ -816,33 +787,21 @@ export default function PicksPage() {
             <h1 className="text-2xl sm:text-xl font-bold text-white tracking-tight">Picks</h1>
             <Sparkles className="w-4 h-4 text-blue-400 shrink-0" aria-hidden="true" />
           </div>
-          {data?.scores_at && !isLoading && (
+          {displayData?.scores_at && !isLoading && (
             <p className="type-meta text-zinc-500 tabular-nums shrink-0">
-              Updated {timeAgo(data.scores_at)}
+              Updated {timeAgo(displayData.scores_at)}
             </p>
           )}
         </div>
 
-        {isLoading ? (
-          <div className="space-y-3" aria-busy="true">
-            {[1, 2, 3].map((n) => (
-              <div key={n} className="pick-card h-[260px] animate-pulse opacity-60" style={{ animationDelay: `${n * 80}ms` }} />
-            ))}
-          </div>
-        ) : !data ? (
+        {error ? (
           <p className="text-zinc-500 text-sm text-center py-16">Failed to load picks. Try refreshing.</p>
-        ) : !hasAnyPicks ? (
-          <div className="text-center py-24">
-            <div className="w-16 h-16 rounded-3xl bg-zinc-900 flex items-center justify-center mx-auto mb-5">
-              <Sparkles className="w-7 h-7 text-zinc-700" aria-hidden="true" />
-            </div>
-            <p className="text-white text-base font-semibold mb-1">No picks right now</p>
-            <p className="text-zinc-500 text-sm max-w-[280px] mx-auto [text-wrap:pretty]">
-              None of your stocks match our buy checklist today. Check again after the market moves.
-            </p>
-          </div>
         ) : (
-          <PicksTabbedLists data={data} marketSession={marketSession} />
+          <PicksRankedList
+            data={displayData ?? { picks: [], your_picks: [], discovery_picks: [], scores_at: '', narratives_at: null, llm_enabled: false, sector_benchmarks: {} }}
+            marketSession={marketSession}
+            loading={isLoading && !displayData}
+          />
         )}
       </main>
     </div>

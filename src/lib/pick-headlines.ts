@@ -2,6 +2,9 @@ import { fetchNewsForTicker, type RawNewsItem } from '@/lib/news'
 import type { SignalNewsItem } from '@/types'
 
 export const PICK_HEADLINES_LIMIT = 3
+const HEADLINE_CACHE_TTL_MS = 15 * 60 * 1000
+
+const headlineCache = new Map<string, { at: number; items: SignalNewsItem[] }>()
 
 /** Latest first; stronger sentiment wins when timestamps are close. */
 export function sortPickHeadlines(items: RawNewsItem[]): RawNewsItem[] {
@@ -22,6 +25,17 @@ export function toSignalNewsItems(items: RawNewsItem[], limit = PICK_HEADLINES_L
   }))
 }
 
+async function headlinesForTicker(ticker: string): Promise<SignalNewsItem[]> {
+  const key = ticker.toUpperCase()
+  const hit = headlineCache.get(key)
+  if (hit && Date.now() - hit.at < HEADLINE_CACHE_TTL_MS) return hit.items
+
+  const raw = await fetchNewsForTicker(key)
+  const items = toSignalNewsItems(raw)
+  headlineCache.set(key, { at: Date.now(), items })
+  return items
+}
+
 export async function fetchPickHeadlinesForTickers(
   tickers: string[],
 ): Promise<Map<string, SignalNewsItem[]>> {
@@ -29,9 +43,9 @@ export async function fetchPickHeadlinesForTickers(
   const result = new Map<string, SignalNewsItem[]>()
   if (!unique.length) return result
 
-  const newsResults = await Promise.all(unique.map((ticker) => fetchNewsForTicker(ticker)))
+  const newsResults = await Promise.all(unique.map((ticker) => headlinesForTicker(ticker)))
   unique.forEach((ticker, i) => {
-    result.set(ticker, toSignalNewsItems(newsResults[i] ?? []))
+    result.set(ticker, newsResults[i] ?? [])
   })
 
   return result
