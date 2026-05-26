@@ -36,9 +36,12 @@ interface NarrativeInput {
   news_sentiment: number | null
   factors: string[]
   recent_headlines: string[]
+  /** Optional Yahoo business summary for richer company context. */
+  business_summary?: string | null
 }
 
 export interface NarrativeOutput {
+  company_blurb: string
   thesis: string
   main_risk: string
   model: string
@@ -83,15 +86,15 @@ function systemPrompt(targetLabel: NarrativeInput['target_label']): string {
 
   return `You are a sober equity analyst writing buy theses for everyday investors who may not follow markets daily.
 
-Your job is to connect the dots between price, analyst ratings, momentum, matched signals, and recent headlines so the picture is easy to understand.
+Your job is to help someone understand what the company does, why the data looks interesting today, and what could go wrong — in plain English.
 
 Rules you MUST follow:
-- Write 4 to 5 sentences for the thesis. Weave together the matched signals and any relevant headlines; cite exact numbers from the data (e.g. "22 of 26 analysts rate buy", "+17% upside", "7-day change +4.2%").
-- Write 1 to 2 sentences for the main risk — the most plausible downside given the data, not generic boilerplate.
-- Use plain English. Never mention API names, data vendors, or "free tier".
+- company_blurb: 2 to 3 sentences on what the company sells or does, who its customers are, and how it makes money (products, services, subscriptions, orders, deals, revenue drivers). Use the business summary when provided; do not invent specific dollar figures or contract names unless in the headlines.
+- thesis: 4 to 5 sentences connecting the company's business to today's matched signals, momentum, analyst ratings, and headlines. Explain WHY the signals matter for this business — not a generic bull case. Cite exact numbers from the data.
+- main_risk: 2 sentences on the most plausible downside for this specific company given sector, valuation, and the data — not generic "markets could fall" boilerplate.
+- Use plain English. Never mention API names, data vendors, or "AI".
 - Do NOT predict short-term prices. Do NOT say "will reach X by Y date".
-- Do NOT use phrases like "moon", "rocket", "explode", or other hype.
-- Do NOT recommend the user buy or sell — only describe why the data is interesting.
+- Do NOT use hype ("moon", "rocket", "explode"). Do NOT tell the user to buy or sell.
 - ${targetRule}
 - Plain text only. No markdown, no emojis.`
 }
@@ -124,6 +127,9 @@ function buildUserPrompt(input: NarrativeInput): string {
     lines.push(`News sentiment score: ${input.news_sentiment.toFixed(2)} (range -1 to +1)`)
   }
   lines.push(`Matched signals: ${input.factors.join(', ')}`)
+  if (input.business_summary?.trim()) {
+    lines.push(`Business summary (reference): ${input.business_summary.trim()}`)
+  }
   if (input.recent_headlines.length) {
     lines.push('Recent headlines:')
     input.recent_headlines.slice(0, 3).forEach((h) => lines.push(`  - ${h}`))
@@ -153,15 +159,16 @@ async function callGemini(
           contents: [{ role: 'user', parts: [{ text: user }] }],
           generationConfig: {
             temperature: 0.4,
-            maxOutputTokens: 768,
+            maxOutputTokens: 1024,
             responseMimeType: 'application/json',
             responseSchema: {
               type: 'object',
               properties: {
+                company_blurb: { type: 'string' },
                 thesis: { type: 'string' },
                 main_risk: { type: 'string' },
               },
-              required: ['thesis', 'main_risk'],
+              required: ['company_blurb', 'thesis', 'main_risk'],
             },
           },
         }),
@@ -189,12 +196,18 @@ async function callGemini(
     }
 
     const parsed = parseJsonFromLlmText(text) as Partial<NarrativeOutput> | null
-    if (!parsed || typeof parsed.thesis !== 'string' || typeof parsed.main_risk !== 'string') {
+    if (
+      !parsed ||
+      typeof parsed.company_blurb !== 'string' ||
+      typeof parsed.thesis !== 'string' ||
+      typeof parsed.main_risk !== 'string'
+    ) {
       console.warn(`[llm] ${model} invalid JSON for ${ticker}: ${text.slice(0, 80)}…`)
       return null
     }
 
     return {
+      company_blurb: parsed.company_blurb.trim(),
       thesis: parsed.thesis.trim(),
       main_risk: parsed.main_risk.trim(),
       model,

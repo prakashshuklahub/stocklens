@@ -3,6 +3,7 @@
 
 import type { Pick } from '@/types'
 import type { ScoredPick } from '@/lib/picks-scoring'
+import { mechanicalCompanyBlurb } from '@/lib/company-profile'
 import {
   PICKS_DISCOVERY_MAX,
   PICKS_MAX_RESULTS,
@@ -64,7 +65,11 @@ export function pickDisplayCopy(label: Pick['target_label']) {
   }
 }
 
-export function mechanicalThesis(pick: ScoredPick): { thesis: string; main_risk: string } {
+export function mechanicalThesis(pick: ScoredPick): {
+  company_blurb: string
+  thesis: string
+  main_risk: string
+} {
   const positives = pick.factors.filter((f) => f.tone === 'positive').map((f) => f.label.toLowerCase())
   const negatives = pick.factors.filter((f) => f.tone === 'negative').map((f) => f.label.toLowerCase())
 
@@ -108,5 +113,9 @@ export function mechanicalThesis(pick: ScoredPick): { thesis: string; main_risk:
     ? `Watch for ${negatives.slice(0, 2).join(' and ')} in the weeks ahead. ${copy.defaultRisk}`
     : copy.defaultRisk
 
-  return { thesis, main_risk: risk }
+  return {
+    company_blurb: mechanicalCompanyBlurb(pick.company_name, pick.ticker, pick.sector),
+    thesis,
+    main_risk: risk,
+  }
 }

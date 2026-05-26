@@ -246,6 +246,8 @@ export interface Pick {
   factors: PickFactor[]          // matched scoring factors
   vs_sector: SectorRelativeStrength | null
   source: PickSourceTag
+  /** What the company sells / how it makes money (2–3 sentences). */
+  company_blurb: string | null
   thesis: string | null          // LLM narrative (null if not generated)
   main_risk: string | null
   narrative_source: 'llm' | 'mechanical'
@@ -276,6 +278,7 @@ export interface PicksResponse {
 }
 
 export interface PickNarrativePayload {
+  company_blurb: string | null
   thesis: string
   main_risk: string
   narrative_source: 'llm' | 'mechanical'

@@ -65,6 +65,7 @@ function mergePickNarratives(picks: Pick[], narratives: Record<string, PickNarra
     if (!narrative) return pick
     return {
       ...pick,
+      company_blurb: narrative.company_blurb ?? pick.company_blurb,
       thesis: narrative.thesis,
       main_risk: narrative.main_risk,
       narrative_source: narrative.narrative_source,
@@ -347,10 +348,11 @@ function headlinesPreview(pick: Pick): string {
 }
 
 function whyPreview(pick: Pick): string {
+  if (pick.company_blurb) return truncatePreview(pick.company_blurb)
   if (pick.thesis) return truncatePreview(pick.thesis)
   const top = pick.factors.find((f) => f.tone === 'positive')
   if (top) return truncatePreview(top.label)
-  return 'Signals and summary'
+  return 'Company overview and signals'
 }
 
 function PickAccordionRow({
@@ -579,6 +581,16 @@ function PickCard({
             sell={pick.analyst_sell}
             total={pick.analyst_total}
           />
+
+          {pick.company_blurb && (
+            <div>
+              <div className="flex items-center gap-1.5 mb-1.5">
+                <Briefcase className="w-3.5 h-3.5 text-blue-400" aria-hidden="true" />
+                <p className="type-meta font-bold text-blue-400 uppercase tracking-wide">What they do</p>
+              </div>
+              <p className="text-sm text-zinc-300 leading-relaxed">{pick.company_blurb}</p>
+            </div>
+          )}
 
           {pick.thesis && (
             <div>

@@ -1,3 +1,4 @@
+import { fetchYahooBusinessSummary, mechanicalCompanyBlurb } from '@/lib/company-profile'
 import { generateNarrative, isLLMEnabled } from '@/lib/llm'
 import {
   loadFreshNarratives,
@@ -14,6 +15,7 @@ type Supabase = ReturnType<typeof createServerClient>
 
 export type PickNarrativeRow = {
   ticker: string
+  company_blurb: string | null
   thesis: string
   main_risk: string
   model: string | null
@@ -36,7 +38,9 @@ export async function loadCachedPickNarratives(
 
   if (isLLMEnabled()) {
     for (const [ticker, row] of cached) {
-      if (row.model === MECHANICAL_MODEL) cached.delete(ticker)
+      if (row.model === MECHANICAL_MODEL || !row.company_blurb?.trim()) {
+        cached.delete(ticker)
+      }
     }
   }
 
@@ -45,6 +49,7 @@ export async function loadCachedPickNarratives(
 
 export function rowToNarrativePayload(row: PickNarrativeRow): PickNarrativePayload {
   return {
+    company_blurb: row.company_blurb,
     thesis: row.thesis,
     main_risk: row.main_risk,
     narrative_source: narrativeSourceFromModel(row.model),
@@ -73,6 +78,7 @@ export function attachPickNarratives(
       narrativeTimes.push(cached.generated_at)
       return {
         ...p,
+        company_blurb: cached.company_blurb,
         thesis: cached.thesis,
         main_risk: cached.main_risk,
         narrative_source: narrativeSourceFromModel(cached.model),
@@ -86,6 +92,7 @@ export function attachPickNarratives(
 
     return {
       ...p,
+      company_blurb: fallback.company_blurb,
       thesis: fallback.thesis,
       main_risk: fallback.main_risk,
       narrative_source: 'mechanical' as const,
@@ -97,6 +104,16 @@ export function attachPickNarratives(
   return { picks, narrativeTimes, pendingLlm }
 }
 
+async function resolveCompanyBlurb(
+  pick: ScoredPick,
+  fromLlm: string | null | undefined,
+): Promise<string> {
+  if (fromLlm?.trim()) return fromLlm.trim()
+  const yahoo = await fetchYahooBusinessSummary(pick.ticker)
+  if (yahoo) return yahoo
+  return mechanicalCompanyBlurb(pick.company_name, pick.ticker, pick.sector)
+}
+
 async function generateAndUpsertPickNarratives(
   supabase: Supabase,
   pending: ScoredPick[],
@@ -106,6 +123,7 @@ async function generateAndUpsertPickNarratives(
 ): Promise<void> {
   type GenResult = {
     ticker: string
+    company_blurb: string
     thesis: string
     main_risk: string
     source: 'llm' | 'mechanical'
@@ -115,6 +133,7 @@ async function generateAndUpsertPickNarratives(
   const generated = await mapSequential(pending, async (pick): Promise<GenResult> => {
     const f = fundamentalsByTicker.get(pick.ticker)
     const headlines = (newsByTicker.get(pick.ticker.toUpperCase()) ?? []).map((n) => n.title)
+    const businessSummary = await fetchYahooBusinessSummary(pick.ticker)
 
     if (f) {
       const narrative = await generateNarrative({
@@ -138,11 +157,13 @@ async function generateAndUpsertPickNarratives(
         news_sentiment: f.news_sentiment,
         factors: pick.factors.map((x) => x.label),
         recent_headlines: headlines,
+        business_summary: businessSummary,
       })
 
       if (narrative) {
         return {
           ticker: pick.ticker,
+          company_blurb: narrative.company_blurb,
           thesis: narrative.thesis,
           main_risk: narrative.main_risk,
           source: 'llm',
@@ -152,13 +173,22 @@ async function generateAndUpsertPickNarratives(
     }
 
     const fallback = mechanicalThesis(pick)
-    return { ticker: pick.ticker, ...fallback, source: 'mechanical', model: null }
+    const company_blurb = await resolveCompanyBlurb(pick, fallback.company_blurb)
+    return {
+      ticker: pick.ticker,
+      company_blurb,
+      thesis: fallback.thesis,
+      main_risk: fallback.main_risk,
+      source: 'mechanical',
+      model: null,
+    }
   })
 
   if (!generated.length) return
 
   const narrativeRows = generated.map((g) => ({
     ticker: g.ticker.toUpperCase(),
+    company_blurb: g.company_blurb,
     thesis: g.thesis,
     main_risk: g.main_risk,
     model: g.source === 'llm' && g.model ? g.model : MECHANICAL_MODEL,

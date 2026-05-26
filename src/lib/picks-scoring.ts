@@ -117,7 +117,7 @@ export interface DiscoveryPickInput {
 
 export type ScoredPick = Omit<
   Pick,
-  'thesis' | 'main_risk' | 'narrative_source' | 'narrative_generated_at' | 'news'
+  'thesis' | 'main_risk' | 'narrative_source' | 'narrative_generated_at' | 'news' | 'company_blurb'
 >
 
 type TargetLabel = Pick['target_label']
