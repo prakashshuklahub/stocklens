@@ -11,7 +11,7 @@ function PctBadge({ value, label }: { value: number | null; label: string }) {
     return (
       <div className="flex flex-col items-center gap-1">
         <span className="type-meta text-zinc-500">{label}</span>
-        <div className="h-3 w-10 rounded bg-zinc-700/60 animate-pulse" />
+        <span className="text-sm font-semibold tabular-nums text-zinc-500">—</span>
       </div>
     )
   }

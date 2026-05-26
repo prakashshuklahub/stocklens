@@ -182,6 +182,10 @@ function CollapsedSummary({
     )
   }
 
+  if (!fundamentals && !loading) {
+    return null
+  }
+
   const badgeLabel = vsSectorBadgeLabel(vsSector?.badge ?? null)
 
   return (
@@ -311,6 +315,12 @@ function WatchlistAccordionRow({
   icon: typeof Target
   children: ReactNode
 }) {
+  const [panelMounted, setPanelMounted] = useState(open)
+
+  useEffect(() => {
+    if (open) setPanelMounted(true)
+  }, [open])
+
   return (
     <div className="border-t border-white/[0.04]">
       <button
@@ -331,15 +341,27 @@ function WatchlistAccordionRow({
               <Icon className="w-3.5 h-3.5 text-zinc-500 shrink-0" aria-hidden="true" />
               <span className="type-meta font-semibold text-zinc-300">{label}</span>
             </div>
-            {!open && (
-              <p className="type-meta text-muted-preview mt-1 leading-snug truncate">{preview}</p>
-            )}
+            <p
+              className={cn(
+                'type-meta text-muted-preview mt-1 leading-snug truncate overflow-hidden transition-[opacity,max-height,margin] duration-150',
+                open ? 'opacity-0 max-h-0 mt-0' : 'opacity-100 max-h-6',
+              )}
+              aria-hidden={open}
+            >
+              {preview}
+            </p>
           </div>
           <CollapseChevron open={open} className="text-muted shrink-0 mt-0.5" />
         </div>
       </button>
-      {open && (
-        <div id={`${id}-panel`} role="region" aria-labelledby={`${id}-trigger`} className="px-5 pb-3.5 pt-0">
+      {panelMounted && (
+        <div
+          id={`${id}-panel`}
+          role="region"
+          aria-labelledby={`${id}-trigger`}
+          hidden={!open}
+          className={cn('px-5 pb-3.5 pt-0', !open && 'hidden')}
+        >
           {children}
         </div>
       )}
@@ -420,6 +442,8 @@ export default function WatchlistCard({
     (fundamentals?.analyst_hold ?? 0) +
     (fundamentals?.analyst_sell ?? 0)
 
+  const fundamentalsPending = fundamentalsLoading && fundamentals == null
+
   if (confirming) {
     return (
       <div
@@ -464,7 +488,7 @@ export default function WatchlistCard({
   }
 
   return (
-    <div className="relative card-surface overflow-hidden active:scale-[0.99] active:brightness-95 transition-all duration-100">
+    <div className="relative card-surface overflow-hidden">
       <div className="px-5 pt-4 pb-2 pr-14">
         <div className="flex items-start justify-between gap-3">
           <div className="flex items-start gap-3 flex-1 min-w-0">
@@ -502,7 +526,7 @@ export default function WatchlistCard({
           <CollapsedSummary
             fundamentals={fundamentals}
             currentPrice={currentPrice}
-            loading={fundamentalsLoading}
+            loading={fundamentalsPending}
             vsSector={vsSector}
             sectorBenchmarksRefreshing={sectorBenchmarksRefreshing}
             inset
@@ -525,7 +549,7 @@ export default function WatchlistCard({
             targetHigh={fundamentals?.target_high ?? null}
             targetSource={fundamentals?.target_source ?? null}
             current={currentPrice}
-            loading={fundamentalsLoading && !fundamentals}
+            loading={fundamentalsPending && !fundamentals}
           />
           <Week52Range
             high={fundamentals?.week52_high ?? null}
@@ -585,7 +609,7 @@ export default function WatchlistCard({
           hold={fundamentals?.analyst_hold ?? null}
           sell={fundamentals?.analyst_sell ?? null}
           total={analystTotal}
-          loading={fundamentalsLoading && !fundamentals}
+          loading={fundamentalsPending}
         />
       </WatchlistAccordionRow>
 
