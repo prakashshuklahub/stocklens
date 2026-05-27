@@ -780,22 +780,21 @@ export default function PicksPage() {
       <AppNav />
 
       <main id="main" className="page-shell !pt-3">
-        <div className="mb-3 flex items-center justify-between gap-3">
-          <div className="flex items-center gap-1.5 min-w-0">
-            <h1 className="text-2xl sm:text-xl font-bold text-white tracking-tight">Picks</h1>
-            <Sparkles className="w-4 h-4 text-blue-400 shrink-0" aria-hidden="true" />
+        <h1 className="sr-only">Picks</h1>
+        {((isLoading && !displayData) || displayData?.scores_at) && (
+          <div className="mb-3 flex items-center justify-end gap-3">
+            {isLoading && !displayData ? (
+              <p className="type-meta text-amber-400/80 shrink-0 flex items-center gap-1.5">
+                <span className="inline-block w-1.5 h-1.5 rounded-full bg-amber-400 animate-pulse" aria-hidden="true" />
+                Scoring…
+              </p>
+            ) : displayData?.scores_at ? (
+              <p className="type-meta text-zinc-500 tabular-nums shrink-0">
+                Updated {timeAgo(displayData.scores_at)}
+              </p>
+            ) : null}
           </div>
-          {isLoading && !displayData ? (
-            <p className="type-meta text-amber-400/80 shrink-0 flex items-center gap-1.5">
-              <span className="inline-block w-1.5 h-1.5 rounded-full bg-amber-400 animate-pulse" aria-hidden="true" />
-              Scoring…
-            </p>
-          ) : displayData?.scores_at ? (
-            <p className="type-meta text-zinc-500 tabular-nums shrink-0">
-              Updated {timeAgo(displayData.scores_at)}
-            </p>
-          ) : null}
-        </div>
+        )}
 
         {error ? (
           <p className="text-zinc-500 text-sm text-center py-16">Failed to load picks. Try refreshing.</p>

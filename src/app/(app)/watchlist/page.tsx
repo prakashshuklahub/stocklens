@@ -3,7 +3,7 @@
 import { useCallback, useState, useEffect, useMemo } from 'react'
 import { useSearchParams } from 'next/navigation'
 import useSWR from 'swr'
-import { TrendingUp, ChevronDown, BarChart2 } from 'lucide-react'
+import { TrendingUp, ChevronDown } from 'lucide-react'
 import WatchlistCard, { type WatchlistStock } from '@/components/watchlist/WatchlistCard'
 import StockSearchInput, { type StockResult } from '@/components/watchlist/StockSearchInput'
 import WatchlistSuggestions from '@/components/watchlist/WatchlistSuggestions'
@@ -147,7 +147,6 @@ function WatchlistSortBar({
 
   return (
     <FilterChipBar
-      label="Sort by"
       value={value}
       options={options}
       onChange={onChange}
@@ -544,17 +543,14 @@ export default function WatchlistPage() {
 
         {/* Main — bottom padding clears fixed bottom tab bar + safe area */}
         <main id="main" className="page-shell !pt-3">
-          <div className="flex items-center justify-between gap-3 mb-4">
-            <div className="flex items-center gap-1.5 min-w-0">
-              <h1 className="text-2xl sm:text-xl font-bold text-white tracking-tight">Watchlist</h1>
-              <BarChart2 className="w-4 h-4 text-blue-400 shrink-0" aria-hidden="true" />
-            </div>
-            {!isLoading && stocks.length > 0 && (
+          <h1 className="sr-only">Watchlist</h1>
+          {!isLoading && stocks.length > 0 && (
+            <div className="flex items-center justify-end gap-3 mb-3">
               <p className="type-meta text-zinc-500 tabular-nums shrink-0" aria-live="polite">
                 {stocks.length} stocks
               </p>
-            )}
-          </div>
+            </div>
+          )}
 
           {/* Search */}
           <div className="mb-6" role="search">

@@ -2,6 +2,8 @@
 // Scoring rules: @/lib/watchlist-suggestions-scoring
 
 import { fetchYahooBusinessSummary } from '@/lib/company-profile'
+import { formatUpsidePct } from '@/lib/target-price-display'
+import type { TrendingNarrative } from '@/types'
 import type { ScoredSuggestion } from '@/lib/watchlist-suggestions-scoring'
 import {
   rankTrendingSuggestions,
@@ -16,6 +18,7 @@ import {
 } from '@/lib/watchlist-suggestions-scoring'
 
 export type { ScoredSuggestion, TrendingScoreInput } from '@/lib/watchlist-suggestions-scoring'
+export type { TrendingNarrative } from '@/types'
 export {
   rankTrendingSuggestions,
   scoreTrendingCandidate,
@@ -168,22 +171,49 @@ export function isRedundantBlurb(
   reason: string,
   extras?: SuggestionBlurbExtras,
 ): boolean {
-  const r = reason.toLowerCase()
+  return isRedundantNarrative(s, narrativeFromLegacyReason(reason), extras)
+}
+
+export function isRedundantNarrative(
+  s: ScoredSuggestion,
+  narrative: TrendingNarrative,
+  extras?: SuggestionBlurbExtras,
+): boolean {
+  const combined = `${narrative.company_blurb} ${narrative.thesis} ${narrative.main_risk}`
+  const r = combined.toLowerCase()
   if (r.includes(s.ticker.toLowerCase())) return true
-  if (/\d+\s*\/\s*\d+/.test(reason)) return true
-  if (/\d+\s+of\s+\d+\s+analyst/i.test(reason)) return true
-  if (/[+\-]?\d+(\.\d+)?%\s*(today|over\s+30)/i.test(reason)) return true
-  if (GENERIC_BLURB_PATTERNS.some((p) => p.test(reason))) return true
+  if (/\d+\s*\/\s*\d+/.test(combined)) return true
+  if (/\d+\s+of\s+\d+\s+analyst/i.test(combined)) return true
+  if (/[+\-]?\d+(\.\d+)?%\s*(today|over\s+30)/i.test(combined)) return true
+  if (GENERIC_BLURB_PATTERNS.some((p) => p.test(combined))) return true
   if (s.sector && s.sector !== 'Other') {
     const sector = s.sector.toLowerCase()
     if (r.includes(`${sector} company`) || r.includes(`is a ${sector}`) || r.includes(`${sector} stock`)) {
       return true
     }
   }
-  if (sentenceCount(reason) < 2) return true
-  if (reason.length < 70) return true
-  if (extras?.company_blurb && !looksLikeBusinessContext(reason)) return true
+  if (!narrative.thesis.trim() || narrative.thesis.length < 40) return true
+  if (!narrative.main_risk.trim() || narrative.main_risk.length < 25) return true
+  if (!narrative.company_blurb.trim()) return true
+  if (sentenceCount(narrative.thesis) < 2) return true
+  if (extras?.company_blurb && !looksLikeBusinessContext(narrative.company_blurb)) return true
   return false
+}
+
+function narrativeFromLegacyReason(reason: string): TrendingNarrative {
+  const parts = reason.split(/(?<=[.!?])\s+/).filter((p) => p.trim())
+  if (parts.length >= 2) {
+    return {
+      company_blurb: parts[0]?.trim() ?? '',
+      thesis: parts.slice(1, -1).join(' ').trim() || parts[1]?.trim() || '',
+      main_risk: parts[parts.length - 1]?.trim() ?? '',
+    }
+  }
+  return {
+    company_blurb: '',
+    thesis: reason.trim(),
+    main_risk: 'Trending names can reverse quickly after a hot session.',
+  }
 }
 
 /** First sentence should describe products/services, not momentum or ratings. */
@@ -249,20 +279,86 @@ function whyTrendingToday(s: ScoredSuggestion, extras?: SuggestionBlurbExtras): 
   return `${lead} ${tail.join(', ')}.`
 }
 
+export function mechanicalTrendingNarrative(
+  s: ScoredSuggestion,
+  extras?: SuggestionBlurbExtras,
+): TrendingNarrative {
+  const company_blurb =
+    whatCompanyDoes(s, extras) ??
+    `${companyShortName(s.company_name)} develops products and services in its core market.`
+
+  const signalParts: string[] = []
+
+  if (Math.abs(s.change_1d_pct) >= 3) {
+    signalParts.push(
+      s.change_1d_pct >= 8
+        ? 'Big move today.'
+        : `A ${s.change_1d_pct >= 0 ? 'positive' : 'negative'} day with active trading.`,
+    )
+  }
+
+  if (s.upside_pct != null && Number.isFinite(s.upside_pct)) {
+    signalParts.push(`Room to grow ${formatUpsidePct(s.upside_pct)}.`)
+  }
+
+  if (s.near_52w_high) {
+    signalParts.push('The stock is pressing toward its 52-week high.')
+  }
+
+  if (s.change_30d_pct != null && Math.abs(s.change_30d_pct) >= 8) {
+    signalParts.push(
+      `The stock is ${s.change_30d_pct >= 0 ? 'up' : 'down'} ${Math.abs(s.change_30d_pct).toFixed(1)}% over the past month.`,
+    )
+  }
+
+  const catalyst = whyTrendingToday(s, extras).replace(/\.$/, '')
+  if (catalyst) {
+    signalParts.push(`${catalyst.charAt(0).toUpperCase()}${catalyst.slice(1)}.`)
+  }
+
+  if (s.analyst_total >= 5) {
+    const targetPrice =
+      s.upside_pct != null && s.current_price > 0
+        ? s.current_price * (1 + s.upside_pct / 100)
+        : null
+    const targetNote = targetPrice
+      ? `an average analyst target of $${targetPrice.toFixed(2)}`
+      : 'solid analyst buy support'
+    signalParts.push(
+      `${s.analyst_buy} of ${s.analyst_total} analysts rate buy, with ${targetNote}.`,
+    )
+  }
+
+  const thesis =
+    signalParts.join(' ') ||
+    'Heavy trading volume is putting this name on traders\' radars today.'
+
+  const main_risk =
+    s.near_52w_high && s.change_1d_pct > 10
+      ? 'Sharp one-day moves can reverse quickly after an extended run. Momentum is not a guarantee of future gains.'
+      : 'Trending stocks can cool off as fast as they heat up. Treat big daily moves as volatility, not certainty.'
+
+  return { company_blurb, thesis, main_risk }
+}
+
+/** @deprecated Use mechanicalTrendingNarrative — flat string for legacy cache only. */
 export function mechanicalReason(
   s: ScoredSuggestion,
   extras?: SuggestionBlurbExtras,
 ): string {
-  const business = whatCompanyDoes(s, extras)
-  const catalyst = whyTrendingToday(s, extras)
-  if (business) return `${business}. ${catalyst}`
-  return catalyst
+  const n = mechanicalTrendingNarrative(s, extras)
+  return `${n.company_blurb} ${n.thesis} ${n.main_risk}`
 }
 
-export function suggestionBlurbContext(
+export function suggestionNarrativeContext(
   s: ScoredSuggestion,
   extras?: SuggestionBlurbExtras,
 ) {
+  const targetPrice =
+    s.upside_pct != null && s.current_price > 0
+      ? s.current_price * (1 + s.upside_pct / 100)
+      : null
+
   return {
     ticker: s.ticker,
     company_name: s.company_name,
@@ -274,7 +370,24 @@ export function suggestionBlurbContext(
     month_trend: monthTrendPhrase(s.change_30d_pct),
     news_tone: newsTonePhrase(s.news_sentiment),
     near_52w_high: s.near_52w_high,
+    change_1d_pct: s.change_1d_pct,
+    change_30d_pct: s.change_30d_pct,
+    upside_pct: s.upside_pct,
+    analyst_buy: s.analyst_buy,
+    analyst_hold: s.analyst_hold,
+    analyst_sell: s.analyst_sell,
+    analyst_total: s.analyst_total,
+    card_headline: s.headline,
+    target_price: targetPrice,
   }
+}
+
+/** @deprecated Use suggestionNarrativeContext */
+export function suggestionBlurbContext(
+  s: ScoredSuggestion,
+  extras?: SuggestionBlurbExtras,
+) {
+  return suggestionNarrativeContext(s, extras)
 }
 
 export async function loadSuggestionBlurbExtras(

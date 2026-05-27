@@ -167,7 +167,6 @@ function SummaryBar({
   return (
     <div className="portfolio-summary mb-4">
       <div className="portfolio-summary-inner px-4 py-3">
-        <p className="type-micro font-semibold text-blue-400/55 uppercase tracking-[0.1em] mb-1">Portfolio Value</p>
         <div className="flex items-start justify-between gap-2">
           <div className="min-w-0">
             <p className="text-2xl font-black text-white tabular-nums leading-none">${fmt(stats.totalCurrent)}</p>
@@ -313,7 +312,6 @@ function HoldingsSection({
 
       {!preview && holdings.length > 0 && (
         <FilterChipBar
-          label="Filter"
           value={tierFilter}
           options={TIER_FILTERS}
           onChange={setTierFilter}
@@ -541,33 +539,28 @@ export default function PortfolioPage() {
         <AppNav />
 
         <main id="main" className="page-shell !pt-3">
-          <div className="flex items-center justify-between gap-3 mb-4">
-            <div className="flex items-center gap-1.5 min-w-0">
-              <h1 className="text-2xl sm:text-xl font-bold text-white tracking-tight">Portfolio</h1>
-              <PieChart className="w-4 h-4 text-blue-400 shrink-0" aria-hidden="true" />
-            </div>
-            <div className="flex items-center gap-2 shrink-0">
-              {syncedLabel && (
-                <p className="type-meta text-zinc-500 tabular-nums hidden sm:block">
-                  Synced {syncedLabel}
-                </p>
-              )}
-              <button
-                onClick={() => fileInputRef.current?.click()}
-                className="flex items-center gap-1.5 px-3.5 h-9 rounded-xl bg-zinc-800 active:scale-[0.95] active:bg-zinc-700 text-zinc-300 text-sm font-semibold transition-all [touch-action:manipulation]"
-              >
-                <Upload className="w-3.5 h-3.5" />
-                Sync
-              </button>
-            </div>
-            <input
-              ref={fileInputRef}
-              type="file"
-              accept=".xlsx"
-              className="hidden"
-              onChange={handleFileChange}
-            />
+          <h1 className="sr-only">Portfolio</h1>
+          <div className="flex items-center justify-end gap-2 mb-3 shrink-0">
+            {syncedLabel && (
+              <p className="type-meta text-zinc-500 tabular-nums hidden sm:block">
+                Synced {syncedLabel}
+              </p>
+            )}
+            <button
+              onClick={() => fileInputRef.current?.click()}
+              className="flex items-center gap-1.5 px-3.5 h-9 rounded-xl bg-zinc-800 active:scale-[0.95] active:bg-zinc-700 text-zinc-300 text-sm font-semibold transition-all [touch-action:manipulation]"
+            >
+              <Upload className="w-3.5 h-3.5" />
+              Sync
+            </button>
           </div>
+          <input
+            ref={fileInputRef}
+            type="file"
+            accept=".xlsx"
+            className="hidden"
+            onChange={handleFileChange}
+          />
           {syncedLabel ? (
             <p className="type-caption text-zinc-500 mb-4 -mt-2 sm:hidden">Synced {syncedLabel}</p>
           ) : (

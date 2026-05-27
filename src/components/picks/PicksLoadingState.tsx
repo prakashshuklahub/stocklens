@@ -127,9 +127,6 @@ export default function PicksLoadingState() {
   return (
     <section aria-label="Loading stock picks" aria-busy="true">
       <PicksLoadingBanner />
-      <p className="type-caption text-muted mb-3 px-1">
-        Top 10 ranked by score across your watchlist, portfolio, and today&apos;s strong movers.
-      </p>
       <ul className="space-y-3">
         {[1, 2, 3, 4, 5].map((rank) => (
           <li key={rank}>

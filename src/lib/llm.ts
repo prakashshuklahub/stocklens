@@ -409,7 +409,7 @@ export async function generateSellReview(input: SellReviewInput): Promise<SellRe
 
 // ── Watchlist add suggestion (one calm sentence) ─────────────────────────────
 
-export interface SuggestionBlurbInput {
+export interface SuggestionNarrativeInput {
   ticker: string
   company_name: string
   company_blurb: string | null
@@ -420,31 +420,47 @@ export interface SuggestionBlurbInput {
   month_trend: string | null
   news_tone: string | null
   near_52w_high: boolean
+  change_1d_pct: number
+  change_30d_pct: number | null
+  upside_pct: number | null
+  analyst_buy: number
+  analyst_hold: number
+  analyst_sell: number
+  analyst_total: number
+  card_headline: string
+  target_price: number | null
 }
 
-export interface SuggestionBlurbOutput {
-  reason: string
+export interface SuggestionNarrativeOutput {
+  company_blurb: string
+  thesis: string
+  main_risk: string
   model: string
 }
 
-const SUGGESTION_BLURB_SYSTEM = `You write a 2-sentence context blurb under a trending stock card.
+/** @deprecated */
+export type SuggestionBlurbInput = SuggestionNarrativeInput
+/** @deprecated */
+export type SuggestionBlurbOutput = { reason: string; model: string }
 
-The card ALREADY shows: ticker, company name, sector badge, price, today's % change, analyst buy ratio, and a momentum headline. Never repeat those — no ticker, sector/industry labels, prices, percentages, "strong buy", "day gainer", "momentum", or analyst counts.
+const SUGGESTION_NARRATIVE_SYSTEM = `You are a sober equity analyst writing context for a trending stock card (not on the user's watchlist yet).
 
-Write EXACTLY 2 sentences (55–90 words total):
-1) WHAT THEY DO — concrete products, services, customers, or business model. Use the business summary when provided. If none, infer from the company name (e.g. Intuitive Machines → lunar landers and space missions; T1 Energy → energy/solar infrastructure). Never say "[sector] stock" or "[sector] company".
-2) WHY TODAY — what news or event is driving the move. Summarize the headline theme in plain English (analyst upgrade, earnings beat, contract win, etc.). Say what happened and why traders care.
+The card ALREADY shows: ticker, company name, sector badge, price, today's % change, momentum headline, and signal chips. Do NOT repeat ticker, sector labels ("Utilities company"), prices, percentages, analyst fractions, or "day gainer" / "hot momentum" phrases.
 
-BAD: "This industrial stock is a strong buy and surfaced as a day gainer with a strong multi-week uptrend."
-GOOD: "T1 Energy develops solar and energy infrastructure for utility-scale projects. Shares are jumping after upbeat analyst coverage highlighted accelerating project pipeline growth."
+Return three fields in plain English (no markdown, quotes, or emojis):
 
-Plain text only. No markdown, quotes, or emojis.`
+- company_blurb: 2–3 sentences on what the company sells or does, who its customers are, and how it makes money. Use the business summary when provided. Never open with "[Company] is a [sector] company".
 
-async function callGeminiSuggestionBlurb(
+- thesis: 3–4 sentences in the style of "Why it looks good" — connect today's move to concrete signals: day change, room to grow vs analyst target, 30-day trend, headline catalyst, and analyst buy ratings. Use exact numbers from the data. Explain WHY traders care today.
+
+- main_risk: 1–2 sentences on the most plausible downside for this specific name (valuation stretch, momentum fade, sector risk) — not generic "markets could fall".
+
+Never say "buy now", "moon", "AI", or hype language.`
+
+async function callGeminiSuggestionNarrative(
   model: string,
   user: string,
-  ticker: string,
-): Promise<SuggestionBlurbOutput | null> {
+): Promise<SuggestionNarrativeOutput | null> {
   try {
     const res = await fetch(
       `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent`,
@@ -455,16 +471,20 @@ async function callGeminiSuggestionBlurb(
           'x-goog-api-key': env.GEMINI_API_KEY,
         },
         body: JSON.stringify({
-          systemInstruction: { parts: [{ text: SUGGESTION_BLURB_SYSTEM }] },
+          systemInstruction: { parts: [{ text: SUGGESTION_NARRATIVE_SYSTEM }] },
           contents: [{ role: 'user', parts: [{ text: user }] }],
           generationConfig: {
             temperature: 0.45,
-            maxOutputTokens: 180,
+            maxOutputTokens: 520,
             responseMimeType: 'application/json',
             responseSchema: {
               type: 'object',
-              properties: { reason: { type: 'string' } },
-              required: ['reason'],
+              properties: {
+                company_blurb: { type: 'string' },
+                thesis: { type: 'string' },
+                main_risk: { type: 'string' },
+              },
+              required: ['company_blurb', 'thesis', 'main_risk'],
             },
           },
         }),
@@ -477,34 +497,67 @@ async function callGeminiSuggestionBlurb(
     const text: string | undefined = data?.candidates?.[0]?.content?.parts?.[0]?.text
     if (!text) return null
 
-    const parsed = parseJsonFromLlmText(text) as Partial<SuggestionBlurbOutput> | null
-    if (!parsed || typeof parsed.reason !== 'string' || !parsed.reason.trim()) return null
+    const parsed = parseJsonFromLlmText(text) as Partial<SuggestionNarrativeOutput> | null
+    if (
+      !parsed ||
+      typeof parsed.company_blurb !== 'string' ||
+      typeof parsed.thesis !== 'string' ||
+      typeof parsed.main_risk !== 'string' ||
+      !parsed.company_blurb.trim() ||
+      !parsed.thesis.trim() ||
+      !parsed.main_risk.trim()
+    ) {
+      return null
+    }
 
-    return { reason: parsed.reason.trim(), model }
+    return {
+      company_blurb: parsed.company_blurb.trim(),
+      thesis: parsed.thesis.trim(),
+      main_risk: parsed.main_risk.trim(),
+      model,
+    }
   } catch {
     return null
   }
 }
 
-export async function generateSuggestionBlurb(
-  input: SuggestionBlurbInput,
-): Promise<SuggestionBlurbOutput | null> {
+export async function generateSuggestionNarrative(
+  input: SuggestionNarrativeInput,
+): Promise<SuggestionNarrativeOutput | null> {
   if (!isLLMEnabled()) return null
 
   const user = [
     `Company: ${input.company_name}`,
     input.company_blurb
-      ? `Business summary (sentence 1 — use this): ${input.company_blurb}`
-      : 'Business summary: unavailable — infer what they do from the company name for sentence 1.',
-    input.top_headline
-      ? `News catalyst (sentence 2 — summarize, do not quote): ${input.top_headline}`
-      : 'News catalyst: none specific — explain why heavy trading or a big daily move might be happening.',
-    'Do not mention sector badge, price change, analyst ratings, or mover list labels.',
+      ? `Business summary (company_blurb): ${input.company_blurb}`
+      : 'Business summary: unavailable — infer what they do from the company name.',
+    input.top_headline ? `Top headline (use in thesis): ${input.top_headline}` : '',
+    `Card headline (do not repeat): ${input.card_headline}`,
+    `Today change: ${input.change_1d_pct.toFixed(2)}%`,
+    input.change_30d_pct != null ? `30-day change: ${input.change_30d_pct.toFixed(2)}%` : '',
+    input.upside_pct != null ? `Upside to analyst target: ${input.upside_pct.toFixed(1)}%` : '',
+    input.target_price != null ? `Analyst target price: $${input.target_price.toFixed(2)}` : '',
+    `Analyst ratings: ${input.analyst_buy} buy / ${input.analyst_hold} hold / ${input.analyst_sell} sell (n=${input.analyst_total})`,
+    input.near_52w_high ? 'Near 52-week high: yes' : '',
+    input.news_tone ? `News tone: ${input.news_tone}` : '',
+    'Sector badge is on the card — do not mention sector label in company_blurb.',
   ]
     .filter(Boolean)
     .join('\n')
 
-  const primary = await callGeminiSuggestionBlurb(PRIMARY_MODEL, user, input.ticker)
+  const primary = await callGeminiSuggestionNarrative(PRIMARY_MODEL, user)
   if (primary) return primary
-  return callGeminiSuggestionBlurb(FALLBACK_MODEL, user, input.ticker)
+  return callGeminiSuggestionNarrative(FALLBACK_MODEL, user)
+}
+
+/** @deprecated Use generateSuggestionNarrative */
+export async function generateSuggestionBlurb(
+  input: SuggestionNarrativeInput,
+): Promise<SuggestionBlurbOutput | null> {
+  const narrative = await generateSuggestionNarrative(input)
+  if (!narrative) return null
+  return {
+    reason: `${narrative.company_blurb} ${narrative.thesis}`,
+    model: narrative.model,
+  }
 }

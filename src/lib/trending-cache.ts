@@ -9,7 +9,9 @@ import type { ScoredSuggestion } from '@/lib/watchlist-suggestions-scoring'
 const TRENDING_CACHE_HOURS = NARRATIVE_TTL_HOURS
 
 export type CachedTrendingReason = {
-  reason: string
+  company_blurb: string
+  thesis: string
+  main_risk: string
   narrative_source: 'llm' | 'mechanical'
 }
 

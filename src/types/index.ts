@@ -333,6 +333,12 @@ export interface PortfolioAlertsResponse {
 }
 
 // ── Watchlist add suggestions (market movers not on your list) ───────────────
+export interface TrendingNarrative {
+  company_blurb: string
+  thesis: string
+  main_risk: string
+}
+
 export interface WatchlistSuggestion {
   ticker: string
   company_name: string
@@ -345,6 +351,10 @@ export interface WatchlistSuggestion {
   analyst_total: number
   score: number
   headline: string
+  company_blurb: string | null
+  thesis: string | null
+  main_risk: string | null
+  /** @deprecated Flat blurb — use company_blurb + thesis + main_risk */
   reason: string | null
   narrative_source: 'llm' | 'mechanical'
 }

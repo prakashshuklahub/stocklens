@@ -15,7 +15,7 @@ import {
   ensureSectorBenchmarksLoaded,
 } from '@/lib/sector-benchmarks'
 import { isBenchmarkableSector, type BenchmarkableSector } from '@/lib/sector-relative-strength-scoring'
-import { generateSuggestionBlurb, isLLMEnabled } from '@/lib/llm'
+import { generateSuggestionNarrative, isLLMEnabled } from '@/lib/llm'
 import { NARRATIVE_TTL_HOURS } from '@/lib/narrative-cache'
 import {
   rankTrendingSuggestions,
@@ -25,15 +25,15 @@ import {
   type ScoredSuggestion,
 } from '@/lib/watchlist-suggestions-scoring'
 import {
-  isRedundantBlurb,
+  isRedundantNarrative,
   loadSuggestionBlurbExtras,
-  mechanicalReason,
-  suggestionBlurbContext,
+  mechanicalTrendingNarrative,
+  suggestionNarrativeContext,
   type SuggestionBlurbExtras,
 } from '@/lib/watchlist-suggestions'
 import { createServerClient } from '@/lib/supabase'
 import { NextRequest, NextResponse } from 'next/server'
-import type { StockFundamentals, WatchlistSuggestion, WatchlistSuggestionsResponse } from '@/types'
+import type { StockFundamentals, TrendingNarrative, WatchlistSuggestion, WatchlistSuggestionsResponse } from '@/types'
 
 const TRENDING_CACHE_HOURS = NARRATIVE_TTL_HOURS
 const CANDIDATE_POOL = 40
@@ -43,9 +43,35 @@ const LLM_BLURB_COUNT = 3
 const LLM_BLURB_DELAY_MS = 500
 const NO_CACHE = { 'Cache-Control': 'private, no-store, max-age=0' } as const
 
-export type CachedReason = {
+export type CachedReason = TrendingNarrative & {
+  narrative_source: 'llm' | 'mechanical'
+}
+
+type LegacyCachedReason = {
   reason: string
   narrative_source: 'llm' | 'mechanical'
+}
+
+function cachedToNarrative(
+  cached: CachedReason | LegacyCachedReason | undefined,
+): CachedReason | null {
+  if (!cached) return null
+  if ('thesis' in cached && cached.company_blurb?.trim() && cached.thesis?.trim() && cached.main_risk?.trim()) {
+    return cached as CachedReason
+  }
+  return null
+}
+
+function narrativesMatch(a: TrendingNarrative, b: TrendingNarrative): boolean {
+  return (
+    a.company_blurb === b.company_blurb &&
+    a.thesis === b.thesis &&
+    a.main_risk === b.main_risk
+  )
+}
+
+function mechanicalCached(s: ScoredSuggestion, extras?: SuggestionBlurbExtras): CachedReason {
+  return { ...mechanicalTrendingNarrative(s, extras), narrative_source: 'mechanical' }
 }
 
 type CachedPayload = {
@@ -103,34 +129,34 @@ async function enrichWithBlurbs(
     const s = targets[i]
     const key = s.ticker.toUpperCase()
     const extras = extrasByTicker.get(key)
-    const mech = mechanicalReason(s, extras)
+    const mech = mechanicalCached(s, extras)
     const cached = reasons[key] ?? reasons[s.ticker]
+    const existing = cachedToNarrative(cached)
     const staleBlurb =
-      cached?.reason &&
-      (isRedundantBlurb(s, cached.reason, extras) ||
-        (cached.narrative_source === 'mechanical' && cached.reason !== mech))
+      !existing ||
+      isRedundantNarrative(s, existing, extras) ||
+      (cached?.narrative_source === 'mechanical' && !narrativesMatch(existing, mech))
     if (cached?.narrative_source === 'llm' && !staleBlurb) continue
 
     if (llmEnabled) {
       if (i > 0) await new Promise((r) => setTimeout(r, LLM_BLURB_DELAY_MS))
-      const blurb = await generateSuggestionBlurb(suggestionBlurbContext(s, extras))
-      if (blurb && !isRedundantBlurb(s, blurb.reason, extras)) {
-        reasons[key] = { reason: blurb.reason, narrative_source: 'llm' }
+      const narrative = await generateSuggestionNarrative(suggestionNarrativeContext(s, extras))
+      if (narrative && !isRedundantNarrative(s, narrative, extras)) {
+        reasons[key] = { ...narrative, narrative_source: 'llm' }
         continue
       }
     }
 
-    reasons[key] = { reason: mech, narrative_source: 'mechanical' }
+    reasons[key] = mech
   }
 
   for (const s of ranked.slice(LLM_BLURB_COUNT)) {
     const key = s.ticker.toUpperCase()
     const extras = extrasByTicker.get(key)
-    if (reasons[key]?.reason && !isRedundantBlurb(s, reasons[key].reason, extras)) continue
-    reasons[key] = {
-      reason: mechanicalReason(s, extrasByTicker.get(key)),
-      narrative_source: 'mechanical',
-    }
+    const mech = mechanicalCached(s, extras)
+    const existing = cachedToNarrative(reasons[key])
+    if (existing && !isRedundantNarrative(s, existing, extras)) continue
+    reasons[key] = mech
   }
 
   return reasons
@@ -224,52 +250,62 @@ async function buildGlobalRanked(
 
 function resolveNarrative(
   s: ScoredSuggestion,
-  cached: CachedReason | undefined,
+  cached: CachedReason | LegacyCachedReason | undefined,
   extras?: SuggestionBlurbExtras,
 ): CachedReason {
-  const mech = mechanicalReason(s, extras)
-  const resolved = cached ?? undefined
-  const stale =
-    resolved?.reason &&
-    (isRedundantBlurb(s, resolved.reason, extras) ||
-      (resolved.narrative_source === 'mechanical' && resolved.reason !== mech))
-  if (!resolved || stale) {
-    return { reason: mech, narrative_source: 'mechanical' }
-  }
-  if (resolved.narrative_source === 'mechanical') {
-    return { reason: mech, narrative_source: 'mechanical' }
-  }
-  return resolved
+  const mech = mechanicalCached(s, extras)
+  const existing = cachedToNarrative(cached)
+  if (!existing) return mech
+  if (isRedundantNarrative(s, existing, extras)) return mech
+  if (existing.narrative_source === 'mechanical') return mech
+  return existing
 }
 
 /** Regenerate weak cached blurbs with Gemini on read (visible cards only). */
 async function ensureQualityBlurbs(
   top: ScoredSuggestion[],
-  reasons: Record<string, CachedReason>,
+  reasons: Record<string, CachedReason | LegacyCachedReason>,
   extrasByTicker: Map<string, SuggestionBlurbExtras>,
 ): Promise<Record<string, CachedReason>> {
-  const out = { ...reasons }
-  if (!isLLMEnabled() || !top.length) return out
+  const out: Record<string, CachedReason> = {}
+  for (const [key, value] of Object.entries(reasons)) {
+    const normalized = cachedToNarrative(value)
+    if (normalized) out[key] = normalized
+  }
+  if (!isLLMEnabled() || !top.length) {
+    for (const s of top) {
+      const key = s.ticker.toUpperCase()
+      if (!out[key]) out[key] = mechanicalCached(s, extrasByTicker.get(key))
+    }
+    return out
+  }
 
   for (let i = 0; i < top.length; i++) {
     const s = top[i]
     const key = s.ticker.toUpperCase()
     const extras = extrasByTicker.get(key)
-    const cached = out[key] ?? out[s.ticker]
-    const preview = resolveNarrative(s, cached, extras)
-    if (!isRedundantBlurb(s, preview.reason, extras)) continue
-
-    if (i > 0) await new Promise((r) => setTimeout(r, LLM_BLURB_DELAY_MS))
-    const blurb = await generateSuggestionBlurb(suggestionBlurbContext(s, extras))
-    if (blurb && !isRedundantBlurb(s, blurb.reason, extras)) {
-      out[key] = { reason: blurb.reason, narrative_source: 'llm' }
+    const preview = resolveNarrative(s, out[key] ?? reasons[key], extras)
+    if (!isRedundantNarrative(s, preview, extras)) {
+      out[key] = preview
       continue
     }
 
-    const mech = mechanicalReason(s, extras)
-    if (!isRedundantBlurb(s, mech, extras)) {
-      out[key] = { reason: mech, narrative_source: 'mechanical' }
+    if (i > 0) await new Promise((r) => setTimeout(r, LLM_BLURB_DELAY_MS))
+    const narrative = await generateSuggestionNarrative(suggestionNarrativeContext(s, extras))
+    if (narrative && !isRedundantNarrative(s, narrative, extras)) {
+      out[key] = { ...narrative, narrative_source: 'llm' }
+      continue
     }
+
+    const mech = mechanicalCached(s, extras)
+    if (!isRedundantNarrative(s, mech, extras)) {
+      out[key] = mech
+    }
+  }
+
+  for (const s of top) {
+    const key = s.ticker.toUpperCase()
+    if (!out[key]) out[key] = mechanicalCached(s, extrasByTicker.get(key))
   }
 
   return out
@@ -277,7 +313,7 @@ async function ensureQualityBlurbs(
 
 function toSuggestion(
   s: ScoredSuggestion,
-  cached: CachedReason | undefined,
+  cached: CachedReason | LegacyCachedReason | undefined,
   extras?: SuggestionBlurbExtras,
 ): WatchlistSuggestion {
   const narrative = resolveNarrative(s, cached, extras)
@@ -293,7 +329,10 @@ function toSuggestion(
     analyst_total: s.analyst_total,
     score: s.score,
     headline: s.headline,
-    reason: narrative.reason,
+    company_blurb: narrative.company_blurb,
+    thesis: narrative.thesis,
+    main_risk: narrative.main_risk,
+    reason: `${narrative.company_blurb} ${narrative.thesis}`,
     narrative_source: narrative.narrative_source,
   }
 }

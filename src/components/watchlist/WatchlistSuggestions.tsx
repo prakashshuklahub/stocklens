@@ -4,6 +4,7 @@ import { useMemo, useState } from 'react'
 import useSWR from 'swr'
 import { Flame, Plus } from 'lucide-react'
 import CollapseChevron from '@/components/CollapseChevron'
+import NarrativeSummaryBlocks from '@/components/NarrativeSummaryBlocks'
 import StockLogo from '@/components/StockLogo'
 import { PRICE_REFRESH_MS } from '@/lib/market-hours'
 import { cn } from '@/lib/utils'
@@ -146,14 +147,13 @@ export default function WatchlistSuggestions({
                 </div>
               </div>
 
-              {s.reason && (
-                <p className="text-sm text-zinc-400 mt-2.5 leading-relaxed [text-wrap:pretty]">
-                  {s.reason}
-                  {s.narrative_source === 'llm' && (
-                    <span className="text-muted"> · AI</span>
-                  )}
-                </p>
-              )}
+              <NarrativeSummaryBlocks
+                company_blurb={s.company_blurb}
+                thesis={s.thesis}
+                main_risk={s.main_risk}
+                narrative_source={s.narrative_source}
+                llm_enabled={data?.llm_enabled}
+              />
 
               <button
                 type="button"
