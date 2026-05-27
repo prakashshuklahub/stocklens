@@ -1,10 +1,11 @@
 'use client'
 
 import { useState, useRef, useEffect, useCallback, type ReactNode } from 'react'
-import { MoreVertical, Trash2, Target, Activity, BarChart3, Users, Gauge } from 'lucide-react'
+import { MoreVertical, Trash2, Target, Activity, BarChart3, Users, Gauge, Newspaper } from 'lucide-react'
 import useSWR from 'swr'
 import StockLogo from '@/components/StockLogo'
 import AnalystMiniGrid from '@/components/AnalystMiniGrid'
+import NewsRow from '@/components/NewsRow'
 import PriceChartPanel, { priceChartCollapsedPreview } from '@/components/PriceChartPanel'
 import StockResearchPanel, { researchCollapsedPreview } from '@/components/StockResearchPanel'
 import VsSectorPanel, { vsSectorCollapsedPreview } from '@/components/VsSectorPanel'
@@ -12,7 +13,6 @@ import SessionPriceBadge from '@/components/SessionPriceBadge'
 import CollapseChevron from '@/components/CollapseChevron'
 import Week52Range from '@/components/Week52Range'
 import SignalReasonChips from '@/components/signals/SignalReasonChips'
-import SignalHeadlinesAccordion from '@/components/signals/SignalHeadlinesAccordion'
 import {
   computeTargetUpsidePct,
   formatDisplayTargetPrice,
@@ -25,7 +25,7 @@ import { priceBadgeSession, type MarketSession } from '@/lib/market-hours'
 import { vsSectorBadgeLabel } from '@/lib/sector-relative-strength'
 import { isBenchmarkableSector, normalizeWatchlistSector } from '@/lib/sector-relative-strength-scoring'
 import { cn } from '@/lib/utils'
-import type { SectorBenchmark, SectorRelativeStrength, Signal, SignalReason, StockFundamentals, StockSnapshot } from '@/types'
+import type { SectorBenchmark, SectorRelativeStrength, Signal, SignalNewsItem, SignalReason, StockFundamentals, StockSnapshot } from '@/types'
 
 const SECTOR_COLORS: Record<string, { bg: string; text: string }> = {
   Technology:               { bg: 'bg-blue-500/10',    text: 'text-blue-400' },
@@ -326,7 +326,7 @@ function CollapsedSummary({
   )
 }
 
-type WatchlistAccordionKey = 'room' | 'moves' | 'research' | 'sector' | 'analyst'
+type WatchlistAccordionKey = 'room' | 'moves' | 'research' | 'sector' | 'analyst' | 'headlines'
 
 const WATCHLIST_SECTIONS_CLOSED: Record<WatchlistAccordionKey, boolean> = {
   room: false,
@@ -334,6 +334,19 @@ const WATCHLIST_SECTIONS_CLOSED: Record<WatchlistAccordionKey, boolean> = {
   research: false,
   sector: false,
   analyst: false,
+  headlines: false,
+}
+
+function truncatePreview(text: string, max = 72): string {
+  const t = text.trim()
+  if (t.length <= max) return t
+  return `${t.slice(0, max - 1).trim()}…`
+}
+
+function headlinesPreview(news: SignalNewsItem[]): string {
+  const top = news[0]
+  if (top) return truncatePreview(top.title)
+  return 'No headlines right now'
 }
 
 function roomPreview(
@@ -745,12 +758,24 @@ export default function WatchlistCard({
       </WatchlistAccordionRow>
 
       {(signal || signalLoading) && (
-        <SignalHeadlinesAccordion
-          cardId={cardId}
-          news={signal?.news ?? []}
-          bias={signal?.bias}
-          inset
-        />
+        <WatchlistAccordionRow
+          id={`${cardId}-headlines`}
+          label="Headlines"
+          preview={headlinesPreview(signal?.news ?? [])}
+          open={sections.headlines}
+          onToggle={() => toggleSection('headlines')}
+          icon={Newspaper}
+        >
+          {signal?.news?.length ? (
+            <div className="space-y-2">
+              {signal.news.map((n, i) => (
+                <NewsRow key={`${n.url}-${i}`} item={n} />
+              ))}
+            </div>
+          ) : (
+            <p className="type-meta text-muted px-1 py-2">No headlines for this stock right now.</p>
+          )}
+        </WatchlistAccordionRow>
       )}
 
       {/* ── 3-dot menu ── */}

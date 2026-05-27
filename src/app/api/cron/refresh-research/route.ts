@@ -9,7 +9,7 @@ function authorized(req: NextRequest): boolean {
   return req.headers.get('authorization') === `Bearer ${secret}`
 }
 
-/** Hourly: refresh up to 30 stale rows via Finnhub (+ FMP), 3h DB TTL. */
+/** Daily (Vercel Hobby): refresh stale rows via Finnhub (+ FMP), 3h DB TTL. */
 export async function GET(req: NextRequest) {
   if (!authorized(req)) {
     return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
