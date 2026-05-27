@@ -117,6 +117,25 @@ export interface StockFundamentals {
   volume_ratio: number | null
 }
 
+/** On-demand Yahoo quoteSummary — earnings, valuation, financial health (not in stock_fundamentals). */
+export interface StockResearchSnapshot {
+  ticker: string
+  earnings_date: string | null
+  ex_dividend_date: string | null
+  pe_trailing: number | null
+  pe_forward: number | null
+  market_cap: number | null
+  beta: number | null
+  dividend_yield_pct: number | null
+  revenue_growth_pct: number | null
+  earnings_growth_pct: number | null
+  gross_margin_pct: number | null
+  operating_margin_pct: number | null
+  profit_margin_pct: number | null
+  debt_to_equity: number | null
+  current_ratio: number | null
+}
+
 // ── Sector benchmarks (shared ETF proxies, 30 min cache) ─────────────────────
 export interface SectorBenchmark {
   sector: string

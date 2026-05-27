@@ -18,6 +18,26 @@ let sessionInflight: Promise<YahooSession> | null = null
 let crumbBlockedUntil = 0
 let yahooQueue: Promise<unknown> = Promise.resolve()
 
+export class YahooRateLimitedError extends Error {
+  readonly retryAfterMs: number
+
+  constructor(retryAfterMs: number) {
+    super('yahoo session: rate limited')
+    this.name = 'YahooRateLimitedError'
+    this.retryAfterMs = retryAfterMs
+  }
+}
+
+/** Ms until crumb/session requests are allowed again (0 = ready). */
+export function getYahooCrumbRetryAfterMs(): number {
+  return Math.max(0, crumbBlockedUntil - Date.now())
+}
+
+function markYahooRateLimited(cooldownMs = CRUMB_COOLDOWN_MS): void {
+  invalidateYahooSession()
+  crumbBlockedUntil = Math.max(crumbBlockedUntil, Date.now() + cooldownMs)
+}
+
 function sleep(ms: number): Promise<void> {
   return new Promise((resolve) => setTimeout(resolve, ms))
 }
@@ -78,7 +98,7 @@ async function readCrumb(res: Response): Promise<string> {
   const text = (await res.text()).trim()
   if (!isValidCrumb(text)) {
     if (res.status === 429 || /too many/i.test(text)) {
-      crumbBlockedUntil = Date.now() + CRUMB_COOLDOWN_MS
+      markYahooRateLimited()
     }
     throw new Error(`yahoo crumb invalid: ${text.slice(0, 24)}`)
   }
@@ -86,8 +106,13 @@ async function readCrumb(res: Response): Promise<string> {
 }
 
 async function createYahooSession(): Promise<YahooSession> {
-  if (Date.now() < crumbBlockedUntil) {
-    throw new Error('yahoo session: rate limited')
+  const waitMs = getYahooCrumbRetryAfterMs()
+  if (waitMs > 0) {
+    if (waitMs <= 10_000) {
+      await sleep(waitMs + 50)
+    } else {
+      throw new YahooRateLimitedError(waitMs)
+    }
   }
 
   const boot = await fetchWithRetry('https://fc.yahoo.com', {
@@ -168,7 +193,7 @@ async function fetchYahooPriceTargetOnce(ticker: string): Promise<PriceTargetFie
     cache: 'no-store',
   })
   if (!res.ok) {
-    if (res.status === 429) invalidateYahooSession()
+    if (res.status === 429) markYahooRateLimited()
     return null
   }
   let data: unknown
@@ -194,11 +219,70 @@ export async function fetchYahooPriceTarget(ticker: string): Promise<PriceTarget
     try {
       let result = await fetchYahooPriceTargetOnce(ticker)
       if (result) return result
+      if (getYahooCrumbRetryAfterMs() > 5000) return null
       invalidateYahooSession()
       result = await fetchYahooPriceTargetOnce(ticker)
       return result
     } catch (err) {
+      if (err instanceof YahooRateLimitedError) throw err
       console.warn(`[yahoo] price target failed for ${ticker}:`, err instanceof Error ? err.message : err)
+      return null
+    }
+  })
+}
+
+async function fetchQuoteSummaryOnce(
+  ticker: string,
+  modules: string,
+): Promise<Record<string, unknown> | null> {
+  const sym = ticker.toUpperCase()
+  const { cookie, crumb } = await getYahooSession()
+  const url =
+    `https://query2.finance.yahoo.com/v10/finance/quoteSummary/${sym}` +
+    `?modules=${encodeURIComponent(modules)}&crumb=${encodeURIComponent(crumb)}`
+  const res = await fetchWithRetry(url, {
+    headers: { 'User-Agent': YAHOO_USER_AGENT, Cookie: cookie },
+    cache: 'no-store',
+  })
+  if (!res.ok) {
+    if (res.status === 429) markYahooRateLimited()
+    return null
+  }
+  let data: unknown
+  try {
+    data = await res.json()
+  } catch {
+    return null
+  }
+  if (isYahooAuthError(data)) {
+    invalidateYahooSession()
+    return null
+  }
+  const summary = data as {
+    quoteSummary?: { result?: Array<Record<string, unknown>> }
+  }
+  return summary.quoteSummary?.result?.[0] ?? null
+}
+
+/** quoteSummary modules (calendarEvents, summaryDetail, financialData, …). */
+export async function fetchYahooQuoteSummaryModules(
+  ticker: string,
+  modules: string,
+): Promise<Record<string, unknown> | null> {
+  return enqueueYahoo(async () => {
+    try {
+      let result = await fetchQuoteSummaryOnce(ticker, modules)
+      if (result) return result
+      if (getYahooCrumbRetryAfterMs() > 5000) return null
+      invalidateYahooSession()
+      result = await fetchQuoteSummaryOnce(ticker, modules)
+      return result
+    } catch (err) {
+      if (err instanceof YahooRateLimitedError) throw err
+      console.warn(
+        `[yahoo] quoteSummary(${modules}) failed for ${ticker}:`,
+        err instanceof Error ? err.message : err,
+      )
       return null
     }
   })

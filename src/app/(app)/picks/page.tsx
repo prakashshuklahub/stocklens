@@ -6,6 +6,7 @@ import AppNav from '@/components/AppNav'
 import PicksLoadingState from '@/components/picks/PicksLoadingState'
 import AnalystMiniGrid from '@/components/AnalystMiniGrid'
 import PriceChartPanel, { priceChartCollapsedPreview } from '@/components/PriceChartPanel'
+import StockResearchPanel, { researchCollapsedPreview } from '@/components/StockResearchPanel'
 import VsSectorPanel, { vsSectorCollapsedPreview } from '@/components/VsSectorPanel'
 import { useMarketSession } from '@/hooks/useMarketOpen'
 import CollapseChevron from '@/components/CollapseChevron'
@@ -20,6 +21,7 @@ import {
   Target,
   Activity,
   Newspaper,
+  Gauge,
 } from 'lucide-react'
 import NewsRow from '@/components/NewsRow'
 import StockLogo from '@/components/StockLogo'
@@ -304,11 +306,12 @@ function truncatePreview(text: string, max = 72): string {
   return `${t.slice(0, max - 1).trim()}…`
 }
 
-type PickAccordionKey = 'price' | 'momentum' | 'sector' | 'headlines' | 'why'
+type PickAccordionKey = 'price' | 'momentum' | 'research' | 'sector' | 'headlines' | 'why'
 
 const PICK_SECTIONS_CLOSED: Record<PickAccordionKey, boolean> = {
   price: false,
   momentum: false,
+  research: false,
   sector: false,
   headlines: false,
   why: false,
@@ -505,6 +508,17 @@ function PickCard({
         icon={Activity}
       >
         <PriceChartPanel ticker={pick.ticker} volumeRatio={pick.volume_ratio} />
+      </PickAccordionRow>
+
+      <PickAccordionRow
+        id={`${cardId}-research`}
+        label="Key research"
+        preview={researchCollapsedPreview()}
+        open={sections.research}
+        onToggle={() => toggleSection('research')}
+        icon={Gauge}
+      >
+        <StockResearchPanel ticker={pick.ticker} />
       </PickAccordionRow>
 
       {hasSector && sectorPreviewText && (

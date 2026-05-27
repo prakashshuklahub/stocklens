@@ -5,7 +5,6 @@ export const CHART_RANGE_OPTIONS = [
   { id: '5d', label: '5D', interval: '15m', range: '5d', cacheSeconds: 300 },
   { id: '1m', label: '1M', interval: '1d', range: '1mo', cacheSeconds: 900 },
   { id: '6m', label: '6M', interval: '1d', range: '6mo', cacheSeconds: 1800 },
-  { id: 'ytd', label: 'YTD', interval: '1d', range: 'ytd', cacheSeconds: 1800 },
   { id: '1y', label: '1Y', interval: '1d', range: '1y', cacheSeconds: 3600 },
   { id: '5y', label: '5Y', interval: '1wk', range: '5y', cacheSeconds: 3600 },
   { id: 'max', label: 'Max', interval: '1mo', range: 'max', cacheSeconds: 3600 },

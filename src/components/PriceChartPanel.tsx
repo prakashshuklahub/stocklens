@@ -1,9 +1,13 @@
 'use client'
 
-import { useState } from 'react'
-import useSWR from 'swr'
+import { useEffect, useRef, useState } from 'react'
+import useSWR, { mutate } from 'swr'
 import { cn } from '@/lib/utils'
 import { CHART_RANGE_OPTIONS, type ChartRange, type PriceChartPayload } from '@/lib/yahoo-chart'
+
+function chartUrl(ticker: string, range: ChartRange): string {
+  return `/api/chart/${encodeURIComponent(ticker)}?range=${range}`
+}
 
 function fmtPct(n: number | null | undefined, showPlus = true): string | null {
   if (n == null) return null
@@ -96,14 +100,36 @@ export default function PriceChartPanel({
   volumeRatio?: number | null
 }) {
   const [range, setRange] = useState<ChartRange>('1d')
-  const { data, error, isLoading } = useSWR<PriceChartPayload>(
-    `/api/chart/${encodeURIComponent(ticker)}?range=${range}`,
+  const cacheByRange = useRef<Partial<Record<ChartRange, PriceChartPayload>>>({})
+
+  const { data, error, isLoading, isValidating } = useSWR<PriceChartPayload>(
+    chartUrl(ticker, range),
     fetchChart,
-    { revalidateOnFocus: false },
+    {
+      revalidateOnFocus: false,
+      dedupingInterval: 3_600_000,
+    },
   )
 
-  const change = data?.change_pct ?? null
+  // Prefetch every range when the panel opens so tab switches hit SWR cache.
+  useEffect(() => {
+    for (const { id } of CHART_RANGE_OPTIONS) {
+      const url = chartUrl(ticker, id)
+      void mutate(url, fetchChart(url), { revalidate: false }).then((payload) => {
+        if (payload) cacheByRange.current[id] = payload
+      })
+    }
+  }, [ticker])
+
+  if (data) {
+    cacheByRange.current[data.range] = data
+  }
+
+  const display = data?.range === range ? data : cacheByRange.current[range] ?? data ?? null
+  const switching = isValidating && !cacheByRange.current[range] && data?.range !== range
+  const change = display?.change_pct ?? null
   const positive = change == null ? true : change >= 0
+  const showInitialLoading = !display && isLoading
 
   return (
     <div className="rounded-xl bg-zinc-800/50 px-3 py-2.5 border border-white/[0.04]">
@@ -130,8 +156,9 @@ export default function PriceChartPanel({
         {change != null && (
           <span
             className={cn(
-              'text-sm font-bold tabular-nums',
+              'text-sm font-bold tabular-nums transition-opacity',
               positive ? 'text-emerald-400' : 'text-red-400',
+              switching && 'opacity-50',
             )}
           >
             {fmtPct(change)}
@@ -139,18 +166,20 @@ export default function PriceChartPanel({
         )}
       </div>
 
-      {isLoading && !data && (
+      {showInitialLoading && (
         <div className="flex h-24 items-center justify-center type-meta text-zinc-500">
           Loading chart…
         </div>
       )}
-      {error && !data && (
+      {error && !display && (
         <div className="flex h-24 items-center justify-center type-meta text-zinc-500">
           Chart unavailable right now
         </div>
       )}
-      {data && (
-        <MiniLineChart points={data.points} positive={positive} />
+      {display && (
+        <div className={cn('transition-opacity', switching && 'opacity-60')}>
+          <MiniLineChart points={display.points} positive={positive} />
+        </div>
       )}
 
       {volumeRatio != null && volumeRatio >= 1.3 && (

@@ -1,11 +1,12 @@
 'use client'
 
 import { useState, useRef, useEffect, useCallback, type ReactNode } from 'react'
-import { MoreVertical, Trash2, Target, Activity, BarChart3, Users } from 'lucide-react'
+import { MoreVertical, Trash2, Target, Activity, BarChart3, Users, Gauge } from 'lucide-react'
 import useSWR from 'swr'
 import StockLogo from '@/components/StockLogo'
 import AnalystMiniGrid from '@/components/AnalystMiniGrid'
 import PriceChartPanel, { priceChartCollapsedPreview } from '@/components/PriceChartPanel'
+import StockResearchPanel, { researchCollapsedPreview } from '@/components/StockResearchPanel'
 import VsSectorPanel, { vsSectorCollapsedPreview } from '@/components/VsSectorPanel'
 import SessionPriceBadge from '@/components/SessionPriceBadge'
 import CollapseChevron from '@/components/CollapseChevron'
@@ -325,11 +326,12 @@ function CollapsedSummary({
   )
 }
 
-type WatchlistAccordionKey = 'room' | 'moves' | 'sector' | 'analyst'
+type WatchlistAccordionKey = 'room' | 'moves' | 'research' | 'sector' | 'analyst'
 
 const WATCHLIST_SECTIONS_CLOSED: Record<WatchlistAccordionKey, boolean> = {
   room: false,
   moves: false,
+  research: false,
   sector: false,
   analyst: false,
 }
@@ -690,6 +692,17 @@ export default function WatchlistCard({
           ticker={stock.ticker}
           volumeRatio={fundamentals?.volume_ratio ?? null}
         />
+      </WatchlistAccordionRow>
+
+      <WatchlistAccordionRow
+        id={`${cardId}-research`}
+        label="Key research"
+        preview={researchCollapsedPreview()}
+        open={sections.research}
+        onToggle={() => toggleSection('research')}
+        icon={Gauge}
+      >
+        <StockResearchPanel ticker={stock.ticker} />
       </WatchlistAccordionRow>
 
       {hasSector && sectorPreviewText && (
