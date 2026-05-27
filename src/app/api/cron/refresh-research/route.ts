@@ -9,7 +9,7 @@ function authorized(req: NextRequest): boolean {
   return req.headers.get('authorization') === `Bearer ${secret}`
 }
 
-/** Hourly: refresh up to 20 stale research rows (3h TTL), paced for Yahoo rate limits. */
+/** Hourly: refresh up to 30 stale rows via Finnhub (+ FMP), 3h DB TTL. */
 export async function GET(req: NextRequest) {
   if (!authorized(req)) {
     return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
@@ -20,7 +20,7 @@ export async function GET(req: NextRequest) {
   try {
     const result = await refreshResearchInDb(supabase)
     console.info(
-      `[cron/refresh-research] updated=${result.research_updated}/${result.tickers_attempted} stale=${result.tickers_stale}/${result.tickers_total} rate_limited=${result.rate_limited}`,
+      `[cron/refresh-research] updated=${result.research_updated}/${result.tickers_attempted} stale=${result.tickers_stale}/${result.tickers_total} watchlist=${result.watchlist_total}`,
     )
     return NextResponse.json(result)
   } catch (err) {

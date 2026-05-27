@@ -1,12 +1,16 @@
 import { auth } from '@/lib/auth'
-import { loadOrFetchResearch, RESEARCH_TTL_MS } from '@/lib/stock-research-cache'
+import {
+  ensureResearchForTicker,
+  loadOrFetchResearch,
+  RESEARCH_TTL_MS,
+} from '@/lib/stock-research-cache'
 import { createServerClient } from '@/lib/supabase'
 import { NextRequest, NextResponse } from 'next/server'
 
-export async function GET(
-  _req: NextRequest,
-  { params }: { params: Promise<{ ticker: string }> },
-) {
+type RouteParams = { params: Promise<{ ticker: string }> }
+
+/** Read cached research from DB (fetch on miss if panel opened). */
+export async function GET(_req: NextRequest, { params }: RouteParams) {
   const session = await auth()
   if (!session?.user) {
     return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
@@ -18,17 +22,6 @@ export async function GET(
   const result = await loadOrFetchResearch(supabase, sym)
 
   if (!result.ok) {
-    if (result.reason === 'rate_limited') {
-      const retrySec = Math.ceil(result.retryAfterMs / 1000)
-      return NextResponse.json(
-        {
-          error: 'Yahoo rate limited — try again shortly',
-          pending: true,
-          retry_after_sec: retrySec,
-        },
-        { status: 503, headers: { 'Retry-After': String(retrySec) } },
-      )
-    }
     return NextResponse.json(
       { error: 'Research not available yet', pending: true },
       { status: 404 },
@@ -44,6 +37,36 @@ export async function GET(
       ...(result.stale ? { 'X-Research-Stale': '1' } : {}),
     },
   })
+}
+
+/**
+ * Bootstrap one ticker into stock_research_cache (e.g. right after add to watchlist).
+ * ?force=1 refreshes even if a row exists.
+ */
+export async function POST(req: NextRequest, { params }: RouteParams) {
+  const session = await auth()
+  if (!session?.user) {
+    return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+  }
+
+  const { ticker } = await params
+  const sym = ticker.toUpperCase()
+  if (!/^[A-Z]{1,5}$/.test(sym)) {
+    return NextResponse.json({ error: 'Invalid ticker' }, { status: 400 })
+  }
+
+  const force = req.nextUrl.searchParams.get('force') === '1'
+  const supabase = createServerClient()
+  const snapshot = await ensureResearchForTicker(supabase, sym, { onlyIfMissing: !force })
+
+  if (!snapshot) {
+    return NextResponse.json(
+      { error: 'Could not fetch research for this ticker', pending: true },
+      { status: 404 },
+    )
+  }
+
+  return NextResponse.json(snapshot, { status: 201 })
 }
 
 export const maxDuration = 60

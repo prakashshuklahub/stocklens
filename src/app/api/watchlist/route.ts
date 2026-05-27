@@ -2,6 +2,7 @@ import { auth, getSessionUserId } from '@/lib/auth'
 import { fetchStockSnapshotsForTickers } from '@/lib/live-prices'
 import { isPriceRefreshActive } from '@/lib/market-hours'
 import { resolveSectorForTicker } from '@/lib/sectors'
+import { ensureResearchForTicker } from '@/lib/stock-research-cache'
 import { ensureLogosForTickers } from '@/lib/stock-logo-cache'
 import { createServerClient } from '@/lib/supabase'
 import { NextRequest, NextResponse } from 'next/server'
@@ -78,6 +79,10 @@ export async function POST(req: NextRequest) {
   }
 
   void ensureLogosForTickers(supabase, [sym]).catch(() => {})
+
+  void ensureResearchForTicker(supabase, sym, { onlyIfMissing: true }).catch((err) => {
+    console.warn(`[watchlist] research bootstrap failed for ${sym}:`, err instanceof Error ? err.message : err)
+  })
 
   return NextResponse.json(data, { status: 201 })
 }

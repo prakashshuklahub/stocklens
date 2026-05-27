@@ -497,6 +497,7 @@ export default function WatchlistPage() {
       }
       await mutate()
       void mutateSignals()
+      void fetch(`/api/research/${encodeURIComponent(result.ticker)}`, { method: 'POST' })
     } finally {
       setAdding(false)
     }

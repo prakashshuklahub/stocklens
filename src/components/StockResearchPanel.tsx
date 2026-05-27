@@ -6,15 +6,6 @@ import { cn } from '@/lib/utils'
 import { researchCollapsedPreview } from '@/lib/yahoo-research'
 import type { StockResearchSnapshot } from '@/types'
 
-export class ResearchFetchError extends Error {
-  readonly retryAfterSec: number
-
-  constructor(retryAfterSec: number) {
-    super('Research rate limited')
-    this.retryAfterSec = retryAfterSec
-  }
-}
-
 export class ResearchPendingError extends Error {
   constructor() {
     super('Research pending')
@@ -24,22 +15,20 @@ export class ResearchPendingError extends Error {
 
 async function fetchResearch(url: string): Promise<StockResearchSnapshot> {
   const res = await fetch(url)
-  if (res.status === 404) {
-    throw new ResearchPendingError()
-  }
-  if (res.status === 503) {
-    const body = (await res.json().catch(() => null)) as { retry_after_sec?: number } | null
-    const headerRetry = Number(res.headers.get('Retry-After'))
-    const retrySec = body?.retry_after_sec ?? (Number.isFinite(headerRetry) ? headerRetry : 90)
-    throw new ResearchFetchError(retrySec)
-  }
+  if (res.status === 404) throw new ResearchPendingError()
   if (!res.ok) throw new Error('Research fetch failed')
   return res.json()
 }
 
-function fmtPct(n: number | null | undefined, digits = 1): string {
+function fmtPct(n: number | null | undefined, digits = 1, signed = true): string {
   if (n == null) return '—'
-  return `${n >= 0 ? '+' : ''}${n.toFixed(digits)}%`
+  const prefix = signed && n >= 0 ? '+' : ''
+  return `${prefix}${n.toFixed(digits)}%`
+}
+
+function fmtYield(n: number | null | undefined): string {
+  if (n == null) return '—'
+  return `${n.toFixed(2)}%`
 }
 
 function fmtRatio(n: number | null | undefined, digits = 2): string {
@@ -49,6 +38,7 @@ function fmtRatio(n: number | null | undefined, digits = 2): string {
 
 function fmtPe(n: number | null | undefined): string {
   if (n == null) return '—'
+  if (n < 0) return 'N/M'
   return n.toFixed(1)
 }
 
@@ -73,25 +63,27 @@ function earningsTiming(iso: string | null | undefined): string | null {
   if (!iso) return null
   try {
     const diff = Math.ceil((parseISO(iso).getTime() - Date.now()) / 86_400_000)
-    if (diff < 0) return 'Past date — confirm on calendar'
-    if (diff === 0) return 'Reports today'
-    if (diff === 1) return 'Reports tomorrow'
-    return `In ${diff} days`
+    if (diff < 0) return null
+    if (diff === 0) return 'today'
+    if (diff === 1) return 'tomorrow'
+    return `${diff}d`
   } catch {
     return null
   }
 }
 
-function StatCell({ label, value, tone }: { label: string; value: string; tone?: 'pos' | 'neg' }) {
+type StatItem = { label: string; value: string; tone?: 'pos' | 'neg' }
+
+function StatRow({ label, value, tone }: StatItem) {
   return (
-    <div className="flex flex-col gap-0.5 min-w-0">
-      <span className="type-meta text-zinc-500 font-medium truncate">{label}</span>
+    <div className="flex items-baseline justify-between gap-2 py-1 min-w-0">
+      <span className="type-meta text-zinc-500 shrink-0">{label}</span>
       <span
         className={cn(
-          'text-sm font-bold tabular-nums truncate',
+          'type-meta font-semibold tabular-nums text-right truncate',
           tone === 'pos' && 'text-emerald-400',
           tone === 'neg' && 'text-red-400',
-          !tone && 'text-zinc-100',
+          !tone && 'text-zinc-200',
         )}
       >
         {value}
@@ -100,10 +92,79 @@ function StatCell({ label, value, tone }: { label: string; value: string; tone?:
   )
 }
 
-function SectionTitle({ children }: { children: React.ReactNode }) {
-  return (
-    <p className="type-meta font-bold text-zinc-400 uppercase tracking-wide mb-2">{children}</p>
-  )
+function buildStats(data: StockResearchSnapshot): StatItem[] {
+  const stats: StatItem[] = []
+  const earnIn = earningsTiming(data.earnings_date)
+
+  if (data.earnings_date) {
+    stats.push({
+      label: 'Earnings',
+      value: earnIn
+        ? `${formatShortDate(data.earnings_date)} · ${earnIn}`
+        : formatShortDate(data.earnings_date),
+    })
+  }
+  if (data.ex_dividend_date) {
+    stats.push({ label: 'Ex-div', value: formatShortDate(data.ex_dividend_date) })
+  }
+  if (data.pe_trailing != null) {
+    stats.push({ label: 'P/E', value: fmtPe(data.pe_trailing) })
+  }
+  if (data.pe_forward != null && data.pe_forward !== data.pe_trailing) {
+    stats.push({ label: 'Fwd P/E', value: fmtPe(data.pe_forward) })
+  }
+  if (data.market_cap != null) {
+    stats.push({ label: 'Mkt cap', value: formatMarketCap(data.market_cap) })
+  }
+  if (data.beta != null) {
+    stats.push({ label: 'Beta', value: fmtRatio(data.beta, 2) })
+  }
+  if (data.dividend_yield_pct != null && data.dividend_yield_pct > 0) {
+    stats.push({ label: 'Div yield', value: fmtYield(data.dividend_yield_pct) })
+  }
+  if (data.revenue_growth_pct != null) {
+    stats.push({
+      label: 'Rev YoY',
+      value: fmtPct(data.revenue_growth_pct),
+      tone: data.revenue_growth_pct >= 0 ? 'pos' : 'neg',
+    })
+  }
+  if (data.earnings_growth_pct != null) {
+    stats.push({
+      label: 'EPS YoY',
+      value: fmtPct(data.earnings_growth_pct),
+      tone: data.earnings_growth_pct >= 0 ? 'pos' : 'neg',
+    })
+  }
+  if (data.gross_margin_pct != null) {
+    stats.push({
+      label: 'Gross margin',
+      value: fmtPct(data.gross_margin_pct, 1, false),
+      tone: data.gross_margin_pct >= 0 ? undefined : 'neg',
+    })
+  }
+  if (data.operating_margin_pct != null) {
+    stats.push({
+      label: 'Op margin',
+      value: fmtPct(data.operating_margin_pct, 1, false),
+      tone: data.operating_margin_pct >= 0 ? undefined : 'neg',
+    })
+  }
+  if (data.profit_margin_pct != null) {
+    stats.push({
+      label: 'Profit margin',
+      value: fmtPct(data.profit_margin_pct, 1, false),
+      tone: data.profit_margin_pct >= 0 ? undefined : 'neg',
+    })
+  }
+  if (data.debt_to_equity != null) {
+    stats.push({ label: 'Debt/equity', value: fmtRatio(data.debt_to_equity, 1) })
+  }
+  if (data.current_ratio != null) {
+    stats.push({ label: 'Current ratio', value: fmtRatio(data.current_ratio, 2) })
+  }
+
+  return stats
 }
 
 export { researchCollapsedPreview }
@@ -115,90 +176,48 @@ export default function StockResearchPanel({ ticker }: { ticker: string }) {
     { revalidateOnFocus: false, shouldRetryOnError: false },
   )
 
-  const rateLimited = error instanceof ResearchFetchError
   const pending = error instanceof ResearchPendingError
-  const retrySec = rateLimited ? error.retryAfterSec : 0
 
   if (isLoading && !data) {
     return (
-      <div className="rounded-xl bg-zinc-800/50 px-3 py-4 border border-white/[0.04] type-meta text-zinc-500 text-center">
-        Loading research data…
+      <div className="rounded-lg bg-zinc-800/50 px-3 py-2.5 border border-white/[0.04] type-meta text-zinc-500 text-center">
+        Loading…
       </div>
     )
   }
 
   if (pending && !data) {
     return (
-      <div className="rounded-xl bg-zinc-800/50 px-3 py-4 border border-white/[0.04] type-meta text-zinc-400 text-center space-y-1">
-        <p>Research syncs hourly from Yahoo.</p>
-        <p className="text-zinc-500">This ticker should fill on the next run — check back soon.</p>
-      </div>
-    )
-  }
-
-  if (rateLimited && !data) {
-    return (
-      <div className="rounded-xl bg-zinc-800/50 px-3 py-4 border border-amber-500/20 type-meta text-zinc-400 text-center space-y-1">
-        <p>Yahoo is rate-limiting research data.</p>
-        <p className="text-amber-300/90">
-          Try again in ~{Math.max(1, Math.ceil(retrySec / 60))} min
-        </p>
+      <div className="rounded-lg bg-zinc-800/50 px-3 py-2.5 border border-white/[0.04] type-meta text-zinc-500 text-center">
+        Syncing research — try again shortly
       </div>
     )
   }
 
   if (error && !data) {
     return (
-      <div className="rounded-xl bg-zinc-800/50 px-3 py-4 border border-white/[0.04] type-meta text-zinc-500 text-center">
-        Research data unavailable right now
+      <div className="rounded-lg bg-zinc-800/50 px-3 py-2.5 border border-white/[0.04] type-meta text-zinc-500 text-center">
+        Research unavailable
       </div>
     )
   }
 
   if (!data) return null
 
-  const earningsNote = earningsTiming(data.earnings_date)
-  const revTone =
-    data.revenue_growth_pct == null ? undefined : data.revenue_growth_pct >= 0 ? 'pos' : 'neg'
-  const earnTone =
-    data.earnings_growth_pct == null ? undefined : data.earnings_growth_pct >= 0 ? 'pos' : 'neg'
+  const stats = buildStats(data)
+  if (!stats.length) {
+    return (
+      <div className="rounded-lg bg-zinc-800/50 px-3 py-2.5 border border-white/[0.04] type-meta text-zinc-500 text-center">
+        No research metrics for this ticker yet
+      </div>
+    )
+  }
 
   return (
-    <div className="rounded-xl bg-zinc-800/50 px-3 py-2.5 border border-white/[0.04] space-y-3">
-      <div>
-        <SectionTitle>Earnings & dividends</SectionTitle>
-        <div className="grid grid-cols-2 gap-3">
-          <StatCell label="Next earnings" value={formatShortDate(data.earnings_date)} />
-          <StatCell label="Ex-dividend" value={formatShortDate(data.ex_dividend_date)} />
-        </div>
-        {earningsNote && (
-          <p className="type-meta text-amber-300/90 mt-1.5">{earningsNote}</p>
-        )}
-      </div>
-
-      <div className="border-t border-white/[0.04] pt-3">
-        <SectionTitle>Valuation</SectionTitle>
-        <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
-          <StatCell label="P/E (trailing)" value={fmtPe(data.pe_trailing)} />
-          <StatCell label="P/E (forward)" value={fmtPe(data.pe_forward)} />
-          <StatCell label="Market cap" value={formatMarketCap(data.market_cap)} />
-          <StatCell label="Beta" value={fmtRatio(data.beta, 2)} />
-          <StatCell label="Div yield" value={fmtPct(data.dividend_yield_pct, 2)} />
-        </div>
-      </div>
-
-      <div className="border-t border-white/[0.04] pt-3">
-        <SectionTitle>Financial health</SectionTitle>
-        <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
-          <StatCell label="Revenue growth" value={fmtPct(data.revenue_growth_pct)} tone={revTone} />
-          <StatCell label="Earnings growth" value={fmtPct(data.earnings_growth_pct)} tone={earnTone} />
-          <StatCell label="Gross margin" value={fmtPct(data.gross_margin_pct)} />
-          <StatCell label="Operating margin" value={fmtPct(data.operating_margin_pct)} />
-          <StatCell label="Profit margin" value={fmtPct(data.profit_margin_pct)} />
-          <StatCell label="Debt / equity" value={fmtRatio(data.debt_to_equity, 1)} />
-          <StatCell label="Current ratio" value={fmtRatio(data.current_ratio, 2)} />
-        </div>
-      </div>
+    <div className="rounded-lg bg-zinc-800/50 px-3 py-1 border border-white/[0.04] divide-y divide-white/[0.04]">
+      {stats.map((s) => (
+        <StatRow key={s.label} {...s} />
+      ))}
     </div>
   )
 }

@@ -1,25 +1,10 @@
-import { fetchYahooStockResearchFromYahoo } from '@/lib/yahoo-research'
-import { getYahooCrumbRetryAfterMs, YahooRateLimitedError } from '@/lib/yahoo-session'
+import { fetchStockResearchFromApis } from '@/lib/research-fetch'
 import type { createServerClient } from '@/lib/supabase'
 import type { StockResearchSnapshot } from '@/types'
 
 type Supabase = ReturnType<typeof createServerClient>
 
 const onDemandInflight = new Map<string, Promise<StockResearchSnapshot | null>>()
-
-function sleep(ms: number): Promise<void> {
-  return new Promise((resolve) => setTimeout(resolve, ms))
-}
-
-/** Wait out short Yahoo cooldowns before an on-demand fetch (user opened the panel). */
-async function waitForYahooCooldown(maxWaitMs = 15_000): Promise<boolean> {
-  let retryAfterMs = getYahooCrumbRetryAfterMs()
-  if (retryAfterMs <= 0) return true
-  if (retryAfterMs > maxWaitMs) return false
-  await sleep(retryAfterMs + 100)
-  retryAfterMs = getYahooCrumbRetryAfterMs()
-  return retryAfterMs <= 0
-}
 
 /** Refresh when older than this (cron runs hourly). */
 export const RESEARCH_TTL_MS = 3 * 60 * 60 * 1000
@@ -126,7 +111,58 @@ export async function upsertResearchToDb(
 export type LoadResearchResult =
   | { ok: true; data: StockResearchSnapshot; fetched_at: string; stale?: boolean }
   | { ok: false; reason: 'pending' }
-  | { ok: false; reason: 'rate_limited'; retryAfterMs: number }
+
+export type ResearchTickerUniverse = {
+  watchlist: Set<string>
+  all: string[]
+}
+
+/** All users' watchlists + portfolio + fundamentals — shared cache universe. */
+export async function listResearchTickerUniverse(supabase: Supabase): Promise<ResearchTickerUniverse> {
+  const watchlist = new Set<string>()
+  const all = new Set<string>()
+
+  const [wlRes, pfRes, fdRes] = await Promise.all([
+    supabase.from('watchlist_stocks').select('ticker'),
+    supabase.from('portfolio_holdings').select('ticker'),
+    supabase.from('stock_fundamentals').select('ticker'),
+  ])
+
+  for (const row of wlRes.data ?? []) {
+    if (row.ticker) watchlist.add(String(row.ticker).toUpperCase())
+  }
+  for (const row of [...(wlRes.data ?? []), ...(pfRes.data ?? []), ...(fdRes.data ?? [])]) {
+    if (row.ticker) all.add(String(row.ticker).toUpperCase())
+  }
+
+  return { watchlist, all: [...all].sort() }
+}
+
+/** Cron queue: missing rows first, then all-user watchlist, then oldest refresh. */
+export function sortResearchRefreshQueue(
+  tickers: string[],
+  watchlist: Set<string>,
+  fetchedAtByTicker: Map<string, string>,
+): string[] {
+  return tickers
+    .filter((t) => needsResearchRefresh(fetchedAtByTicker.get(t)))
+    .sort((a, b) => {
+      const aMissing = !fetchedAtByTicker.has(a)
+      const bMissing = !fetchedAtByTicker.has(b)
+      if (aMissing !== bMissing) return aMissing ? -1 : 1
+
+      const aWatch = watchlist.has(a)
+      const bWatch = watchlist.has(b)
+      if (aWatch !== bWatch) return aWatch ? -1 : 1
+
+      const aAt = fetchedAtByTicker.get(a)
+      const bAt = fetchedAtByTicker.get(b)
+      if (!aAt && !bAt) return a.localeCompare(b)
+      if (!aAt) return -1
+      if (!bAt) return 1
+      return new Date(aAt).getTime() - new Date(bAt).getTime()
+    })
+}
 
 async function fetchAndStoreResearch(sym: string, supabase: Supabase): Promise<StockResearchSnapshot | null> {
   const pending = onDemandInflight.get(sym)
@@ -134,7 +170,7 @@ async function fetchAndStoreResearch(sym: string, supabase: Supabase): Promise<S
 
   const work = (async () => {
     try {
-      const snapshot = await fetchYahooStockResearchFromYahoo(sym)
+      const snapshot = await fetchStockResearchFromApis(sym)
       if (!snapshot) return null
       await upsertResearchToDb(supabase, snapshot)
       return snapshot
@@ -147,7 +183,21 @@ async function fetchAndStoreResearch(sym: string, supabase: Supabase): Promise<S
   return work
 }
 
-/** Read DB; on miss, one queued Yahoo fetch → upsert (first expand fills cache). */
+/** Fetch one ticker from Finnhub/FMP → DB. Skips if row exists when onlyIfMissing. */
+export async function ensureResearchForTicker(
+  supabase: Supabase,
+  ticker: string,
+  options?: { onlyIfMissing?: boolean },
+): Promise<StockResearchSnapshot | null> {
+  const sym = ticker.toUpperCase()
+  if (options?.onlyIfMissing) {
+    const cached = await loadResearchFromDb(supabase, sym)
+    if (cached) return cached.data
+  }
+  return fetchAndStoreResearch(sym, supabase)
+}
+
+/** Read DB; on miss fetch Finnhub/FMP once → upsert → return. */
 export async function loadOrFetchResearch(
   supabase: Supabase,
   ticker: string,
@@ -163,44 +213,20 @@ export async function loadOrFetchResearch(
     }
   }
 
-  try {
-    await waitForYahooCooldown()
-
-    const snapshot = await fetchAndStoreResearch(sym, supabase)
-    if (snapshot) {
-      return { ok: true, data: snapshot, fetched_at: new Date().toISOString() }
-    }
-
-    const after = await loadResearchFromDb(supabase, sym)
-    if (after) {
-      return {
-        ok: true,
-        data: after.data,
-        fetched_at: after.fetched_at,
-        stale: needsResearchRefresh(after.fetched_at),
-      }
-    }
-
-    const retryAfterMs = getYahooCrumbRetryAfterMs()
-    if (retryAfterMs > 0) {
-      return { ok: false, reason: 'rate_limited', retryAfterMs }
-    }
-
-    return { ok: false, reason: 'pending' }
-  } catch (err) {
-    const after = await loadResearchFromDb(supabase, sym)
-    if (after) {
-      return {
-        ok: true,
-        data: after.data,
-        fetched_at: after.fetched_at,
-        stale: needsResearchRefresh(after.fetched_at),
-      }
-    }
-
-    if (err instanceof YahooRateLimitedError) {
-      return { ok: false, reason: 'rate_limited', retryAfterMs: err.retryAfterMs }
-    }
-    throw err
+  const snapshot = await fetchAndStoreResearch(sym, supabase)
+  if (snapshot) {
+    return { ok: true, data: snapshot, fetched_at: new Date().toISOString() }
   }
+
+  const after = await loadResearchFromDb(supabase, sym)
+  if (after) {
+    return {
+      ok: true,
+      data: after.data,
+      fetched_at: after.fetched_at,
+      stale: needsResearchRefresh(after.fetched_at),
+    }
+  }
+
+  return { ok: false, reason: 'pending' }
 }
