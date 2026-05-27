@@ -22,14 +22,12 @@ import { useLivePriceRefresh } from '@/hooks/useLivePriceRefresh'
 import { PORTFOLIO_ALERT_DEMO } from '@/lib/portfolio-alerts'
 import { mergePriceSnapshots } from '@/lib/portfolio-signals'
 import type { MarketSession } from '@/lib/market-hours'
-import { liveRefreshSubtitle } from '@/lib/market-hours'
 import { cn } from '@/lib/utils'
 import type {
   HoldingSignalTier,
   PortfolioAlert,
   PortfolioHoldingWithPrice,
   PortfolioHoldingWithSignal,
-  PortfolioSignalsMeta,
   PortfolioWithSignalsResponse,
   VestedRow,
 } from '@/types'
@@ -211,18 +209,6 @@ function alertToDemoHolding(alert: PortfolioAlert, index: number): PortfolioHold
 
 const DEMO_HOLDINGS = PORTFOLIO_ALERT_DEMO.map(alertToDemoHolding)
 
-function holdingsSignalsSubtitle(
-  meta: PortfolioSignalsMeta | null | undefined,
-  session: MarketSession,
-  loading?: boolean,
-): string {
-  if (loading) return 'Scanning holdings…'
-  if (!meta) return liveRefreshSubtitle(session)
-  const flagged = meta.by_tier.attention + meta.by_tier.soft + meta.by_tier.profit
-  if (flagged === 0) return `${meta.holding_count} holding${meta.holding_count === 1 ? '' : 's'} — all look quiet`
-  return `${flagged} flagged · ${meta.quiet_count} look quiet`
-}
-
 const TIER_FILTERS: FilterChipOption<TierFilter>[] = [
   { id: 'all', label: 'All' },
   { id: 'attention', label: 'Needs attention', tone: 'attention' },
@@ -237,7 +223,6 @@ function filterHoldings(holdings: PortfolioHoldingWithSignal[], filter: TierFilt
 
 function HoldingsSection({
   holdings,
-  meta,
   countdown,
   refreshing,
   session,
@@ -245,7 +230,6 @@ function HoldingsSection({
   preview,
 }: {
   holdings: PortfolioHoldingWithSignal[]
-  meta?: PortfolioSignalsMeta | null
   countdown: number
   refreshing: boolean
   session: MarketSession
@@ -255,24 +239,18 @@ function HoldingsSection({
   const [tierFilter, setTierFilter] = useState<TierFilter>('all')
   const isLive = session === 'regular'
   const filtered = useMemo(() => filterHoldings(holdings, tierFilter), [holdings, tierFilter])
-  const subtitle = preview
-    ? 'Sample flagged holdings (not your portfolio)'
-    : holdingsSignalsSubtitle(meta, session, loading)
 
   return (
     <section className="mb-5" aria-label="Your holdings">
-      <div className="flex items-center justify-between gap-2 mb-2 px-0.5">
-        <p className="type-caption text-zinc-500" aria-live="polite">
-          {subtitle}
-        </p>
-        {isLive && !preview && (
+      {isLive && !preview && (
+        <div className="flex items-center justify-end gap-2 mb-2 px-0.5">
           <RefreshCountdown seconds={countdown} refreshing={refreshing} />
-        )}
-      </div>
+        </div>
+      )}
 
       {preview && (
         <p className="type-meta text-amber-400/80 mb-2 px-0.5">
-          Preview only — sync Vested to scan your real holdings.
+          Preview only — sample flagged holdings, not your portfolio. Sync Vested to scan your real holdings.
         </p>
       )}
 
@@ -406,8 +384,6 @@ export default function PortfolioPage() {
   )
 
   const holdings = portfolioData?.holdings ?? []
-  const signalsMeta = portfolioData?.meta ?? null
-
   const refreshing = isValidating && !isLoading
 
   const refreshPrices = useCallback(async () => {
@@ -607,7 +583,6 @@ export default function PortfolioPage() {
 
               <HoldingsSection
                 holdings={holdings}
-                meta={signalsMeta}
                 countdown={countdown}
                 refreshing={refreshing}
                 session={marketSession}

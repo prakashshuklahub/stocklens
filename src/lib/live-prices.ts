@@ -105,6 +105,39 @@ function parseYahooQuote(q: Record<string, unknown>): LivePriceSnapshot | null {
     }
   }
 
+  const clockSession = getUSMarketSession()
+
+  // Yahoo often reports marketState CLOSED while postMarketPrice is still updating.
+  if (clockSession === 'post' && isExtendedQuoteEligible(q)) {
+    const price = extendedPostPrice(q)
+    if (price != null) {
+      return {
+        price,
+        change_1d_pct: pctChange(price, prevClose),
+        session: 'post',
+        as_of: yahooTimeToMs(q.postMarketTime ?? q.extendedMarketTime),
+        sector,
+      }
+    }
+  }
+
+  if (clockSession === 'pre' && isExtendedQuoteEligible(q)) {
+    const price = extendedPrePrice(q)
+    if (price != null) {
+      const change_1d_pct =
+        typeof q.preMarketChangePercent === 'number'
+          ? q.preMarketChangePercent
+          : pctChange(price, prevClose)
+      return {
+        price,
+        change_1d_pct,
+        session: 'pre',
+        as_of: yahooTimeToMs(q.preMarketTime ?? q.extendedMarketTime),
+        sector,
+      }
+    }
+  }
+
   if (typeof q.regularMarketPrice !== 'number') return null
 
   const price = q.regularMarketPrice
@@ -250,7 +283,7 @@ async function fetchChartFallback(sym: string): Promise<LivePriceSnapshot | null
       price,
       change_1d_pct: pctChange(price, prevClose),
       // v8 chart meta only exposes regularMarketPrice (no pre/post price fields).
-      session: clockSession === 'regular' ? 'regular' : 'closed',
+      session: clockSession,
       as_of: yahooTimeToMs(meta.regularMarketTime),
     }
   } catch {

@@ -60,13 +60,15 @@ export function sessionPriceLabel(session: MarketSession): string | null {
   }
 }
 
-/** Badge session — Yahoo snapshot first, client clock fallback for extended/closed. */
+/** Badge session — Yahoo extended prices first; clock wins over snapshot "closed". */
 export function priceBadgeSession(
   snapshotSession: MarketSession | undefined,
   clockSession: MarketSession,
 ): MarketSession | undefined {
-  if (snapshotSession && snapshotSession !== 'regular') return snapshotSession
-  if (clockSession !== 'regular') return clockSession
+  if (snapshotSession === 'pre' || snapshotSession === 'post') return snapshotSession
+  // Snapshot "closed" = regular close price, not necessarily that the market is closed.
+  if (clockSession === 'pre' || clockSession === 'post') return clockSession
+  if (snapshotSession === 'closed' || clockSession === 'closed') return 'closed'
   return undefined
 }
 
