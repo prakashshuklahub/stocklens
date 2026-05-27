@@ -8,13 +8,37 @@ import NarrativeSummaryBlocks from '@/components/NarrativeSummaryBlocks'
 import StockLogo from '@/components/StockLogo'
 import { PRICE_REFRESH_MS } from '@/lib/market-hours'
 import { cn } from '@/lib/utils'
-import type { WatchlistSuggestionsResponse } from '@/types'
+import type { PickNarrativesResponse, WatchlistSuggestion, WatchlistSuggestionsResponse } from '@/types'
 import type { StockResult } from '@/components/watchlist/StockSearchInput'
 
 const fetcher = async (url: string): Promise<WatchlistSuggestionsResponse> => {
   const res = await fetch(url, { cache: 'no-store' })
   if (!res.ok) throw new Error('Failed to load suggestions')
   return res.json()
+}
+
+const narrativesFetcher = async (url: string): Promise<PickNarrativesResponse> => {
+  const res = await fetch(url, { cache: 'no-store' })
+  if (!res.ok) throw new Error('Failed to load narratives')
+  return res.json()
+}
+
+function mergeSuggestionNarratives(
+  suggestions: WatchlistSuggestion[],
+  narratives: PickNarrativesResponse['narratives'],
+): WatchlistSuggestion[] {
+  if (!Object.keys(narratives).length) return suggestions
+  return suggestions.map((s) => {
+    const narrative = narratives[s.ticker.toUpperCase()]
+    if (!narrative) return s
+    return {
+      ...s,
+      company_blurb: narrative.company_blurb ?? s.company_blurb,
+      thesis: narrative.thesis,
+      main_risk: narrative.main_risk,
+      narrative_source: narrative.narrative_source,
+    }
+  })
 }
 
 function fmt(n: number, d = 2) {
@@ -55,7 +79,38 @@ export default function WatchlistSuggestions({
   const visible = (data?.suggestions ?? []).filter(
     (s) => !ownedTickers.has(s.ticker.toUpperCase()),
   )
-  const showEmpty = !isLoading && !error && visible.length === 0
+
+  const pendingNarrativeTickers = useMemo(() => {
+    if (!data?.llm_enabled) return ''
+    const pending = visible
+      .filter((s) => s.narrative_source === 'mechanical')
+      .map((s) => s.ticker.toUpperCase())
+    return [...new Set(pending)].join(',')
+  }, [data?.llm_enabled, visible])
+
+  const { data: narrativeData } = useSWR<PickNarrativesResponse>(
+    pendingNarrativeTickers ? `/api/picks/narratives?tickers=${pendingNarrativeTickers}` : null,
+    narrativesFetcher,
+    {
+      revalidateOnFocus: false,
+      dedupingInterval: 0,
+      refreshInterval: (latest) => {
+        if (!latest?.narratives || !pendingNarrativeTickers) return 0
+        const pending = pendingNarrativeTickers.split(',')
+        const allReady = pending.every(
+          (ticker) => latest.narratives[ticker]?.narrative_source === 'llm',
+        )
+        return allReady ? 0 : 3000
+      },
+    },
+  )
+
+  const displaySuggestions = useMemo(
+    () => mergeSuggestionNarratives(visible, narrativeData?.narratives ?? {}),
+    [visible, narrativeData],
+  )
+
+  const showEmpty = !isLoading && !error && displaySuggestions.length === 0
 
   const subtitle = isLoading
     ? 'Scanning market movers…'
@@ -64,7 +119,7 @@ export default function WatchlistSuggestions({
       : visible.length
         ? open
           ? 'Not on your watchlist · momentum + buy ratings'
-          : `Not on your watchlist · ${visible.length} name${visible.length === 1 ? '' : 's'}`
+          : `Not on your watchlist · ${displaySuggestions.length} name${displaySuggestions.length === 1 ? '' : 's'}`
         : 'Not on your watchlist'
 
   return (
@@ -87,9 +142,9 @@ export default function WatchlistSuggestions({
         {data?.llm_enabled && !isLoading && visible.length > 0 && (
           <span className="type-micro font-bold text-blue-400/80 uppercase tracking-wide shrink-0">AI</span>
         )}
-        {!isLoading && visible.length > 0 && (
+        {!isLoading && displaySuggestions.length > 0 && (
           <span className="type-meta font-bold text-orange-400/90 tabular-nums shrink-0">
-            {visible.length}
+            {displaySuggestions.length}
           </span>
         )}
         <CollapseChevron open={open} />
@@ -112,7 +167,7 @@ export default function WatchlistSuggestions({
         </div>
       ) : (
         <ul className="space-y-2">
-          {visible.map((s, i) => {
+          {displaySuggestions.map((s, i) => {
             const isUp = s.change_1d_pct >= 0
             return (
             <li
@@ -182,7 +237,7 @@ export default function WatchlistSuggestions({
         </ul>
       )}
 
-      {data?.generated_at && !isLoading && visible.length > 0 && (
+      {data?.generated_at && !isLoading && displaySuggestions.length > 0 && (
         <p className="text-xs text-muted mt-3 leading-relaxed">
           Trending list rescans every 3h
           {marketOpen ? ' · live prices refresh with the market' : ''}

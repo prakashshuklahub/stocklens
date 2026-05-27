@@ -1,5 +1,4 @@
-import { fetchYahooBusinessSummary, mechanicalCompanyBlurb } from '@/lib/company-profile'
-import { generateNarrative, isLLMEnabled } from '@/lib/llm'
+import { isLLMEnabled } from '@/lib/llm'
 import {
   loadFreshNarratives,
   mapSequential,
@@ -8,6 +7,7 @@ import {
   upsertNarratives,
 } from '@/lib/narrative-cache'
 import { mechanicalThesis, type ScoredPick } from '@/lib/picks'
+import { generateNarrativeForPick } from '@/lib/stock-narratives'
 import type { createServerClient } from '@/lib/supabase'
 import type { Pick, PickNarrativePayload, SignalNewsItem, StockFundamentals } from '@/types'
 
@@ -104,16 +104,6 @@ export function attachPickNarratives(
   return { picks, narrativeTimes, pendingLlm }
 }
 
-async function resolveCompanyBlurb(
-  pick: ScoredPick,
-  fromLlm: string | null | undefined,
-): Promise<string> {
-  if (fromLlm?.trim()) return fromLlm.trim()
-  const yahoo = await fetchYahooBusinessSummary(pick.ticker)
-  if (yahoo) return yahoo
-  return mechanicalCompanyBlurb(pick.company_name, pick.ticker, pick.sector)
-}
-
 async function generateAndUpsertPickNarratives(
   supabase: Supabase,
   pending: ScoredPick[],
@@ -121,66 +111,17 @@ async function generateAndUpsertPickNarratives(
   newsByTicker: Map<string, SignalNewsItem[]>,
   logPrefix: string,
 ): Promise<void> {
-  type GenResult = {
-    ticker: string
-    company_blurb: string
-    thesis: string
-    main_risk: string
-    source: 'llm' | 'mechanical'
-    model: string | null
-  }
-
-  const generated = await mapSequential(pending, async (pick): Promise<GenResult> => {
+  const generated = await mapSequential(pending, async (pick) => {
     const f = fundamentalsByTicker.get(pick.ticker)
     const headlines = (newsByTicker.get(pick.ticker.toUpperCase()) ?? []).map((n) => n.title)
-    const businessSummary = await fetchYahooBusinessSummary(pick.ticker)
-
-    if (f) {
-      const narrative = await generateNarrative({
-        ticker: pick.ticker,
-        company_name: pick.company_name,
-        sector: pick.sector,
-        target_label: pick.target_label,
-        current_price: pick.current_price,
-        target_mean: pick.target_mean,
-        target_low: pick.target_low,
-        target_high: pick.target_high,
-        upside_pct: pick.upside_pct,
-        analyst_buy: pick.analyst_buy,
-        analyst_hold: pick.analyst_hold,
-        analyst_sell: pick.analyst_sell,
-        analyst_total: pick.analyst_total,
-        change_7d_pct: f.change_7d_pct,
-        change_30d_pct: f.change_30d_pct,
-        week52_high: f.week52_high,
-        week52_low: f.week52_low,
-        news_sentiment: f.news_sentiment,
-        factors: pick.factors.map((x) => x.label),
-        recent_headlines: headlines,
-        business_summary: businessSummary,
-      })
-
-      if (narrative) {
-        return {
-          ticker: pick.ticker,
-          company_blurb: narrative.company_blurb,
-          thesis: narrative.thesis,
-          main_risk: narrative.main_risk,
-          source: 'llm',
-          model: narrative.model,
-        }
-      }
-    }
-
-    const fallback = mechanicalThesis(pick)
-    const company_blurb = await resolveCompanyBlurb(pick, fallback.company_blurb)
+    const narrative = await generateNarrativeForPick(pick, f, headlines)
     return {
       ticker: pick.ticker,
-      company_blurb,
-      thesis: fallback.thesis,
-      main_risk: fallback.main_risk,
-      source: 'mechanical',
-      model: null,
+      company_blurb: narrative.company_blurb,
+      thesis: narrative.thesis,
+      main_risk: narrative.main_risk,
+      source: narrative.narrative_source,
+      model: narrative.model,
     }
   })
 

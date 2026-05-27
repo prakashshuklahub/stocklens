@@ -5,7 +5,7 @@ import { useCallback, useMemo, useState, type ReactNode } from 'react'
 import AppNav from '@/components/AppNav'
 import PicksLoadingState from '@/components/picks/PicksLoadingState'
 import AnalystMiniGrid from '@/components/AnalystMiniGrid'
-import RecentMovesPanel, { recentMovesCollapsedPreview } from '@/components/RecentMovesPanel'
+import PriceChartPanel, { priceChartCollapsedPreview } from '@/components/PriceChartPanel'
 import VsSectorPanel, { vsSectorCollapsedPreview } from '@/components/VsSectorPanel'
 import { useMarketSession } from '@/hooks/useMarketOpen'
 import CollapseChevron from '@/components/CollapseChevron'
@@ -323,7 +323,7 @@ function pricePreview(pick: Pick, showTarget: boolean, targetCopy: ReturnType<ty
 }
 
 function momentumPreview(pick: Pick): string {
-  return recentMovesCollapsedPreview({
+  return priceChartCollapsedPreview({
     change1d: pick.change_1d_pct,
     change7d: pick.change_7d_pct,
     change30d: pick.change_30d_pct,
@@ -498,18 +498,13 @@ function PickCard({
 
       <PickAccordionRow
         id={`${cardId}-momentum`}
-        label="Recent moves"
+        label="Price chart"
         preview={momentumPreview(pick)}
         open={sections.momentum}
         onToggle={() => toggleSection('momentum')}
         icon={Activity}
       >
-        <RecentMovesPanel
-          change7d={pick.change_7d_pct}
-          change14d={pick.change_14d_pct}
-          change30d={pick.change_30d_pct}
-          volumeRatio={pick.volume_ratio}
-        />
+        <PriceChartPanel ticker={pick.ticker} volumeRatio={pick.volume_ratio} />
       </PickAccordionRow>
 
       {hasSector && sectorPreviewText && (

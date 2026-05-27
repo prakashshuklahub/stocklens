@@ -2,7 +2,7 @@
 //
 // Candidate source: Yahoo market movers only (see trending-candidates.ts).
 // Scoring: watchlist-suggestions-scoring.ts (no watchlist awareness).
-// Per-user filter: drop tickers already on the user's watchlist — only filter here.
+// Narratives: same pipeline as Picks (@/lib/stock-narratives).
 
 import { auth, getSessionUserId } from '@/lib/auth'
 import { fetchStockFundamentals, mapPool } from '@/lib/fundamentals-fetch'
@@ -11,12 +11,21 @@ import { isPriceRefreshActive } from '@/lib/market-hours'
 import { ensureLogosForTickers } from '@/lib/stock-logo-cache'
 import { fetchYahooSector } from '@/lib/sectors'
 import { fetchTrendingCandidates } from '@/lib/trending-candidates'
-import {
-  ensureSectorBenchmarksLoaded,
-} from '@/lib/sector-benchmarks'
+import { ensureSectorBenchmarksLoaded } from '@/lib/sector-benchmarks'
 import { isBenchmarkableSector, type BenchmarkableSector } from '@/lib/sector-relative-strength-scoring'
-import { generateSuggestionNarrative, isLLMEnabled } from '@/lib/llm'
+import { isLLMEnabled } from '@/lib/llm'
 import { NARRATIVE_TTL_HOURS } from '@/lib/narrative-cache'
+import {
+  loadCachedPickNarratives,
+  rowToNarrativePayload,
+  schedulePickNarrativeGeneration,
+} from '@/lib/pick-narratives'
+import {
+  generateNarrativeForPick,
+  mechanicalNarrativeSync,
+  persistPickNarrative,
+  trendingToScoredPick,
+} from '@/lib/stock-narratives'
 import {
   rankTrendingSuggestions,
   scoreTrendingCandidate,
@@ -24,18 +33,20 @@ import {
   TRENDING_GLOBAL_RANK_LIMIT,
   type ScoredSuggestion,
 } from '@/lib/watchlist-suggestions-scoring'
-import {
-  isRedundantNarrative,
-  loadSuggestionBlurbExtras,
-  mechanicalTrendingNarrative,
-  suggestionNarrativeContext,
-  type SuggestionBlurbExtras,
-} from '@/lib/watchlist-suggestions'
 import { createServerClient } from '@/lib/supabase'
 import { NextRequest, NextResponse } from 'next/server'
-import type { StockFundamentals, TrendingNarrative, WatchlistSuggestion, WatchlistSuggestionsResponse } from '@/types'
+import type {
+  PickNarrativePayload,
+  StockFundamentals,
+  TrendingNarrative,
+  WatchlistSuggestion,
+  WatchlistSuggestionsResponse,
+} from '@/types'
+import type { ScoredPick } from '@/lib/picks-scoring'
 
 const TRENDING_CACHE_HOURS = NARRATIVE_TTL_HOURS
+/** Bump when narrative pipeline changes — invalidates stale watchlist_suggestions_cache blurbs. */
+const TRENDING_NARRATIVE_VERSION = 2
 const CANDIDATE_POOL = 40
 /** Max cards returned to one user (after excluding their watchlist). */
 const USER_TRENDING_LIMIT = 3
@@ -52,6 +63,25 @@ type LegacyCachedReason = {
   narrative_source: 'llm' | 'mechanical'
 }
 
+type CachedPayload = {
+  ranked: ScoredSuggestion[]
+  reasons: Record<string, CachedReason>
+  generated_at: string
+  narrative_version?: number
+}
+
+function fundMapKey(ticker: string): string {
+  return ticker.toUpperCase()
+}
+
+function normalizeFundamentalsMap(rows: StockFundamentals[]): Map<string, StockFundamentals> {
+  const map = new Map<string, StockFundamentals>()
+  for (const row of rows) {
+    map.set(fundMapKey(row.ticker), row)
+  }
+  return map
+}
+
 function cachedToNarrative(
   cached: CachedReason | LegacyCachedReason | undefined,
 ): CachedReason | null {
@@ -62,22 +92,13 @@ function cachedToNarrative(
   return null
 }
 
-function narrativesMatch(a: TrendingNarrative, b: TrendingNarrative): boolean {
-  return (
-    a.company_blurb === b.company_blurb &&
-    a.thesis === b.thesis &&
-    a.main_risk === b.main_risk
-  )
-}
-
-function mechanicalCached(s: ScoredSuggestion, extras?: SuggestionBlurbExtras): CachedReason {
-  return { ...mechanicalTrendingNarrative(s, extras), narrative_source: 'mechanical' }
-}
-
-type CachedPayload = {
-  ranked: ScoredSuggestion[]
-  reasons: Record<string, CachedReason>
-  generated_at: string
+function mechanicalCached(
+  s: ScoredSuggestion,
+  fundamentals: StockFundamentals | undefined,
+): CachedReason | null {
+  if (!fundamentals) return null
+  const pick = trendingToScoredPick(s, fundamentals)
+  return { ...mechanicalNarrativeSync(pick), narrative_source: 'mechanical' }
 }
 
 async function loadStoredPayload(
@@ -108,55 +129,79 @@ async function loadStoredPayload(
     ranked: raw.ranked,
     reasons: raw.reasons ?? {},
     generated_at: data.generated_at,
+    narrative_version: raw.narrative_version,
   }
 }
 
-function isPayloadFresh(generatedAt: string): boolean {
+function isPayloadFresh(payload: CachedPayload): boolean {
+  if (payload.narrative_version !== TRENDING_NARRATIVE_VERSION) return false
   const cutoff = Date.now() - TRENDING_CACHE_HOURS * 3600 * 1000
-  return new Date(generatedAt).getTime() >= cutoff
+  return new Date(payload.generated_at).getTime() >= cutoff
 }
 
 async function enrichWithBlurbs(
+  supabase: ReturnType<typeof createServerClient>,
   ranked: ScoredSuggestion[],
   existing: Record<string, CachedReason>,
+  fundamentalsByTicker: Map<string, StockFundamentals>,
 ): Promise<Record<string, CachedReason>> {
   const reasons = { ...existing }
   const llmEnabled = isLLMEnabled()
+  const { fetchHeadlinesForTickers } = await import('@/lib/pick-headlines')
   const targets = ranked.slice(0, LLM_BLURB_COUNT)
-  const extrasByTicker = await loadSuggestionBlurbExtras(targets)
+  const targetTickers = targets.map((s) => s.ticker)
+  const pickNarratives = await loadCachedPickNarratives(
+    supabase,
+    targetTickers,
+    'watchlist/suggestions',
+  )
+  const headlinesMap = await fetchHeadlinesForTickers(
+    targetTickers,
+    {
+      limit: 3,
+      companyNameByTicker: Object.fromEntries(
+        targets.map((s) => [fundMapKey(s.ticker), s.company_name]),
+      ),
+    },
+  )
 
   for (let i = 0; i < targets.length; i++) {
     const s = targets[i]
-    const key = s.ticker.toUpperCase()
-    const extras = extrasByTicker.get(key)
-    const mech = mechanicalCached(s, extras)
-    const cached = reasons[key] ?? reasons[s.ticker]
-    const existing = cachedToNarrative(cached)
-    const staleBlurb =
-      !existing ||
-      isRedundantNarrative(s, existing, extras) ||
-      (cached?.narrative_source === 'mechanical' && !narrativesMatch(existing, mech))
-    if (cached?.narrative_source === 'llm' && !staleBlurb) continue
+    const key = fundMapKey(s.ticker)
+    const f = fundamentalsByTicker.get(key)
+    const cachedPick = pickNarratives.get(key)
+    if (cachedPick) {
+      reasons[key] = {
+        company_blurb: cachedPick.company_blurb ?? '',
+        thesis: cachedPick.thesis,
+        main_risk: cachedPick.main_risk,
+        narrative_source: 'llm',
+      }
+      continue
+    }
 
-    if (llmEnabled) {
+    const pick = f ? trendingToScoredPick(s, f) : null
+    const mech = pick ? { ...mechanicalNarrativeSync(pick), narrative_source: 'mechanical' as const } : null
+
+    if (llmEnabled && pick && f) {
       if (i > 0) await new Promise((r) => setTimeout(r, LLM_BLURB_DELAY_MS))
-      const narrative = await generateSuggestionNarrative(suggestionNarrativeContext(s, extras))
-      if (narrative && !isRedundantNarrative(s, narrative, extras)) {
-        reasons[key] = { ...narrative, narrative_source: 'llm' }
+      const headlines = (headlinesMap.get(key) ?? []).map((n) => n.title)
+      const narrative = await generateNarrativeForPick(pick, f, headlines)
+      if (narrative.narrative_source === 'llm') {
+        await persistPickNarrative(supabase, s.ticker, narrative, 'watchlist/suggestions')
+        reasons[key] = narrative
         continue
       }
     }
 
-    reasons[key] = mech
+    if (mech) reasons[key] = mech
   }
 
   for (const s of ranked.slice(LLM_BLURB_COUNT)) {
-    const key = s.ticker.toUpperCase()
-    const extras = extrasByTicker.get(key)
-    const mech = mechanicalCached(s, extras)
-    const existing = cachedToNarrative(reasons[key])
-    if (existing && !isRedundantNarrative(s, existing, extras)) continue
-    reasons[key] = mech
+    const key = fundMapKey(s.ticker)
+    if (cachedToNarrative(reasons[key])) continue
+    const mech = mechanicalCached(s, fundamentalsByTicker.get(key))
+    if (mech) reasons[key] = mech
   }
 
   return reasons
@@ -171,16 +216,13 @@ async function buildGlobalRanked(
 
   const { data: rows } = await supabase.from('stock_fundamentals').select('*').in('ticker', tickers)
 
-  const fundamentalsByTicker = new Map<string, StockFundamentals>()
-  for (const row of (rows ?? []) as StockFundamentals[]) {
-    fundamentalsByTicker.set(row.ticker, row)
-  }
+  const fundamentalsByTicker = normalizeFundamentalsMap((rows ?? []) as StockFundamentals[])
 
-  const missing = tickers.filter((t) => !fundamentalsByTicker.has(t))
+  const missing = tickers.filter((t) => !fundamentalsByTicker.has(fundMapKey(t)))
   if (missing.length) {
     const fetched = await mapPool(missing, 6, fetchStockFundamentals)
     missing.forEach((t, i) => {
-      fundamentalsByTicker.set(t, fetched[i])
+      fundamentalsByTicker.set(fundMapKey(t), fetched[i])
     })
     await supabase.from('stock_fundamentals').upsert(
       fetched.map((f) => ({ ...f, fetched_at: new Date().toISOString() })),
@@ -207,7 +249,7 @@ async function buildGlobalRanked(
 
     const row = scoreTrendingCandidate({
       mover,
-      fundamentals: fundamentalsByTicker.get(mover.ticker) ?? null,
+      fundamentals: fundamentalsByTicker.get(fundMapKey(mover.ticker)) ?? null,
       sectorDayDelta,
     })
     if (row) scored.push(row)
@@ -225,10 +267,15 @@ async function buildGlobalRanked(
       if (sector) s.sector = sector
     }),
   )
-  const reasons = await enrichWithBlurbs(ranked, existingReasons)
+  const reasons = await enrichWithBlurbs(supabase, ranked, existingReasons, fundamentalsByTicker)
   const generated_at = new Date().toISOString()
 
-  const payload: CachedPayload = { ranked, reasons, generated_at }
+  const payload: CachedPayload = {
+    ranked,
+    reasons,
+    generated_at,
+    narrative_version: TRENDING_NARRATIVE_VERSION,
+  }
 
   const { error: cacheWriteError } = await supabase.from('watchlist_suggestions_cache').upsert(
     {
@@ -250,73 +297,40 @@ async function buildGlobalRanked(
 
 function resolveNarrative(
   s: ScoredSuggestion,
-  cached: CachedReason | LegacyCachedReason | undefined,
-  extras?: SuggestionBlurbExtras,
+  pickNarrative: PickNarrativePayload | undefined,
+  fundamentals: StockFundamentals | undefined,
+  cachedReason?: CachedReason | LegacyCachedReason,
 ): CachedReason {
-  const mech = mechanicalCached(s, extras)
-  const existing = cachedToNarrative(cached)
-  if (!existing) return mech
-  if (isRedundantNarrative(s, existing, extras)) return mech
-  if (existing.narrative_source === 'mechanical') return mech
-  return existing
-}
-
-/** Regenerate weak cached blurbs with Gemini on read (visible cards only). */
-async function ensureQualityBlurbs(
-  top: ScoredSuggestion[],
-  reasons: Record<string, CachedReason | LegacyCachedReason>,
-  extrasByTicker: Map<string, SuggestionBlurbExtras>,
-): Promise<Record<string, CachedReason>> {
-  const out: Record<string, CachedReason> = {}
-  for (const [key, value] of Object.entries(reasons)) {
-    const normalized = cachedToNarrative(value)
-    if (normalized) out[key] = normalized
-  }
-  if (!isLLMEnabled() || !top.length) {
-    for (const s of top) {
-      const key = s.ticker.toUpperCase()
-      if (!out[key]) out[key] = mechanicalCached(s, extrasByTicker.get(key))
-    }
-    return out
-  }
-
-  for (let i = 0; i < top.length; i++) {
-    const s = top[i]
-    const key = s.ticker.toUpperCase()
-    const extras = extrasByTicker.get(key)
-    const preview = resolveNarrative(s, out[key] ?? reasons[key], extras)
-    if (!isRedundantNarrative(s, preview, extras)) {
-      out[key] = preview
-      continue
-    }
-
-    if (i > 0) await new Promise((r) => setTimeout(r, LLM_BLURB_DELAY_MS))
-    const narrative = await generateSuggestionNarrative(suggestionNarrativeContext(s, extras))
-    if (narrative && !isRedundantNarrative(s, narrative, extras)) {
-      out[key] = { ...narrative, narrative_source: 'llm' }
-      continue
-    }
-
-    const mech = mechanicalCached(s, extras)
-    if (!isRedundantNarrative(s, mech, extras)) {
-      out[key] = mech
+  if (pickNarrative?.narrative_source === 'llm') {
+    return {
+      company_blurb: pickNarrative.company_blurb ?? '',
+      thesis: pickNarrative.thesis,
+      main_risk: pickNarrative.main_risk,
+      narrative_source: 'llm',
     }
   }
 
-  for (const s of top) {
-    const key = s.ticker.toUpperCase()
-    if (!out[key]) out[key] = mechanicalCached(s, extrasByTicker.get(key))
-  }
+  const mech = mechanicalCached(s, fundamentals)
+  if (mech) return mech
 
-  return out
+  const fromCache = cachedToNarrative(cachedReason)
+  if (fromCache) return fromCache
+
+  return {
+    company_blurb: '',
+    thesis: 'Signals are still loading for this name.',
+    main_risk: 'Trending names can reverse quickly after a hot session.',
+    narrative_source: 'mechanical',
+  }
 }
 
 function toSuggestion(
   s: ScoredSuggestion,
-  cached: CachedReason | LegacyCachedReason | undefined,
-  extras?: SuggestionBlurbExtras,
+  pickNarrative: PickNarrativePayload | undefined,
+  fundamentals: StockFundamentals | undefined,
+  cachedReason?: CachedReason | LegacyCachedReason,
 ): WatchlistSuggestion {
-  const narrative = resolveNarrative(s, cached, extras)
+  const narrative = resolveNarrative(s, pickNarrative, fundamentals, cachedReason)
   return {
     ticker: s.ticker,
     company_name: s.company_name,
@@ -376,14 +390,16 @@ export async function GET(req: NextRequest) {
   const owned = new Set((watchlist ?? []).map((w) => String(w.ticker).toUpperCase()))
 
   const stored = await loadStoredPayload(supabase)
-  const useStoredRankings = stored && isPayloadFresh(stored.generated_at) && !forceRefresh
+  const useStoredRankings = stored && isPayloadFresh(stored) && !forceRefresh
 
   let cached: CachedPayload
   if (useStoredRankings) {
     cached = stored
   } else {
     try {
-      cached = await buildGlobalRanked(supabase, stored?.reasons ?? {})
+      const keepReasons =
+        stored?.narrative_version === TRENDING_NARRATIVE_VERSION ? stored.reasons ?? {} : {}
+      cached = await buildGlobalRanked(supabase, keepReasons)
     } catch (err) {
       console.error('[watchlist/suggestions] build failed:', err)
       const empty: WatchlistSuggestionsResponse = {
@@ -396,18 +412,51 @@ export async function GET(req: NextRequest) {
     }
   }
 
-  // Only per-user filter: exclude tickers already on this user's watchlist.
   const notOnWatchlist = cached.ranked.filter((s) => !owned.has(s.ticker.toUpperCase()))
   const top = notOnWatchlist.slice(0, USER_TRENDING_LIMIT)
-  const extrasByTicker = await loadSuggestionBlurbExtras(top)
-  const reasons = await ensureQualityBlurbs(top, cached.reasons, extrasByTicker)
+
+  const tickers = top.map((s) => s.ticker)
+  const { data: fundRows } = await supabase.from('stock_fundamentals').select('*').in('ticker', tickers)
+  const fundamentalsByTicker = normalizeFundamentalsMap((fundRows ?? []) as StockFundamentals[])
+  const missingFundTickers = tickers.filter((t) => !fundamentalsByTicker.has(fundMapKey(t)))
+  if (missingFundTickers.length) {
+    const fetched = await mapPool(missingFundTickers, 3, fetchStockFundamentals)
+    missingFundTickers.forEach((t, i) => {
+      fundamentalsByTicker.set(fundMapKey(t), fetched[i])
+    })
+  }
+
+  const pickNarratives = await loadCachedPickNarratives(
+    supabase,
+    tickers,
+    'watchlist/suggestions',
+  )
+
+  const pendingPicks: ScoredPick[] = []
+  for (const s of top) {
+    const key = fundMapKey(s.ticker)
+    if (pickNarratives.has(key)) continue
+    const f = fundamentalsByTicker.get(key)
+    if (!f) continue
+    if (f) pendingPicks.push(trendingToScoredPick(s, f))
+  }
+  if (pendingPicks.length && isLLMEnabled()) {
+    schedulePickNarrativeGeneration(
+      supabase,
+      pendingPicks,
+      fundamentalsByTicker,
+      'watchlist/suggestions',
+    )
+  }
 
   let suggestions: WatchlistSuggestion[] = top.map((s) => {
-    const key = s.ticker.toUpperCase()
+    const key = fundMapKey(s.ticker)
+    const pickNarrative = pickNarratives.get(key)
     return toSuggestion(
       s,
-      reasons[key] ?? reasons[s.ticker],
-      extrasByTicker.get(key),
+      pickNarrative ? rowToNarrativePayload(pickNarrative) : undefined,
+      fundamentalsByTicker.get(key),
+      cached.reasons[key] ?? cached.reasons[s.ticker],
     )
   })
 

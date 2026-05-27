@@ -535,6 +535,17 @@ export function scoreUnifiedPick(input: PickScoreInput): ScoredPick | null {
   return withBonuses
 }
 
+/** Same pick shape as Picks narratives — skips score threshold only (for trending blurbs). */
+export function buildNarrativeScoredPick(input: PickScoreInput): ScoredPick | null {
+  const base = buildScoredPick(input, {
+    minScore: Number.NEGATIVE_INFINITY,
+    allowMomentumTarget: true,
+    momentumUpsidePointsCap: PICKS_MOMENTUM_TARGET_MAX_UPSIDE_POINTS,
+  })
+  if (!base) return null
+  return applyDayMoveAndTrendBonuses(base, input.fundamentals, input.change_1d_pct)
+}
+
 export function scoreDiscoveryPick(input: DiscoveryPickInput): ScoredPick | null {
   const { mover, current_price, change_1d_pct, fundamentals: f, benchmark } = input
   const dRules = PICKS_DISCOVERY_RULES

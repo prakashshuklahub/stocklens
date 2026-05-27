@@ -5,7 +5,7 @@ import { MoreVertical, Trash2, Target, Activity, BarChart3, Users } from 'lucide
 import useSWR from 'swr'
 import StockLogo from '@/components/StockLogo'
 import AnalystMiniGrid from '@/components/AnalystMiniGrid'
-import RecentMovesPanel, { recentMovesCollapsedPreview } from '@/components/RecentMovesPanel'
+import PriceChartPanel, { priceChartCollapsedPreview } from '@/components/PriceChartPanel'
 import VsSectorPanel, { vsSectorCollapsedPreview } from '@/components/VsSectorPanel'
 import SessionPriceBadge from '@/components/SessionPriceBadge'
 import CollapseChevron from '@/components/CollapseChevron'
@@ -364,7 +364,7 @@ function movesPreview(
   fundamentals: StockFundamentals | null | undefined,
   change1dPct: number | null | undefined,
 ): string {
-  return recentMovesCollapsedPreview({
+  return priceChartCollapsedPreview({
     change1d: change1dPct,
     change7d: fundamentals?.change_7d_pct,
     change30d: fundamentals?.change_30d_pct,
@@ -680,16 +680,15 @@ export default function WatchlistCard({
 
       <WatchlistAccordionRow
         id={`${cardId}-moves`}
-        label="Recent moves"
+        label="Price chart"
         preview={movesPreview(fundamentals, change1d)}
         open={sections.moves}
         onToggle={() => toggleSection('moves')}
         icon={Activity}
       >
-        <RecentMovesPanel
-          change7d={fundamentals?.change_7d_pct ?? null}
-          change14d={fundamentals?.change_14d_pct ?? null}
-          change30d={fundamentals?.change_30d_pct ?? null}
+        <PriceChartPanel
+          ticker={stock.ticker}
+          volumeRatio={fundamentals?.volume_ratio ?? null}
         />
       </WatchlistAccordionRow>
 
