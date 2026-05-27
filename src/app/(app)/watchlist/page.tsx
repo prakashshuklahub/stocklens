@@ -544,24 +544,27 @@ export default function WatchlistPage() {
         {/* Main — bottom padding clears fixed bottom tab bar + safe area */}
         <main id="main" className="page-shell !pt-3">
           <h1 className="sr-only">Watchlist</h1>
-          {!isLoading && stocks.length > 0 && (
-            <div className="flex items-center justify-end gap-3 mb-3">
+
+          <div className="flex items-center gap-3 mb-4" role="search">
+            <div className="flex-1 min-w-0">
+              <StockSearchInput onSelect={handleAdd} disabled={adding} />
+            </div>
+            {!isLoading && stocks.length > 0 && (
               <p className="type-meta text-zinc-500 tabular-nums shrink-0" aria-live="polite">
                 {stocks.length} stocks
               </p>
-            </div>
-          )}
-
-          {/* Search */}
-          <div className="mb-6" role="search">
-            <StockSearchInput onSelect={handleAdd} disabled={adding} />
-            {adding && (
-              <p className="text-xs text-zinc-500 mt-2 text-center" aria-live="polite">Adding…</p>
-            )}
-            {error && (
-              <p className="text-xs text-red-400 mt-2" aria-live="polite" role="alert">{error}</p>
             )}
           </div>
+          {(adding || error) && (
+            <div className="mb-3">
+              {adding && (
+                <p className="text-xs text-zinc-500 text-center" aria-live="polite">Adding…</p>
+              )}
+              {error && (
+                <p className="text-xs text-red-400 text-center" aria-live="polite" role="alert">{error}</p>
+              )}
+            </div>
+          )}
 
           <WatchlistSuggestions
             ownedTickers={ownedTickers}

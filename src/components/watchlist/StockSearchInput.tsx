@@ -93,12 +93,14 @@ export default function StockSearchInput({ onSelect, disabled }: Props) {
       <label htmlFor={inputId} className="sr-only">Search stocks by ticker or company name</label>
       <div className="relative">
         <Search
-          className="absolute left-3.5 top-1/2 -translate-y-1/2 w-4 h-4 text-zinc-500 pointer-events-none"
+          className="absolute left-3 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-zinc-500 pointer-events-none"
           aria-hidden="true"
         />
         <input
           id={inputId}
-          type="search"
+          type="text"
+          inputMode="search"
+          enterKeyHint="search"
           role="combobox"
           aria-autocomplete="list"
           aria-expanded={open && results.length > 0}
@@ -108,14 +110,14 @@ export default function StockSearchInput({ onSelect, disabled }: Props) {
           spellCheck={false}
           value={query}
           onChange={(e) => setQuery(e.target.value)}
-          placeholder="Search ticker or company…"
+          placeholder="Add ticker or company…"
           disabled={disabled}
           onFocus={() => results.length > 0 && setOpen(true)}
-          className="w-full card-surface pl-11 pr-10 py-4 text-base text-white placeholder:text-muted focus:outline-none focus-visible:ring-2 focus-visible:ring-blue-500/40 transition-all disabled:opacity-40 [touch-action:manipulation]"
+          className="w-full card-surface pl-9 pr-9 py-2.5 min-h-[44px] text-sm text-white placeholder:text-muted focus:outline-none focus-visible:ring-2 focus-visible:ring-blue-500/40 transition-all disabled:opacity-40 [touch-action:manipulation]"
         />
         {loading && (
           <Loader2
-            className="absolute right-3.5 top-1/2 -translate-y-1/2 w-4 h-4 text-zinc-500 animate-spin"
+            className="absolute right-3 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-zinc-500 animate-spin"
             aria-hidden="true"
           />
         )}
@@ -124,7 +126,7 @@ export default function StockSearchInput({ onSelect, disabled }: Props) {
             type="button"
             aria-label="Clear search"
             onClick={() => { setQuery(''); setResults([]); setOpen(false) }}
-            className="absolute right-1 top-1/2 -translate-y-1/2 w-11 h-11 flex items-center justify-center text-zinc-500 hover:text-zinc-300 transition-colors focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-zinc-500 rounded-xl [touch-action:manipulation]"
+            className="absolute right-0.5 top-1/2 -translate-y-1/2 w-9 h-9 flex items-center justify-center text-zinc-500 hover:text-zinc-300 transition-colors focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-zinc-500 rounded-lg [touch-action:manipulation]"
           >
             <X className="w-4 h-4" aria-hidden="true" />
           </button>
@@ -136,7 +138,7 @@ export default function StockSearchInput({ onSelect, disabled }: Props) {
           id={listboxId}
           role="listbox"
           aria-label="Stock search results"
-          className="absolute z-50 mt-1.5 w-full bg-zinc-900 shadow-2xl shadow-black/50 rounded-2xl overflow-hidden max-h-72 overflow-y-auto"
+          className="absolute z-50 mt-1 w-full bg-zinc-900 shadow-2xl shadow-black/50 rounded-xl overflow-hidden max-h-60 overflow-y-auto"
         >
           {results.map((r) => (
             <li key={r.ticker} role="option" aria-selected={false}>
@@ -144,7 +146,7 @@ export default function StockSearchInput({ onSelect, disabled }: Props) {
                 type="button"
                 onClick={() => handleSelect(r)}
                 aria-label={`Add ${r.ticker} – ${r.company_name}${r.price != null ? `, ${fmtPrice(r.price)}` : ''}`}
-                className="w-full flex items-center px-4 py-3.5 active:bg-zinc-800 transition-colors text-left gap-3 border-b border-white/[0.04] last:border-0 focus-visible:outline-none focus-visible:bg-zinc-800 [touch-action:manipulation]"
+                className="w-full flex items-center px-3 py-2.5 active:bg-zinc-800 transition-colors text-left gap-2.5 border-b border-white/[0.04] last:border-0 focus-visible:outline-none focus-visible:bg-zinc-800 [touch-action:manipulation]"
               >
                 <StockLogo ticker={r.ticker} size="sm" />
                 <div className="flex-1 min-w-0">
