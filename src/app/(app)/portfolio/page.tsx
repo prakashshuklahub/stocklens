@@ -480,17 +480,20 @@ export default function PortfolioPage() {
       <div className="min-h-screen bg-zinc-950">
         <AppNav />
 
-        <main id="main" className="page-shell !pt-3">
+        <main id="main" className="page-shell !pt-1">
           <h1 className="sr-only">Portfolio</h1>
-          <div className="flex items-center justify-end gap-2 mb-3 shrink-0">
-            {syncedLabel && (
-              <p className="type-meta text-zinc-500 tabular-nums hidden sm:block">
-                Synced {syncedLabel}
-              </p>
-            )}
+          <div className="flex items-center justify-between gap-2 mb-2 shrink-0">
+            <p
+              className={cn(
+                'type-meta tabular-nums min-w-0 truncate',
+                syncedLabel ? 'text-zinc-500' : 'text-muted',
+              )}
+            >
+              {syncedLabel ? `Synced ${syncedLabel}` : 'No holdings synced yet'}
+            </p>
             <button
               onClick={() => fileInputRef.current?.click()}
-              className="flex items-center gap-1.5 px-3.5 h-9 rounded-xl bg-zinc-800 active:scale-[0.95] active:bg-zinc-700 text-zinc-300 text-sm font-semibold transition-all [touch-action:manipulation]"
+              className="flex items-center gap-1.5 px-3.5 h-9 rounded-xl bg-zinc-800 active:scale-[0.95] active:bg-zinc-700 text-zinc-300 text-sm font-semibold transition-all shrink-0 [touch-action:manipulation]"
             >
               <Upload className="w-3.5 h-3.5" />
               Sync
@@ -503,11 +506,6 @@ export default function PortfolioPage() {
             className="hidden"
             onChange={handleFileChange}
           />
-          {syncedLabel ? (
-            <p className="type-caption text-zinc-500 mb-4 -mt-2 sm:hidden">Synced {syncedLabel}</p>
-          ) : (
-            <p className="type-caption text-muted mb-4 -mt-2">No holdings synced yet</p>
-          )}
 
           {parseError && (
             <div className="flex items-start gap-2 rounded-xl bg-red-500/10 px-3 py-2.5 mb-4">

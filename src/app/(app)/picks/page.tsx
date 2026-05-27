@@ -46,13 +46,6 @@ import type {
 } from '@/types'
 import type { MarketSession } from '@/lib/market-hours'
 
-function allPicksFingerprint(data: PicksResponse): string {
-  return data.picks.map((p) => `${p.ticker}:${p.score}:${p.current_price}:${p.upside_pct}`).join('|')
-}
-
-const scoresFingerprintRef = { current: '' }
-const stableScoresAtRef = { current: null as string | null }
-
 async function fetchJson<T>(url: string): Promise<T> {
   const res = await fetch(url, { cache: 'no-store' })
   if (!res.ok) throw new Error('Failed to load picks')
@@ -665,9 +658,6 @@ function PicksRankedList({
 
   return (
     <section aria-label="Stock picks">
-      <p className="type-caption text-muted mb-3 px-1">
-        Top {data.picks.length} ranked by score — #1 is the strongest signal today.
-      </p>
       <ul className="space-y-3">
         {data.picks.map((p, i) => (
           <li key={`${p.ticker}-${p.source}`}>
@@ -700,23 +690,10 @@ export default function PicksPage() {
     dedupingInterval: 0,
   })
 
-  const baseData = useMemo((): PicksResponse | null => {
-    if (!data) return null
-    const fp = allPicksFingerprint(data)
-    if (fp && fp === scoresFingerprintRef.current && stableScoresAtRef.current) {
-      return { ...data, scores_at: stableScoresAtRef.current }
-    }
-    if (fp) {
-      scoresFingerprintRef.current = fp
-      stableScoresAtRef.current = data.scores_at
-    }
-    return data
-  }, [data])
-
   const headlineTickers = useMemo(() => {
-    if (!baseData?.picks.length) return ''
-    return [...new Set(baseData.picks.map((p) => p.ticker.toUpperCase()))].join(',')
-  }, [baseData])
+    if (!data?.picks.length) return ''
+    return [...new Set(data.picks.map((p) => p.ticker.toUpperCase()))].join(',')
+  }, [data])
 
   const { data: headlineData } = useSWR<PickHeadlinesResponse>(
     headlineTickers ? `/api/picks/headlines?tickers=${headlineTickers}` : null,
@@ -725,12 +702,12 @@ export default function PicksPage() {
   )
 
   const pendingNarrativeTickers = useMemo(() => {
-    if (!baseData?.llm_enabled) return ''
-    const pending = baseData.picks
+    if (!data?.llm_enabled) return ''
+    const pending = data.picks
       .filter((p) => p.narrative_source === 'mechanical')
       .map((p) => p.ticker.toUpperCase())
     return [...new Set(pending)].join(',')
-  }, [baseData])
+  }, [data])
 
   const { data: narrativeData } = useSWR<PickNarrativesResponse>(
     pendingNarrativeTickers ? `/api/picks/narratives?tickers=${pendingNarrativeTickers}` : null,
@@ -750,9 +727,9 @@ export default function PicksPage() {
   )
 
   const displayData = useMemo(() => {
-    if (!baseData) return null
+    if (!data) return null
 
-    let merged = baseData
+    let merged = data
     if (narrativeData?.narratives && Object.keys(narrativeData.narratives).length) {
       const picks = mergePickNarratives(merged.picks, narrativeData.narratives)
       merged = {
@@ -773,28 +750,14 @@ export default function PicksPage() {
     }
 
     return merged
-  }, [baseData, narrativeData, headlineData])
+  }, [data, narrativeData, headlineData])
 
   return (
     <div className="min-h-screen bg-zinc-950">
       <AppNav />
 
-      <main id="main" className="page-shell !pt-3">
+      <main id="main" className="page-shell !pt-1">
         <h1 className="sr-only">Picks</h1>
-        {((isLoading && !displayData) || displayData?.scores_at) && (
-          <div className="mb-3 flex items-center justify-end gap-3">
-            {isLoading && !displayData ? (
-              <p className="type-meta text-amber-400/80 shrink-0 flex items-center gap-1.5">
-                <span className="inline-block w-1.5 h-1.5 rounded-full bg-amber-400 animate-pulse" aria-hidden="true" />
-                Scoring…
-              </p>
-            ) : displayData?.scores_at ? (
-              <p className="type-meta text-zinc-500 tabular-nums shrink-0">
-                Updated {timeAgo(displayData.scores_at)}
-              </p>
-            ) : null}
-          </div>
-        )}
 
         {error ? (
           <p className="text-zinc-500 text-sm text-center py-16">Failed to load picks. Try refreshing.</p>
