@@ -145,6 +145,13 @@ export interface PortfolioSummaryResponse {
   llm_enabled: boolean
 }
 
+export interface UserSettingsResponse {
+  whatsapp_number: string | null
+  whatsapp_daily_briefing: boolean
+  last_sent_at: string | null
+  last_sent_label: string | null
+}
+
 export interface StockFundamentals {
   ticker: string
   // Historical % changes

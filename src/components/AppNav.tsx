@@ -1,7 +1,7 @@
 'use client'
 
 import { signOut, useSession } from 'next-auth/react'
-import { TrendingUp, LogOut, BarChart2, Sparkles, PieChart } from 'lucide-react'
+import { TrendingUp, LogOut, BarChart2, Sparkles, PieChart, Settings } from 'lucide-react'
 import Link from 'next/link'
 import { usePathname } from 'next/navigation'
 import { cn } from '@/lib/utils'
@@ -35,6 +35,21 @@ export default function AppNav() {
           </div>
 
           <div className="flex items-center gap-0.5">
+            <Link
+              href="/settings"
+              aria-label="Settings"
+              aria-current={pathname.startsWith('/settings') ? 'page' : undefined}
+              className={cn(
+                'w-11 h-11 flex items-center justify-center rounded-xl transition-colors',
+                '[touch-action:manipulation] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-zinc-500',
+                pathname.startsWith('/settings')
+                  ? 'text-white bg-zinc-800/80'
+                  : 'text-zinc-500 hover:text-zinc-300 active:bg-zinc-800/80',
+              )}
+            >
+              <Settings className="w-5 h-5" aria-hidden="true" />
+            </Link>
+
             {user?.image ? (
               <img
                 src={user.image}

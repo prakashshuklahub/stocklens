@@ -48,6 +48,12 @@ export function isCronWorkAllowed(now = new Date()): boolean {
   return getCronWindowStatus(now).allowed
 }
 
+/** Mon–Fri in Asia/Kolkata (for WhatsApp weekday sends). */
+export function isIstWeekday(now = new Date()): boolean {
+  const { weekday } = istClock(now)
+  return weekday !== 'Sat' && weekday !== 'Sun'
+}
+
 export function cronWindowSkipMessage(status: Extract<CronWindowStatus, { allowed: false }>): string {
   if (status.reason === 'weekend') {
     return 'Skipped — weekend (IST). Scheduled jobs run Mon–Fri from 3:00pm IST.'

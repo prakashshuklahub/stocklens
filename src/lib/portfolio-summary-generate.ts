@@ -61,7 +61,7 @@ function minMaxIso(dates: (string | null | undefined)[]): { min: string | null; 
   return { min: valid[0], max: valid[valid.length - 1] }
 }
 
-function computeDayPct(
+export function computePortfolioDayPct(
   holdings: PortfolioHolding[],
   prices: Map<string, StockSnapshot>,
 ): number | null {
@@ -190,7 +190,7 @@ export async function regeneratePortfolioSummaryForUser(
     if (p != null) totalValue += p * h.quantity
   }
 
-  const dayPct = computeDayPct(holdings, prices)
+  const dayPct = computePortfolioDayPct(holdings, prices)
   const degradedTickers: string[] = []
   const holdingSummaries: HoldingDailySummary[] = []
   const briefingInputs: PortfolioBriefingHoldingInput[] = []

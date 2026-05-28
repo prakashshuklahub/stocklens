@@ -15,4 +15,8 @@ export const env = {
   CRON_SECRET: process.env.CRON_SECRET ?? '',
   // Optional. If absent, /api/picks falls back to mechanical reasoning.
   GEMINI_API_KEY: process.env.GEMINI_API_KEY ?? '',
+  // Optional. Twilio WhatsApp daily briefing — cron no-ops if unset.
+  TWILIO_ACCOUNT_SID: process.env.TWILIO_ACCOUNT_SID ?? '',
+  TWILIO_AUTH_TOKEN: process.env.TWILIO_AUTH_TOKEN ?? '',
+  TWILIO_WHATSAPP_FROM: process.env.TWILIO_WHATSAPP_FROM ?? '',
 }

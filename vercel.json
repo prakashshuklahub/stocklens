@@ -11,6 +11,10 @@
     {
       "path": "/api/cron/refresh-portfolio-summaries",
       "schedule": "30 16 * * 1-5"
+    },
+    {
+      "path": "/api/cron/send-whatsapp-briefings",
+      "schedule": "*/15 14-16 * * 1-5"
     }
   ]
 }
