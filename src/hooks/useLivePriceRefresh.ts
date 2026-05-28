@@ -1,26 +1,14 @@
 'use client'
 
 import { LIVE_REFRESH_SEC } from '@/components/LiveRefreshHeader'
-import { PRICE_REFRESH_MS, type MarketSession } from '@/lib/market-hours'
-import { useBackgroundPriceRefresh } from '@/hooks/useBackgroundPriceRefresh'
 import { useEffect, useState } from 'react'
 
-/**
- * Regular session: 13s countdown bar + fetch every 13s.
- * Pre/post: silent 2 min background refresh, no bar.
- */
-export function useLivePriceRefresh(
-  session: MarketSession,
-  enabled: boolean,
-  onRefresh: () => void,
-) {
-  const isRegular = session === 'regular'
+/** 13s countdown + fetch every 13s while enabled (regular market hours only). */
+export function useLivePriceRefresh(enabled: boolean, onRefresh: () => void) {
   const [countdown, setCountdown] = useState(LIVE_REFRESH_SEC)
 
-  useBackgroundPriceRefresh(enabled && !isRegular, onRefresh, PRICE_REFRESH_MS)
-
   useEffect(() => {
-    if (!enabled || !isRegular) {
+    if (!enabled) {
       setCountdown(LIVE_REFRESH_SEC)
       return
     }
@@ -36,7 +24,7 @@ export function useLivePriceRefresh(
       setCountdown(secs)
     }, 1000)
     return () => clearInterval(tick)
-  }, [enabled, isRegular, onRefresh])
+  }, [enabled, onRefresh])
 
   return countdown
 }

@@ -17,11 +17,10 @@ import FilterChipBar, { type FilterChipOption } from '@/components/FilterChipBar
 import StockLogo from '@/components/StockLogo'
 import { HoldingCard } from '@/components/portfolio/HoldingCard'
 import { RefreshCountdown } from '@/components/LiveRefreshHeader'
-import { useMarketOpen, useMarketSession } from '@/hooks/useMarketOpen'
+import { useMarketOpen } from '@/hooks/useMarketOpen'
 import { useLivePriceRefresh } from '@/hooks/useLivePriceRefresh'
 import { PORTFOLIO_ALERT_DEMO } from '@/lib/portfolio-alerts'
 import { mergePriceSnapshots } from '@/lib/portfolio-signals'
-import type { MarketSession } from '@/lib/market-hours'
 import { cn } from '@/lib/utils'
 import type {
   HoldingSignalTier,
@@ -225,24 +224,23 @@ function HoldingsSection({
   holdings,
   countdown,
   refreshing,
-  session,
+  marketOpen,
   loading,
   preview,
 }: {
   holdings: PortfolioHoldingWithSignal[]
   countdown: number
   refreshing: boolean
-  session: MarketSession
+  marketOpen: boolean
   loading?: boolean
   preview?: boolean
 }) {
   const [tierFilter, setTierFilter] = useState<TierFilter>('all')
-  const isLive = session === 'regular'
   const filtered = useMemo(() => filterHoldings(holdings, tierFilter), [holdings, tierFilter])
 
   return (
     <section className="mb-5" aria-label="Your holdings">
-      {isLive && !preview && (
+      {marketOpen && !preview && (
         <div className="flex items-center justify-end gap-2 mb-2 px-0.5">
           <RefreshCountdown seconds={countdown} refreshing={refreshing} />
         </div>
@@ -256,6 +254,7 @@ function HoldingsSection({
 
       {!preview && holdings.length > 0 && (
         <FilterChipBar
+          label="Filter"
           value={tierFilter}
           options={TIER_FILTERS}
           onChange={setTierFilter}
@@ -365,7 +364,6 @@ export default function PortfolioPage() {
   const [showPreview, setShowPreview] = useState(false)
 
   const marketOpen = useMarketOpen()
-  const marketSession = useMarketSession()
 
   const {
     data: portfolioData,
@@ -402,11 +400,7 @@ export default function PortfolioPage() {
     )
   }, [mutate])
 
-  const countdown = useLivePriceRefresh(
-    marketSession,
-    marketOpen && holdings.length > 0,
-    refreshPrices,
-  )
+  const countdown = useLivePriceRefresh(marketOpen && holdings.length > 0, refreshPrices)
 
   async function handleFileChange(e: React.ChangeEvent<HTMLInputElement>) {
     const file = e.target.files?.[0]
@@ -530,7 +524,7 @@ export default function PortfolioPage() {
                   preview
                   countdown={0}
                   refreshing={false}
-                  session={marketSession}
+                  marketOpen={marketOpen}
                 />
               ) : (
                 <button
@@ -583,7 +577,7 @@ export default function PortfolioPage() {
                 holdings={holdings}
                 countdown={countdown}
                 refreshing={refreshing}
-                session={marketSession}
+                marketOpen={marketOpen}
                 loading={isLoading && !portfolioData}
               />
             </>

@@ -3,6 +3,7 @@
 import useSWR from 'swr'
 import { useCallback, useMemo, useState, type ReactNode } from 'react'
 import AppNav from '@/components/AppNav'
+import FilterChipBar, { type FilterChipOption } from '@/components/FilterChipBar'
 import PicksLoadingState from '@/components/picks/PicksLoadingState'
 import AnalystMiniGrid from '@/components/AnalystMiniGrid'
 import PriceChartPanel, { priceChartCollapsedPreview } from '@/components/PriceChartPanel'
@@ -27,6 +28,14 @@ import NewsRow from '@/components/NewsRow'
 import StockLogo from '@/components/StockLogo'
 import Week52Range from '@/components/Week52Range'
 import { pickDisplayCopy } from '@/lib/picks'
+import {
+  pickMatchesSourceFilter,
+  pickSourceFilterActiveClass,
+  pickSourceLabel,
+  pickSourceStyles,
+  PICK_SOURCE_LABELS,
+  type PickSourceFilter,
+} from '@/lib/pick-source-labels'
 import { isBenchmarkableSector, normalizeWatchlistSector } from '@/lib/sector-relative-strength-scoring'
 import {
   formatTargetPrice,
@@ -101,21 +110,35 @@ function timeAgo(iso: string): string {
   return `${Math.floor(h / 24)}d ago`
 }
 
-function sourceLabel(source: PickSourceTag): string {
-  switch (source) {
-    case 'watchlist': return 'Watchlist'
-    case 'portfolio': return 'Portfolio'
-    case 'both': return 'Watchlist · Portfolio'
-    case 'discovery': return 'Strong mover'
-  }
-}
+const PICK_SOURCE_FILTERS: FilterChipOption<PickSourceFilter>[] = [
+  { id: 'all', label: 'All' },
+  {
+    id: 'movers',
+    label: PICK_SOURCE_LABELS.discovery,
+    activeClassName: pickSourceFilterActiveClass('movers'),
+  },
+  {
+    id: 'watchlist',
+    label: PICK_SOURCE_LABELS.watchlist,
+    activeClassName: pickSourceFilterActiveClass('watchlist'),
+  },
+  {
+    id: 'portfolio',
+    label: PICK_SOURCE_LABELS.portfolio,
+    activeClassName: pickSourceFilterActiveClass('portfolio'),
+  },
+]
 
-function sourceStyles(source: PickSourceTag): string {
-  switch (source) {
-    case 'discovery': return 'bg-orange-500/15 text-orange-300'
-    case 'portfolio': return 'bg-blue-500/15 text-blue-300'
-    case 'both': return 'bg-violet-500/15 text-violet-300'
-    default: return 'bg-zinc-800 text-zinc-400'
+function filterEmptyMessage(filter: PickSourceFilter): string {
+  switch (filter) {
+    case 'movers':
+      return 'No market movers in today\'s top 10.'
+    case 'watchlist':
+      return 'No watchlist names in today\'s top 10.'
+    case 'portfolio':
+      return 'No portfolio names in today\'s top 10.'
+    default:
+      return 'None of your stocks or today\'s market movers match our buy checklist.'
   }
 }
 
@@ -265,8 +288,8 @@ function PickCardHero({ pick, rank, upsidePct, isPos }: PickHeroContentProps) {
             {pick.sector && pick.sector !== 'Other' && (
               <span className="type-meta text-zinc-500">{pick.sector}</span>
             )}
-            <span className={cn('type-micro font-bold uppercase tracking-wide px-2 py-0.5 rounded-full', sourceStyles(pick.source))}>
-              {sourceLabel(pick.source)}
+            <span className={cn('type-micro font-bold uppercase tracking-wide px-2 py-0.5 rounded-full', pickSourceStyles(pick.source))}>
+              {pickSourceLabel(pick.source)}
             </span>
           </div>
         </div>
@@ -638,12 +661,26 @@ function PicksRankedList({
   data,
   marketSession,
   loading,
+  sourceFilter,
+  onSourceFilterChange,
 }: {
   data: PicksResponse
   marketSession: MarketSession
   loading?: boolean
+  sourceFilter: PickSourceFilter
+  onSourceFilterChange: (filter: PickSourceFilter) => void
 }) {
   const sectorBenchmarks = data.sector_benchmarks ?? {}
+
+  const filteredPicks = useMemo(
+    () => data.picks.filter((p) => pickMatchesSourceFilter(p.source, sourceFilter)),
+    [data.picks, sourceFilter],
+  )
+
+  const rankByPickKey = useMemo(
+    () => new Map(data.picks.map((p, i) => [`${p.ticker}:${p.source}`, i + 1])),
+    [data.picks],
+  )
 
   if (loading) {
     return <PicksLoadingState />
@@ -658,7 +695,7 @@ function PicksRankedList({
           </div>
           <p className="text-white text-base font-semibold mb-1">No picks right now</p>
           <p className="text-zinc-500 text-sm max-w-[280px] mx-auto [text-wrap:pretty]">
-            None of your stocks or today&apos;s movers match our buy checklist. Check again after the market moves.
+            {filterEmptyMessage('all')}
           </p>
         </div>
       </section>
@@ -667,19 +704,35 @@ function PicksRankedList({
 
   return (
     <section aria-label="Stock picks">
-      <ul className="space-y-3">
-        {data.picks.map((p, i) => (
-          <li key={`${p.ticker}-${p.source}`}>
-            <PickCard
-              pick={p}
-              rank={i + 1}
-              llmEnabled={data.llm_enabled}
-              marketSession={marketSession}
-              sectorBenchmarks={sectorBenchmarks}
-            />
-          </li>
-        ))}
-      </ul>
+      <FilterChipBar
+        label="Show"
+        value={sourceFilter}
+        options={PICK_SOURCE_FILTERS}
+        onChange={onSourceFilterChange}
+        ariaLabel="Filter picks by source"
+      />
+
+      {!filteredPicks.length ? (
+        <div className="text-center py-16 px-4">
+          <p className="text-zinc-500 text-sm max-w-[280px] mx-auto [text-wrap:pretty]">
+            {filterEmptyMessage(sourceFilter)}
+          </p>
+        </div>
+      ) : (
+        <ul className="space-y-3">
+          {filteredPicks.map((p) => (
+            <li key={`${p.ticker}-${p.source}`}>
+              <PickCard
+                pick={p}
+                rank={rankByPickKey.get(`${p.ticker}:${p.source}`) ?? 1}
+                llmEnabled={data.llm_enabled}
+                marketSession={marketSession}
+                sectorBenchmarks={sectorBenchmarks}
+              />
+            </li>
+          ))}
+        </ul>
+      )}
 
       <div className="mt-4 flex items-start gap-2 px-1">
         <ShieldCheck className="w-3.5 h-3.5 text-muted shrink-0 mt-0.5" aria-hidden="true" />
@@ -694,6 +747,7 @@ function PicksRankedList({
 
 export default function PicksPage() {
   const marketSession = useMarketSession()
+  const [sourceFilter, setSourceFilter] = useState<PickSourceFilter>('all')
   const { data, isLoading, error } = useSWR<PicksResponse>('/api/picks', fetchJson, {
     revalidateOnFocus: false,
     dedupingInterval: 0,
@@ -775,6 +829,8 @@ export default function PicksPage() {
             data={displayData ?? { picks: [], your_picks: [], discovery_picks: [], scores_at: '', narratives_at: null, llm_enabled: false, sector_benchmarks: {} }}
             marketSession={marketSession}
             loading={isLoading && !displayData}
+            sourceFilter={sourceFilter}
+            onSourceFilterChange={setSourceFilter}
           />
         )}
       </main>

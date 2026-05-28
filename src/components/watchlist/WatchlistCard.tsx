@@ -53,7 +53,7 @@ export interface WatchlistStock {
 interface Props {
   stock: WatchlistStock
   onRemove: (ticker: string) => void | Promise<void>
-  /** Client clock session — fallback for Closed / Pre-market badges. */
+  /** Client clock session — Closed badge when outside regular hours. */
   marketSession?: MarketSession
   /** When provided (watchlist batch load), skips per-card fundamentals fetch. */
   fundamentals?: StockFundamentals | null

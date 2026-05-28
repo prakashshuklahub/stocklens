@@ -1,8 +1,8 @@
 'use client'
 
-import { useMemo, useState } from 'react'
+import { useCallback, useMemo, useState } from 'react'
 import useSWR from 'swr'
-import { Flame, Plus } from 'lucide-react'
+import { Flame, Plus, SkipForward } from 'lucide-react'
 import CollapseChevron from '@/components/CollapseChevron'
 import NarrativeSummaryBlocks from '@/components/NarrativeSummaryBlocks'
 import StockLogo from '@/components/StockLogo'
@@ -68,13 +68,34 @@ export default function WatchlistSuggestions({
     [refreshToken],
   )
 
-  const { data, isLoading, error } = useSWR<WatchlistSuggestionsResponse>(url, fetcher, {
+  const { data, isLoading, error, mutate } = useSWR<WatchlistSuggestionsResponse>(url, fetcher, {
     revalidateOnFocus: false,
     dedupingInterval: 0,
     refreshInterval: marketOpen ? PRICE_REFRESH_MS : 0,
   })
 
   const [open, setOpen] = useState(false)
+  const [skippingTicker, setSkippingTicker] = useState<string | null>(null)
+
+  const skipTicker = useCallback(
+    async (ticker: string) => {
+      const sym = ticker.toUpperCase()
+      setSkippingTicker(sym)
+      try {
+        const res = await fetch('/api/watchlist/suggestions/skip', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ ticker: sym }),
+        })
+        if (!res.ok) return
+        const next = (await res.json()) as WatchlistSuggestionsResponse
+        await mutate(next, { revalidate: false })
+      } finally {
+        setSkippingTicker(null)
+      }
+    },
+    [mutate],
+  )
 
   const visible = (data?.suggestions ?? []).filter(
     (s) => !ownedTickers.has(s.ticker.toUpperCase()),
@@ -115,7 +136,7 @@ export default function WatchlistSuggestions({
   const subtitle = isLoading
     ? 'Scanning market movers…'
     : showEmpty
-      ? 'Nothing trending outside your watchlist'
+      ? 'Nothing new to show right now'
       : visible.length
         ? open
           ? 'Not on your watchlist · momentum + buy ratings'
@@ -155,8 +176,8 @@ export default function WatchlistSuggestions({
       {showEmpty ? (
         <div className="rounded-2xl bg-zinc-900/80 border border-zinc-800 px-4 py-4">
           <p className="text-sm text-zinc-400 leading-relaxed">
-            No market movers matched our bar, or you already have them on your watchlist.
-            Tap ↻ to rescan.
+            No market movers matched our bar, you already watch them, or you skipped the current list.
+            Skipped names return after 24 hours.
           </p>
         </div>
       ) : isLoading ? (
@@ -210,27 +231,43 @@ export default function WatchlistSuggestions({
                 llm_enabled={data?.llm_enabled}
               />
 
-              <button
-                type="button"
-                disabled={adding}
-                onClick={() =>
-                  onAdd({
-                    ticker: s.ticker,
-                    company_name: s.company_name,
-                    sector: s.sector,
-                    price: null,
-                    change_pct: s.change_1d_pct ?? null,
-                  })
-                }
-                className={cn(
-                  'mt-3 w-full min-h-[48px] rounded-xl text-base font-semibold flex items-center justify-center gap-2',
-                  'bg-orange-500/20 text-orange-200 active:bg-orange-500/30 transition-colors',
-                  '[touch-action:manipulation] disabled:opacity-50',
-                )}
-              >
-                <Plus className="w-4 h-4" aria-hidden="true" />
-                Add to watchlist
-              </button>
+              <div className="mt-3 flex gap-2">
+                <button
+                  type="button"
+                  disabled={adding || skippingTicker === s.ticker.toUpperCase()}
+                  onClick={() =>
+                    onAdd({
+                      ticker: s.ticker,
+                      company_name: s.company_name,
+                      sector: s.sector,
+                      price: null,
+                      change_pct: s.change_1d_pct ?? null,
+                    })
+                  }
+                  className={cn(
+                    'flex-1 min-h-[48px] rounded-xl text-base font-semibold flex items-center justify-center gap-2',
+                    'bg-orange-500/20 text-orange-200 active:bg-orange-500/30 transition-colors',
+                    '[touch-action:manipulation] disabled:opacity-50',
+                  )}
+                >
+                  <Plus className="w-4 h-4" aria-hidden="true" />
+                  Add to watchlist
+                </button>
+                <button
+                  type="button"
+                  disabled={adding || skippingTicker === s.ticker.toUpperCase()}
+                  onClick={() => void skipTicker(s.ticker)}
+                  aria-label={`Skip ${s.ticker} for 24 hours`}
+                  className={cn(
+                    'min-h-[48px] px-4 rounded-xl text-sm font-semibold flex items-center justify-center gap-1.5',
+                    'bg-zinc-800/80 text-zinc-400 active:bg-zinc-700 transition-colors',
+                    '[touch-action:manipulation] disabled:opacity-50',
+                  )}
+                >
+                  <SkipForward className="w-4 h-4 shrink-0" aria-hidden="true" />
+                  Skip
+                </button>
+              </div>
             </li>
             )
           })}
@@ -239,8 +276,8 @@ export default function WatchlistSuggestions({
 
       {data?.generated_at && !isLoading && displaySuggestions.length > 0 && (
         <p className="text-xs text-muted mt-3 leading-relaxed">
-          Trending list rescans every 3h
-          {marketOpen ? ' · live prices refresh with the market' : ''}
+          Trending list rescans every 3h · skipped names hidden 24h
+          {marketOpen ? ' · live prices refresh during market hours' : ''}
           {data.llm_enabled ? ' · AI context lines' : ''}
         </p>
       )}

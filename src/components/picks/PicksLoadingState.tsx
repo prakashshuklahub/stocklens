@@ -7,7 +7,7 @@ import { cn } from '@/lib/utils'
 const LOADING_STEPS = [
   'Loading prices and analyst ratings…',
   'Scoring your watchlist and portfolio…',
-  'Checking today\'s strong movers…',
+  'Checking market movers…',
   'Ranking the top 10 by signal strength…',
 ] as const
 

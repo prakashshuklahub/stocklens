@@ -1,12 +1,6 @@
 import type { MarketSession } from '@/lib/market-hours'
 import { cn } from '@/lib/utils'
 
-const LABELS: Record<Exclude<MarketSession, 'regular'>, string> = {
-  pre: 'Pre-market',
-  post: 'After-hours',
-  closed: 'Closed',
-}
-
 export default function SessionPriceBadge({
   session,
   className,
@@ -23,7 +17,7 @@ export default function SessionPriceBadge({
         className,
       )}
     >
-      {LABELS[session]}
+      Closed
     </span>
   )
 }

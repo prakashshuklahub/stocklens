@@ -15,6 +15,8 @@ export interface FilterChipOption<T extends string = string> {
   id: T
   label: string
   tone?: FilterChipTone
+  /** Overrides tone when the chip is selected (e.g. match pick source badge colors). */
+  activeClassName?: string
 }
 
 function activeChipClass(tone: FilterChipTone): string {
@@ -81,7 +83,7 @@ export default function FilterChipBar<T extends string>({
                   'transition-all duration-150 [touch-action:manipulation]',
                   'focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500/40 focus-visible:ring-offset-2 focus-visible:ring-offset-zinc-950',
                   active
-                    ? activeChipClass(tone)
+                    ? (opt.activeClassName ?? activeChipClass(tone))
                     : 'bg-zinc-950/50 text-zinc-500 border-white/[0.06] active:bg-zinc-800/80 active:text-zinc-300',
                 )}
               >

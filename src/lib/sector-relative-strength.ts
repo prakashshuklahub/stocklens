@@ -189,26 +189,19 @@ export function computeVsSectorMap(
 
 /** Label for the 1d vs-sector row — avoids "Today" when the market is closed. */
 export function d1VsSectorLabel(session: MarketSession | undefined): string {
-  if (session === 'regular') return 'Today'
-  if (session === 'pre' || session === 'post') return 'Last close'
-  return 'Last trading day'
+  return session === 'regular' ? 'Today' : 'Last trading day'
 }
 
-export function d1VsSectorFootnote(session: MarketSession | undefined): string | null {
-  if (session === 'pre' || session === 'post') {
-    return 'Uses regular market hours only — not pre-market or after-hours'
-  }
+export function d1VsSectorFootnote(_session: MarketSession | undefined): string | null {
   return null
 }
 
-/** Regular-session day % for RS — never extended-hours change. */
+/** Regular-session day % for RS. */
 export function regularSessionChange1d(
   change1d: number | null | undefined,
-  session: string | undefined,
+  _session: string | undefined,
 ): number | null {
-  if (change1d == null) return null
-  if (session === 'pre' || session === 'post') return null
-  return change1d
+  return change1d ?? null
 }
 
 export function vsSectorSortKey(vs: SectorRelativeStrength | null | undefined): number {

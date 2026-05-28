@@ -76,12 +76,9 @@ export async function GET() {
       ? { price: snap.price, change_1d_pct: snap.change_1d_pct }
       : null
     const fundamentals = fundamentalsByTicker.get(s.ticker) ?? null
-    const extendedSession =
-      snap?.session === 'pre' || snap?.session === 'post' ? snap.session : undefined
     const result = computeBaseScore({
       change_1d_pct: priceData?.change_1d_pct ?? null,
       price: priceData?.price ?? null,
-      extendedSession,
       fundamentals,
     })
     return {

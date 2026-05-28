@@ -34,7 +34,7 @@ This document describes how **Picks cards** are built end-to-end in Stocklens: A
 |-----------------|--------|
 | Watchlist | User's `watchlist_stocks` |
 | Portfolio | User's `portfolio_holdings` (merged → `both` if also on watchlist) |
-| Strong mover (`discovery`) | Global trending pool (Yahoo gainers + most active), excluding tickers the user already owns |
+| Trending (`discovery`) | Global trending pool (quality-gated), excluding tickers the user already owns |
 
 **Data inputs:** Picks scoring reads **`stock_fundamentals`** + live Yahoo quotes + sector benchmarks + **`stock_research_cache`** (batch DB read). Finnhub/FMP are never called from `/api/picks`.
 
@@ -118,7 +118,7 @@ portfolio → source: 'portfolio' | 'both' (if ticker already on watchlist)
 
 Sector is enriched from live quote or Yahoo if missing/`Other`.
 
-### Strong movers (discovery)
+### Trending picks (`discovery`)
 
 1. **Trending pool** — `fetchTrendingCandidates(40)` → Yahoo screeners `day_gainers` + `most_actives` (`src/lib/market-movers.ts`)
 2. **Scored & ranked** — `scoreTrendingCandidate()` → top 20 stored in global cache (`src/lib/trending-cache-build.ts`)
@@ -158,7 +158,7 @@ Picks pipeline calls `loadFundamentalsCacheFirst()` on the hot path. Stale rows 
 
 - 11 sector ETFs, 30 min TTL
 - **File:** `src/lib/sector-benchmarks.ts`
-- Regular-session 1d % stored separately for fair comparison during extended hours
+- Regular-session 1d % only (no pre-market / after-hours prices)
 
 ### 4.4 `watchlist_suggestions_cache` (discovery pool)
 
@@ -234,7 +234,7 @@ No target → candidate excluded. See §12.1 for momentum quality gates by sourc
 | Big move today | +10 to +22 (≥ +2.5% day) |
 | 30d trend | +6 to +12 |
 
-### 5.4 Discovery-only pre-gates (strong movers)
+### 5.4 Discovery-only pre-gates (trending)
 
 Before `scoreUnifiedPick()`:
 
@@ -287,7 +287,7 @@ Each `Pick` includes: ticker, prices, changes, target fields, analyst counts, `s
 
 ### Always visible (collapsed header)
 
-- Rank badge, logo, ticker, confidence, source tag (Watchlist / Strong mover / etc.)
+- Rank badge, logo, ticker, confidence, source tag (Watchlist / Portfolio / Trending / etc.)
 - Compact stats: buy zone, current price, room to grow, analyst buy count
 
 ### Accordion sections (all collapsed by default — Option A)

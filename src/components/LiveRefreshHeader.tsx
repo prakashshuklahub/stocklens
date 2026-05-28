@@ -4,7 +4,6 @@ import { RefreshCw } from 'lucide-react'
 import { liveRefreshSubtitle, type MarketSession } from '@/lib/market-hours'
 import { cn } from '@/lib/utils'
 
-/** Live session price polling — pre/post use PRICE_REFRESH_MS without a bar. */
 export const LIVE_REFRESH_SEC = 13
 
 export function RefreshCountdown({
@@ -55,6 +54,8 @@ interface LiveRefreshHeaderProps {
   subtitle?: string
   seconds?: number
   refreshing?: boolean
+  /** Show countdown only during regular session. */
+  live?: boolean
   session?: MarketSession
   bordered?: boolean
   className?: string
@@ -66,12 +67,13 @@ export default function LiveRefreshHeader({
   subtitle,
   seconds = LIVE_REFRESH_SEC,
   refreshing = false,
-  session = 'regular',
+  live = false,
+  session = 'closed',
   bordered = true,
   className,
   footer,
 }: LiveRefreshHeaderProps) {
-  const isLive = session === 'regular'
+  const showCountdown = live || session === 'regular'
 
   return (
     <div
@@ -88,7 +90,7 @@ export default function LiveRefreshHeader({
             {subtitle ?? liveRefreshSubtitle(session)}
           </p>
         </div>
-        {isLive && (
+        {showCountdown && (
           <RefreshCountdown seconds={seconds} refreshing={!!refreshing} />
         )}
       </div>

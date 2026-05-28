@@ -66,8 +66,6 @@ export const SCORING_RULES = {
 export interface SignalScoreInput {
   change_1d_pct: number | null
   price: number | null
-  /** When day % is from extended hours, chip shows pre-mkt / after-hrs instead of today. */
-  extendedSession?: 'pre' | 'post'
   fundamentals: StockFundamentals | null
 }
 
@@ -86,13 +84,9 @@ export type FreshNewsTone = 'positive' | 'negative' | 'neutral'
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
 
-function dayMoveLabel(changePct: number, extendedSession?: 'pre' | 'post'): string {
-  const suffix =
-    extendedSession === 'pre' ? ' pre-mkt' :
-    extendedSession === 'post' ? ' after-hrs' :
-    ' today'
+function dayMoveLabel(changePct: number): string {
   const signed = `${changePct > 0 ? '+' : ''}${changePct.toFixed(1)}%`
-  return `${signed}${suffix}`
+  return `${signed} today`
 }
 
 /**
@@ -123,7 +117,7 @@ export function computeBaseScore(input: SignalScoreInput): BaseScoreResult {
     const bearishMove = d1 < 0 && abs > rules.dayMove.minAbsPctBearish
     if (bullishMove || bearishMove) {
       const points = rules.dayMove.points
-      const label = dayMoveLabel(d1, input.extendedSession)
+      const label = dayMoveLabel(d1)
       if (d1 > 0) {
         score += points
         reasons.push({ label, tone: 'bullish' })

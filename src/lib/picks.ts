@@ -35,6 +35,14 @@ export {
   scoreUnifiedPick,
 }
 
+export {
+  pickMatchesSourceFilter,
+  pickSourceLabel,
+  pickSourceStyles,
+  PICK_SOURCE_LABELS,
+  type PickSourceFilter,
+} from '@/lib/pick-source-labels'
+
 /** Plain-language labels for the Picks UI. */
 export function pickDisplayCopy(label: Pick['target_label']) {
   switch (label) {

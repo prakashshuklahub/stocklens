@@ -1,5 +1,4 @@
-import type { MarketSession } from '@/lib/market-hours'
-import { getUSMarketSession } from '@/lib/market-hours'
+import { isUSMarketOpen, type MarketSession } from '@/lib/market-hours'
 import { normalizeSector, type WatchlistSector } from '@/lib/sectors'
 import type { StockSnapshot } from '@/types'
 
@@ -37,33 +36,6 @@ function previousClose(q: Record<string, unknown>): number | undefined {
   return typeof base === 'number' && base > 0 ? base : undefined
 }
 
-/** Yahoo uses PRE / PREPRE for pre-market. */
-function isPreMarketState(state: string): boolean {
-  return state === 'PRE' || state === 'PREPRE'
-}
-
-/** Yahoo uses POST / POSTPOST for after-hours. */
-function isPostMarketState(state: string): boolean {
-  return state === 'POST' || state === 'POSTPOST'
-}
-
-function extendedPrePrice(q: Record<string, unknown>): number | null {
-  if (typeof q.preMarketPrice === 'number') return q.preMarketPrice
-  if (typeof q.extendedMarketPrice === 'number') return q.extendedMarketPrice
-  return null
-}
-
-function extendedPostPrice(q: Record<string, unknown>): number | null {
-  if (typeof q.postMarketPrice === 'number') return q.postMarketPrice
-  if (typeof q.extendedMarketPrice === 'number') return q.extendedMarketPrice
-  return null
-}
-
-/** v7 quote: skip extended session when Yahoo marks the symbol ineligible. */
-function isExtendedQuoteEligible(q: Record<string, unknown>): boolean {
-  return q.hasPrePostMarketData !== false
-}
-
 function quoteSector(q: Record<string, unknown>): WatchlistSector | null {
   const raw =
     (typeof q.sector === 'string' && q.sector) ||
@@ -72,111 +44,8 @@ function quoteSector(q: Record<string, unknown>): WatchlistSector | null {
   return raw ? normalizeSector(raw) : null
 }
 
+/** Regular-session price only — last close when market is closed. */
 function parseYahooQuote(q: Record<string, unknown>): LivePriceSnapshot | null {
-  const sym = String(q.symbol ?? '').toUpperCase()
-  if (!sym) return null
-
-  const sector = quoteSector(q)
-
-  const state = String(q.marketState ?? '').toUpperCase()
-  const prevClose = previousClose(q)
-
-  if (isPreMarketState(state) && isExtendedQuoteEligible(q)) {
-    const price = extendedPrePrice(q)
-    if (price != null) {
-      const change_1d_pct =
-        typeof q.preMarketChangePercent === 'number'
-          ? q.preMarketChangePercent
-          : pctChange(price, prevClose)
-      return {
-        price,
-        change_1d_pct,
-        session: 'pre',
-        as_of: yahooTimeToMs(q.preMarketTime ?? q.extendedMarketTime),
-        sector,
-      }
-    }
-  }
-
-  if (isPostMarketState(state) && isExtendedQuoteEligible(q)) {
-    const price = extendedPostPrice(q)
-    if (price != null) {
-      // Yahoo postMarketChangePercent is vs today's regular close, not previous close.
-      const change_1d_pct = pctChange(price, prevClose)
-      return {
-        price,
-        change_1d_pct,
-        session: 'post',
-        as_of: yahooTimeToMs(q.postMarketTime ?? q.extendedMarketTime),
-        sector,
-      }
-    }
-  }
-
-  const clockSession = getUSMarketSession()
-
-  // Yahoo often reports marketState CLOSED while postMarketPrice is still updating.
-  if (clockSession === 'post' && isExtendedQuoteEligible(q)) {
-    const price = extendedPostPrice(q)
-    if (price != null) {
-      return {
-        price,
-        change_1d_pct: pctChange(price, prevClose),
-        session: 'post',
-        as_of: yahooTimeToMs(q.postMarketTime ?? q.extendedMarketTime),
-        sector,
-      }
-    }
-  }
-
-  if (clockSession === 'pre' && isExtendedQuoteEligible(q)) {
-    const price = extendedPrePrice(q)
-    if (price != null) {
-      const change_1d_pct =
-        typeof q.preMarketChangePercent === 'number'
-          ? q.preMarketChangePercent
-          : pctChange(price, prevClose)
-      return {
-        price,
-        change_1d_pct,
-        session: 'pre',
-        as_of: yahooTimeToMs(q.preMarketTime ?? q.extendedMarketTime),
-        sector,
-      }
-    }
-  }
-
-  if (typeof q.regularMarketPrice !== 'number') return null
-
-  const price = q.regularMarketPrice
-  const change_1d_pct =
-    typeof q.regularMarketChangePercent === 'number'
-      ? q.regularMarketChangePercent
-      : pctChange(price, prevClose)
-
-  if (state === 'REGULAR') {
-    return {
-      price,
-      change_1d_pct,
-      session: 'regular',
-      as_of: yahooTimeToMs(q.regularMarketTime),
-      sector,
-    }
-  }
-
-  // PRE/POST with no extended quote (hasPrePostMarketData=false or missing prices):
-  // Yahoo only provides regularMarketPrice — show last regular close, not a fake extended badge.
-  return {
-    price,
-    change_1d_pct,
-    session: 'closed',
-    as_of: yahooTimeToMs(q.regularMarketTime),
-    sector,
-  }
-}
-
-/** Regular-session price only — for portfolio P&L and signals (no pre/post extended prices). */
-function parseYahooQuoteRegularOnly(q: Record<string, unknown>): LivePriceSnapshot | null {
   if (typeof q.regularMarketPrice !== 'number') return null
 
   const prevClose = previousClose(q)
@@ -192,10 +61,11 @@ function parseYahooQuoteRegularOnly(q: Record<string, unknown>): LivePriceSnapsh
     change_1d_pct,
     session: state === 'REGULAR' ? 'regular' : 'closed',
     as_of: yahooTimeToMs(q.regularMarketTime),
+    sector: quoteSector(q),
   }
 }
 
-async function fetchLivePriceChunk(symbols: string[]): Promise<Map<string, LivePriceSnapshot>> {
+async function fetchPriceChunk(symbols: string[]): Promise<Map<string, LivePriceSnapshot>> {
   const map = new Map<string, LivePriceSnapshot>()
   if (!symbols.length) return map
 
@@ -219,38 +89,13 @@ async function fetchLivePriceChunk(symbols: string[]): Promise<Map<string, LiveP
   return map
 }
 
-async function fetchRegularPriceChunk(symbols: string[]): Promise<Map<string, LivePriceSnapshot>> {
-  const map = new Map<string, LivePriceSnapshot>()
-  if (!symbols.length) return map
-
-  try {
-    const url = `https://query1.finance.yahoo.com/v7/finance/quote?symbols=${encodeURIComponent(symbols.join(','))}`
-    const res = await fetch(url, {
-      headers: { 'User-Agent': YAHOO_UA },
-      cache: 'no-store',
-    })
-    if (!res.ok) return map
-
-    const data = await res.json()
-    for (const q of data?.quoteResponse?.result ?? []) {
-      const snap = parseYahooQuoteRegularOnly(q as Record<string, unknown>)
-      if (snap) map.set(String(q.symbol).toUpperCase(), snap)
-    }
-  } catch {
-    // fall through
-  }
-
-  return map
-}
-
 async function fetchQuoteChunksSequential(
   chunks: string[][],
-  fetchChunk: (symbols: string[]) => Promise<Map<string, LivePriceSnapshot>>,
 ): Promise<Map<string, LivePriceSnapshot>> {
   const map = new Map<string, LivePriceSnapshot>()
   for (let i = 0; i < chunks.length; i++) {
     if (i > 0) await sleep(QUOTE_CHUNK_GAP_MS)
-    const chunkMap = await fetchChunk(chunks[i])
+    const chunkMap = await fetchPriceChunk(chunks[i])
     for (const [sym, snap] of chunkMap) map.set(sym, snap)
   }
   return map
@@ -268,9 +113,7 @@ async function fetchChartFallbacksSequential(
   return map
 }
 
-async function fetchRegularPricesForTickers(
-  tickers: string[],
-): Promise<Map<string, LivePriceSnapshot>> {
+async function fetchPricesForTickers(tickers: string[]): Promise<Map<string, LivePriceSnapshot>> {
   const syms = [...new Set(tickers.map((t) => t.toUpperCase()))]
   if (!syms.length) return new Map()
 
@@ -279,7 +122,7 @@ async function fetchRegularPricesForTickers(
     chunks.push(syms.slice(i, i + QUOTE_CHUNK))
   }
 
-  const map = await fetchQuoteChunksSequential(chunks, fetchRegularPriceChunk)
+  const map = await fetchQuoteChunksSequential(chunks)
 
   const missing = syms.filter((sym) => !map.has(sym))
   if (missing.length) {
@@ -303,13 +146,11 @@ async function fetchChartFallback(sym: string): Promise<LivePriceSnapshot | null
 
     const price = meta.regularMarketPrice
     const prevClose = (meta.chartPreviousClose ?? meta.previousClose) as number | undefined
-    const clockSession = getUSMarketSession()
 
     return {
       price,
       change_1d_pct: pctChange(price, prevClose),
-      // v8 chart meta only exposes regularMarketPrice (no pre/post price fields).
-      session: clockSession,
+      session: isUSMarketOpen() ? 'regular' : 'closed',
       as_of: yahooTimeToMs(meta.regularMarketTime),
     }
   } catch {
@@ -319,7 +160,7 @@ async function fetchChartFallback(sym: string): Promise<LivePriceSnapshot | null
 
 export async function fetchLivePriceForTicker(ticker: string): Promise<LivePriceSnapshot | null> {
   const sym = ticker.toUpperCase()
-  const batch = await fetchLivePriceChunk([sym])
+  const batch = await fetchPriceChunk([sym])
   if (batch.has(sym)) return batch.get(sym)!
   return fetchChartFallback(sym)
 }
@@ -327,23 +168,13 @@ export async function fetchLivePriceForTicker(ticker: string): Promise<LivePrice
 export async function fetchLivePricesForTickers(
   tickers: string[],
 ): Promise<Map<string, LivePriceSnapshot>> {
-  const syms = [...new Set(tickers.map((t) => t.toUpperCase()))]
-  if (!syms.length) return new Map()
+  return fetchPricesForTickers(tickers)
+}
 
-  const chunks: string[][] = []
-  for (let i = 0; i < syms.length; i += QUOTE_CHUNK) {
-    chunks.push(syms.slice(i, i + QUOTE_CHUNK))
-  }
-
-  const map = await fetchQuoteChunksSequential(chunks, fetchLivePriceChunk)
-
-  const missing = syms.filter((sym) => !map.has(sym))
-  if (missing.length) {
-    const fallbacks = await fetchChartFallbacksSequential(missing)
-    for (const [sym, snap] of fallbacks) map.set(sym, snap)
-  }
-
-  return map
+export async function fetchRegularPricesForTickers(
+  tickers: string[],
+): Promise<Map<string, LivePriceSnapshot>> {
+  return fetchPricesForTickers(tickers)
 }
 
 export function toStockSnapshot(snap: LivePriceSnapshot): StockSnapshot {
@@ -351,12 +182,12 @@ export function toStockSnapshot(snap: LivePriceSnapshot): StockSnapshot {
     price: snap.price,
     change_1d_pct: snap.change_1d_pct,
     session: snap.session,
-    is_live: snap.session !== 'closed',
+    is_live: snap.session === 'regular',
     as_of: snap.as_of ?? null,
   }
 }
 
-/** Fetch price for current session (pre / regular / post / close) via Yahoo v7 quote. */
+/** Regular-session quotes via Yahoo v7 (last close when market closed). */
 export async function fetchStockSnapshotsForTickers(
   tickers: string[],
 ): Promise<Map<string, StockSnapshot>> {
@@ -368,14 +199,9 @@ export async function fetchStockSnapshotsForTickers(
   return map
 }
 
-/** Regular close + day % only — portfolio holdings and signals scoring. */
+/** Alias — portfolio and signals use regular close only. */
 export async function fetchRegularSnapshotsForTickers(
   tickers: string[],
 ): Promise<Map<string, StockSnapshot>> {
-  const raw = await fetchRegularPricesForTickers(tickers)
-  const map = new Map<string, StockSnapshot>()
-  for (const [sym, snap] of raw) {
-    map.set(sym, toStockSnapshot(snap))
-  }
-  return map
+  return fetchStockSnapshotsForTickers(tickers)
 }

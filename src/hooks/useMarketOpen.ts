@@ -1,10 +1,6 @@
 'use client'
 
-import {
-  getUSMarketSession,
-  isPriceRefreshActive,
-  type MarketSession,
-} from '@/lib/market-hours'
+import { getUSMarketSession, isUSMarketOpen, type MarketSession } from '@/lib/market-hours'
 import { useEffect, useState } from 'react'
 
 /** Re-check every 30s so the UI tracks session changes without reload. */
@@ -21,16 +17,16 @@ export function useMarketSession(): MarketSession {
   return session
 }
 
-/** True during pre-market, regular, or after-hours — enables live price refresh. */
+/** True during regular market hours — enables 13s live price refresh. */
 export function useMarketOpen(): boolean {
-  const [active, setActive] = useState(() => isPriceRefreshActive())
+  const [open, setOpen] = useState(() => isUSMarketOpen())
 
   useEffect(() => {
-    const tick = () => setActive(isPriceRefreshActive())
+    const tick = () => setOpen(isUSMarketOpen())
     tick()
     const id = setInterval(tick, 30_000)
     return () => clearInterval(id)
   }, [])
 
-  return active
+  return open
 }

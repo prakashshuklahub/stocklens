@@ -33,6 +33,7 @@ import {
   TRENDING_GLOBAL_RANK_LIMIT,
   type ScoredSuggestion,
 } from '@/lib/watchlist-suggestions-scoring'
+import { loadActiveSkippedTickers } from '@/lib/trending-skips'
 import { createServerClient } from '@/lib/supabase'
 import { NextRequest, NextResponse } from 'next/server'
 import type {
@@ -372,22 +373,18 @@ async function overlayLivePrices(
   })
 }
 
-export async function GET(req: NextRequest) {
-  const forceRefresh = req.nextUrl.searchParams.get('refresh') === '1'
-  const session = await auth()
-  const userId = getSessionUserId(session)
-  if (!userId) {
-    return NextResponse.json({ error: 'Session invalid — please sign in again' }, { status: 401 })
-  }
-
-  const supabase = createServerClient()
-
+export async function buildWatchlistSuggestionsResponse(
+  supabase: ReturnType<typeof createServerClient>,
+  userId: string,
+  forceRefresh: boolean,
+): Promise<WatchlistSuggestionsResponse> {
   const { data: watchlist } = await supabase
     .from('watchlist_stocks')
     .select('ticker')
     .eq('user_id', userId)
 
   const owned = new Set((watchlist ?? []).map((w) => String(w.ticker).toUpperCase()))
+  const skipped = await loadActiveSkippedTickers(supabase, userId)
 
   const stored = await loadStoredPayload(supabase)
   const useStoredRankings = stored && isPayloadFresh(stored) && !forceRefresh
@@ -402,18 +399,27 @@ export async function GET(req: NextRequest) {
       cached = await buildGlobalRanked(supabase, keepReasons)
     } catch (err) {
       console.error('[watchlist/suggestions] build failed:', err)
-      const empty: WatchlistSuggestionsResponse = {
+      return {
         suggestions: [],
         generated_at: new Date().toISOString(),
         llm_enabled: isLLMEnabled(),
         scanned_count: 0,
       }
-      return NextResponse.json(empty, { headers: NO_CACHE })
     }
   }
 
   const notOnWatchlist = cached.ranked.filter((s) => !owned.has(s.ticker.toUpperCase()))
-  const top = notOnWatchlist.slice(0, USER_TRENDING_LIMIT)
+  const eligible = notOnWatchlist.filter((s) => !skipped.has(s.ticker.toUpperCase()))
+  const top = eligible.slice(0, USER_TRENDING_LIMIT)
+
+  if (!top.length) {
+    return {
+      suggestions: [],
+      generated_at: cached.generated_at,
+      llm_enabled: isLLMEnabled(),
+      scanned_count: cached.ranked.length,
+    }
+  }
 
   const tickers = top.map((s) => s.ticker)
   const { data: fundRows } = await supabase.from('stock_fundamentals').select('*').in('ticker', tickers)
@@ -438,7 +444,7 @@ export async function GET(req: NextRequest) {
     if (pickNarratives.has(key)) continue
     const f = fundamentalsByTicker.get(key)
     if (!f) continue
-    if (f) pendingPicks.push(trendingToScoredPick(s, f))
+    pendingPicks.push(trendingToScoredPick(s, f))
   }
   if (pendingPicks.length && isLLMEnabled()) {
     schedulePickNarrativeGeneration(
@@ -462,12 +468,24 @@ export async function GET(req: NextRequest) {
 
   suggestions = await overlayLivePrices(suggestions)
 
-  const response: WatchlistSuggestionsResponse = {
+  return {
     suggestions,
     generated_at: cached.generated_at,
     llm_enabled: isLLMEnabled(),
     scanned_count: cached.ranked.length,
   }
+}
+
+export async function GET(req: NextRequest) {
+  const forceRefresh = req.nextUrl.searchParams.get('refresh') === '1'
+  const session = await auth()
+  const userId = getSessionUserId(session)
+  if (!userId) {
+    return NextResponse.json({ error: 'Session invalid — please sign in again' }, { status: 401 })
+  }
+
+  const supabase = createServerClient()
+  const response = await buildWatchlistSuggestionsResponse(supabase, userId, forceRefresh)
 
   return NextResponse.json(response, {
     headers: {

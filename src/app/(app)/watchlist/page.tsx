@@ -147,6 +147,7 @@ function WatchlistSortBar({
 
   return (
     <FilterChipBar
+      label="Sort"
       value={value}
       options={options}
       onChange={onChange}
@@ -434,11 +435,7 @@ export default function WatchlistPage() {
   }, [mutate, mutateFundamentals, mutateSignals])
 
   const refreshing = isValidating && !isLoading
-  const countdown = useLivePriceRefresh(
-    marketSession,
-    marketOpen && stocks.length > 0,
-    refreshPrices,
-  )
+  const countdown = useLivePriceRefresh(marketOpen && stocks.length > 0, refreshPrices)
 
   useEffect(() => {
     setSortMode(loadSortMode())
@@ -592,7 +589,7 @@ export default function WatchlistPage() {
             </div>
           ) : (
             <div>
-              {marketSession === 'regular' && (
+              {marketOpen && (
                 <div className="flex items-center justify-between gap-2 mb-2 px-0.5">
                   <p className="type-caption text-zinc-500">Live prices</p>
                   <RefreshCountdown seconds={countdown} refreshing={refreshing} />
