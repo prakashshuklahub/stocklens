@@ -1,4 +1,4 @@
-import { refreshTargetsInDb } from '@/lib/cron/refresh-targets'
+import { refreshPortfolioSummariesInDb } from '@/lib/cron/refresh-portfolio-summaries'
 import { cronRouteGuard } from '@/lib/cron/route-guard'
 import { env } from '@/lib/env'
 import { createServerClient } from '@/lib/supabase'
@@ -10,29 +10,25 @@ function authorized(req: NextRequest): boolean {
   return req.headers.get('authorization') === `Bearer ${secret}`
 }
 
-/**
- * Bulk refresh analyst targets into stock_fundamentals.
- * ?force=1 — refresh all tickers (use once to validate StockAnalysis in UI).
- */
+/** Batch refresh stale portfolio daily summaries (3h TTL). */
 export async function GET(req: NextRequest) {
   if (!authorized(req)) {
     return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
   }
 
-  const blocked = cronRouteGuard('cron/refresh-targets')
+  const blocked = cronRouteGuard('cron/refresh-portfolio-summaries')
   if (blocked) return blocked
 
-  const force = req.nextUrl.searchParams.get('force') === '1'
   const supabase = createServerClient()
 
   try {
-    const result = await refreshTargetsInDb(supabase, { force })
+    const result = await refreshPortfolioSummariesInDb(supabase)
     console.info(
-      `[cron/refresh-targets] updated=${result.targets_updated}/${result.tickers_attempted} forced=${force}`,
+      `[cron/refresh-portfolio-summaries] written=${result.summaries_written}/${result.users_attempted} skipped_fresh=${result.users_skipped_fresh}`,
     )
     return NextResponse.json(result)
   } catch (err) {
-    console.error('[cron/refresh-targets] failed:', err)
+    console.error('[cron/refresh-portfolio-summaries] failed:', err)
     return NextResponse.json(
       { error: err instanceof Error ? err.message : 'Refresh failed' },
       { status: 500 },

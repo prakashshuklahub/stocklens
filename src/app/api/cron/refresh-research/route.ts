@@ -1,4 +1,5 @@
 import { refreshResearchInDb } from '@/lib/cron/refresh-research'
+import { cronRouteGuard } from '@/lib/cron/route-guard'
 import { env } from '@/lib/env'
 import { createServerClient } from '@/lib/supabase'
 import { NextRequest, NextResponse } from 'next/server'
@@ -14,6 +15,9 @@ export async function GET(req: NextRequest) {
   if (!authorized(req)) {
     return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
   }
+
+  const blocked = cronRouteGuard('cron/refresh-research')
+  if (blocked) return blocked
 
   const supabase = createServerClient()
 

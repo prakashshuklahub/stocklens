@@ -1,4 +1,5 @@
 import { isLLMEnabled } from '@/lib/llm'
+import { getCronWindowStatus, isCronWorkAllowed, logCronWindowSkip } from '@/lib/cron/window'
 import {
   loadFreshNarratives,
   mapSequential,
@@ -147,6 +148,12 @@ export function schedulePickNarrativeGeneration(
   logPrefix: string,
 ): void {
   if (!pending.length || !isLLMEnabled()) return
+
+  if (!isCronWorkAllowed()) {
+    const status = getCronWindowStatus()
+    if (!status.allowed) logCronWindowSkip(logPrefix, status)
+    return
+  }
 
   console.info(`[${logPrefix}] scheduling ${pending.length} narrative(s) in background`)
 

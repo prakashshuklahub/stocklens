@@ -86,6 +86,65 @@ export interface PortfolioWithSignalsResponse {
   meta: PortfolioSignalsMeta
 }
 
+// ── Portfolio daily briefing ───────────────────────────────────────────────────
+export type PortfolioSummarySentiment = 'positive' | 'neutral' | 'negative'
+
+export type PortfolioSummaryTag =
+  | 'earnings_beat'
+  | 'earnings_miss'
+  | 'earnings_soon'
+  | 'target_raised'
+  | 'target_cut'
+  | 'weak_guidance'
+  | 'strong_momentum'
+  | 'weak_momentum'
+  | 'analyst_upgrade'
+  | 'analyst_downgrade'
+  | 'heavy_sell_ratings'
+  | 'strong_buy_ratings'
+  | 'negative_news'
+  | 'positive_news'
+  | 'near_52w_high'
+  | 'near_52w_low'
+  | 'profit_target_reached'
+
+export interface HoldingDailySummary {
+  ticker: string
+  company_name: string | null
+  sentiment: PortfolioSummarySentiment
+  tags: PortfolioSummaryTag[]
+  summary: string
+  headline?: string
+  degraded_input?: boolean
+}
+
+export interface PortfolioDailySummaryPayload {
+  version: 1
+  generated_at: string
+  holdings_hash: string
+  market_session: MarketSession
+  portfolio_headline: string
+  portfolio_sentiment: PortfolioSummarySentiment
+  holdings: HoldingDailySummary[]
+  degraded_tickers: string[]
+  inputs_as_of: {
+    prices_at: string | null
+    fundamentals_age_min: string | null
+    fundamentals_age_max: string | null
+    research_age_min: string | null
+    research_age_max: string | null
+  }
+  narrative_source: 'llm' | 'mechanical'
+  model?: string | null
+}
+
+export interface PortfolioSummaryResponse {
+  summary: PortfolioDailySummaryPayload | null
+  stale: boolean
+  refreshing: boolean
+  llm_enabled: boolean
+}
+
 export interface StockFundamentals {
   ticker: string
   // Historical % changes

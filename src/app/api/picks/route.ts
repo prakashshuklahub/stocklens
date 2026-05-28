@@ -1,4 +1,5 @@
 import { auth, getSessionUserId } from '@/lib/auth'
+import { isCronWorkAllowed, logCronWindowSkip, getCronWindowStatus } from '@/lib/cron/window'
 import { refreshFundamentalsForTickers } from '@/lib/load-fundamentals'
 import { isPriceRefreshActive } from '@/lib/market-hours'
 import { buildUnifiedPicksResponse, PICKS_NO_CACHE_HEADERS } from '@/lib/picks-pipeline'
@@ -19,6 +20,11 @@ export async function GET(req: NextRequest) {
   const { response, staleFundamentals } = await buildUnifiedPicksResponse(supabase, userId, forceRefresh)
 
   after(async () => {
+    if (!isCronWorkAllowed()) {
+      const status = getCronWindowStatus()
+      if (!status.allowed) logCronWindowSkip('picks/after', status)
+      return
+    }
     await rebuildTrendingCacheIfNeeded(supabase)
     if (staleFundamentals.length) {
       console.info(

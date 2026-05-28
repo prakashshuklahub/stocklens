@@ -406,3 +406,184 @@ export async function generateSellReview(input: SellReviewInput): Promise<SellRe
   if (primary) return primary
   return callGeminiSellReview(FALLBACK_MODEL, user, input.ticker)
 }
+
+// ── Portfolio daily briefing (all holdings in one call) ───────────────────────
+
+export interface PortfolioBriefingEditorial {
+  lead: string
+  what_changed: string | null
+  catalyst: string | null
+  caution: string | null
+  material_updates: string[]
+  key_metrics: string[]
+}
+
+export interface PortfolioBriefingHoldingInput {
+  ticker: string
+  company_name: string | null
+  weight_pct: number
+  role_today: 'leader' | 'laggard' | 'anchor' | 'quiet'
+  signal_tier: string
+  suggested_tags: string[]
+  editorial: PortfolioBriefingEditorial
+  do_not_repeat: string[]
+}
+
+export interface PortfolioBriefingInput {
+  day_tone: 'strong_up' | 'up' | 'flat' | 'down' | 'strong_down' | 'unknown'
+  day_pct: number | null
+  leaders: string[]
+  laggards: string[]
+  holding_count: number
+  holdings: PortfolioBriefingHoldingInput[]
+}
+
+export interface PortfolioBriefingHoldingOutput {
+  ticker: string
+  sentiment: 'positive' | 'neutral' | 'negative'
+  tags: string[]
+  summary: string
+  headline?: string
+}
+
+export interface PortfolioBriefingOutput {
+  portfolio_headline: string
+  portfolio_sentiment: 'positive' | 'neutral' | 'negative'
+  holdings: PortfolioBriefingHoldingOutput[]
+  model: string
+}
+
+const BRIEFING_SYSTEM = `You write the editorial layer of a daily portfolio briefing for an informed investor.
+
+Tone: clear, analytical, and composed — like a senior strategist's morning note. Blend interpretation with selective data: neither a dashboard readout nor vague prose.
+
+Each holding has two fact layers:
+1) editorial.material_updates — headlines, deals, partnerships, guidance, events. When non-empty, cite at least one specific item (names, deal terms, target moves) — paraphrase while keeping proper nouns and numbers from the headline.
+2) editorial.key_metrics — curated figures (today %, 30-day %, position vs cost, analyst split, target/upside, earnings countdown). Weave up to TWO of these into the summary where they sharpen the point — mid-sentence, not as a list. Do NOT open with a bare percentage.
+
+For each holding:
+- headline: 4–7 words, professional and specific.
+- summary: exactly 2 sentences, max 300 characters. Complete sentences. No markdown.
+  • Sentence 1: analytical angle + the most important material_update and/or key_metric woven together.
+  • Sentence 2: implication — catalyst, caution, earnings timing, target context, or risk — with another metric only if it adds clarity.
+- Use the company name once when natural; omit the ticker in the summary body.
+- Use ONLY facts from editorial fields, material_updates, and key_metrics. Never invent news or numbers.
+- If editorial.caution is present, state the risk directly.
+- sentiment + suggested_tags: copy suggested_tags subset; align sentiment with the analysis.
+
+portfolio_headline: one sentence on how the session shaped the portfolio. May include the portfolio day % if provided in the user prompt, plus which names drove the move and a material development when relevant.
+
+No buy/sell recommendations. No vendor names. Return strict JSON.`
+
+async function callGeminiPortfolioBriefing(
+  model: string,
+  userPrompt: string,
+): Promise<PortfolioBriefingOutput | null> {
+  const apiKey = env.GEMINI_API_KEY
+  if (!apiKey) return null
+
+  try {
+    const res = await fetch(
+      `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${apiKey}`,
+      {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          systemInstruction: { parts: [{ text: BRIEFING_SYSTEM }] },
+          contents: [{ role: 'user', parts: [{ text: userPrompt }] }],
+          generationConfig: {
+            temperature: 0.35,
+            responseMimeType: 'application/json',
+            responseSchema: {
+              type: 'object',
+              properties: {
+                portfolio_headline: { type: 'string' },
+                portfolio_sentiment: { type: 'string', enum: ['positive', 'neutral', 'negative'] },
+                holdings: {
+                  type: 'array',
+                  items: {
+                    type: 'object',
+                    properties: {
+                      ticker: { type: 'string' },
+                      sentiment: { type: 'string', enum: ['positive', 'neutral', 'negative'] },
+                      tags: { type: 'array', items: { type: 'string' } },
+                      summary: { type: 'string' },
+                      headline: { type: 'string' },
+                    },
+                    required: ['ticker', 'sentiment', 'tags', 'summary'],
+                  },
+                },
+              },
+              required: ['portfolio_headline', 'portfolio_sentiment', 'holdings'],
+            },
+          },
+        }),
+      },
+    )
+
+    if (!res.ok) {
+      console.warn(`[llm/briefing] ${model} ${res.status}`)
+      return null
+    }
+
+    const data = await res.json()
+    const text: string | undefined = data?.candidates?.[0]?.content?.parts?.[0]?.text
+    if (!text) return null
+
+    const parsed = parseJsonFromLlmText(text) as Partial<PortfolioBriefingOutput> | null
+    if (!parsed?.portfolio_headline || !parsed.holdings?.length) return null
+
+    return {
+      portfolio_headline: parsed.portfolio_headline.trim(),
+        portfolio_sentiment: (parsed.portfolio_sentiment === 'positive' ||
+          parsed.portfolio_sentiment === 'negative' ||
+          parsed.portfolio_sentiment === 'neutral'
+          ? parsed.portfolio_sentiment
+          : 'neutral') as 'positive' | 'neutral' | 'negative',
+      holdings: parsed.holdings.map((h) => ({
+        ticker: String(h.ticker).toUpperCase(),
+        sentiment: (h.sentiment === 'positive' || h.sentiment === 'negative' || h.sentiment === 'neutral'
+          ? h.sentiment
+          : 'neutral') as 'positive' | 'neutral' | 'negative',
+        tags: Array.isArray(h.tags) ? h.tags.map(String) : [],
+        summary: String(h.summary ?? '').trim(),
+        headline: h.headline ? String(h.headline).trim() : undefined,
+      })),
+      model,
+    }
+  } catch (err) {
+    console.warn('[llm/briefing] failed:', err)
+    return null
+  }
+}
+
+function buildPortfolioBriefingPrompt(input: PortfolioBriefingInput): string {
+  const dayLine =
+    input.day_pct != null
+      ? `Portfolio day change: ${input.day_pct >= 0 ? '+' : ''}${input.day_pct.toFixed(2)}%`
+      : ''
+  const lines = [
+    'Blend editorial interpretation with selective key_metrics — not a stat dump.',
+    '',
+    `Session tone: ${input.day_tone}`,
+    dayLine,
+    `Holdings covered: ${input.holding_count}`,
+    input.leaders.length ? `Primary contributors: ${input.leaders.join(', ')}` : '',
+    input.laggards.length ? `Primary detractors: ${input.laggards.join(', ')}` : '',
+    '',
+    'Each holding: editorial (material_updates, key_metrics) and do_not_repeat.',
+    '',
+    JSON.stringify(input.holdings, null, 0),
+  ]
+  return lines.filter(Boolean).join('\n')
+}
+
+export async function generatePortfolioBriefing(
+  input: PortfolioBriefingInput,
+): Promise<PortfolioBriefingOutput | null> {
+  if (!isLLMEnabled()) return null
+  const user = buildPortfolioBriefingPrompt(input)
+  const primary = await callGeminiPortfolioBriefing(PRIMARY_MODEL, user)
+  if (primary) return primary
+  return callGeminiPortfolioBriefing(FALLBACK_MODEL, user)
+}

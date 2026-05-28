@@ -377,7 +377,7 @@ Returns `null` if no meaningful data.
 ### 8.6 Cron job
 
 **File:** `src/lib/cron/refresh-research.ts`  
-**Schedule:** `vercel.json` — daily `0 13 * * *` UTC (Vercel Hobby = once/day max)
+**Schedule:** `vercel.json` — `0 16 * * 1-5` UTC (9:30pm IST, Mon–Fri); skipped outside IST off-hours window
 
 | Setting | Value |
 |---------|-------|
@@ -519,16 +519,19 @@ Total clamped **±20**. Dividend yield not scored (low priority).
 
 ## 14. Cron schedule (Vercel)
 
-**File:** `vercel.json`
+**File:** `vercel.json` · **Window:** `src/lib/cron/window.ts` (IST)
 
-| Job | Path | Schedule (UTC) | Purpose |
-|-----|------|----------------|---------|
-| Refresh targets | `/api/cron/refresh-targets` | `45 11 * * *` (~5:15pm IST) | Analyst price targets → `stock_fundamentals` |
-| Refresh research | `/api/cron/refresh-research` | `0 13 * * *` | Key research → `stock_research_cache` |
+**Off hours (no cron / background API work):** Mon–Fri 3:00am–2:59pm IST; all day Sat–Sun.
 
-Both require `Authorization: Bearer ${CRON_SECRET}`. Vercel injects this automatically when `CRON_SECRET` env var is set.
+| Job | Path | Schedule (UTC) | IST (Mon–Fri) | Purpose |
+|-----|------|----------------|---------------|---------|
+| Refresh targets | `/api/cron/refresh-targets` | `30 15 * * 1-5` | 9:00pm | Analyst price targets → `stock_fundamentals` |
+| Refresh research | `/api/cron/refresh-research` | `0 16 * * 1-5` | 9:30pm | Key research → `stock_research_cache` |
+| Portfolio briefings | `/api/cron/refresh-portfolio-summaries` | `30 16 * * 1-5` | 10:00pm | Daily briefing cache (Gemini) |
 
-**Hobby plan:** one run per cron per day. For faster research warm-up, upgrade to Pro and set research cron to hourly (`0 * * * *`) — batch size 30 already respects Finnhub limits.
+Both require `Authorization: Bearer ${CRON_SECRET}`. Routes return `{ skipped: true }` if invoked inside the off-hours window.
+
+**Hobby plan:** one run per cron per day (weekdays only). Background pick narratives and portfolio `after()` also respect the IST window.
 
 ---
 

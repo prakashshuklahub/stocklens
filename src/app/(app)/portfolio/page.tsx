@@ -16,6 +16,7 @@ import AppNav from '@/components/AppNav'
 import FilterChipBar, { type FilterChipOption } from '@/components/FilterChipBar'
 import StockLogo from '@/components/StockLogo'
 import { HoldingCard } from '@/components/portfolio/HoldingCard'
+import PortfolioDailySummary from '@/components/portfolio/PortfolioDailySummary'
 import { PortfolioLoadingState } from '@/components/portfolio/PortfolioSkeletons'
 import { RefreshCountdown } from '@/components/LiveRefreshHeader'
 import { useMarketOpen } from '@/hooks/useMarketOpen'
@@ -563,6 +564,8 @@ export default function PortfolioPage() {
           ) : (
             <>
               <SummaryBar holdings={holdings} />
+
+              <PortfolioDailySummary holdingCount={holdings.length} />
 
               <HoldingsSection
                 holdings={holdings}
