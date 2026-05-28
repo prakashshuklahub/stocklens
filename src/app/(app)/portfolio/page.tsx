@@ -255,7 +255,6 @@ function HoldingsSection({
 
       {!preview && holdings.length > 0 && (
         <FilterChipBar
-          label="Filter"
           value={tierFilter}
           options={TIER_FILTERS}
           onChange={setTierFilter}
