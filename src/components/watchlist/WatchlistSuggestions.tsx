@@ -6,6 +6,7 @@ import { Flame, Plus, SkipForward } from 'lucide-react'
 import CollapseChevron from '@/components/CollapseChevron'
 import NarrativeSummaryBlocks from '@/components/NarrativeSummaryBlocks'
 import StockLogo from '@/components/StockLogo'
+import WatchlistCardSkeleton from '@/components/watchlist/WatchlistCardSkeleton'
 import { PRICE_REFRESH_MS } from '@/lib/market-hours'
 import { cn } from '@/lib/utils'
 import type { PickNarrativesResponse, WatchlistSuggestion, WatchlistSuggestionsResponse } from '@/types'
@@ -181,9 +182,9 @@ export default function WatchlistSuggestions({
           </p>
         </div>
       ) : isLoading ? (
-        <div className="space-y-2" aria-busy="true">
+        <div className="space-y-2" aria-busy="true" aria-label="Loading trending suggestions">
           {[1, 2, 3].map((n) => (
-            <div key={n} className="h-[88px] rounded-2xl bg-zinc-900 animate-pulse" />
+            <WatchlistCardSkeleton key={n} rank={n} />
           ))}
         </div>
       ) : (

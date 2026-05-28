@@ -16,6 +16,7 @@ import AppNav from '@/components/AppNav'
 import FilterChipBar, { type FilterChipOption } from '@/components/FilterChipBar'
 import StockLogo from '@/components/StockLogo'
 import { HoldingCard } from '@/components/portfolio/HoldingCard'
+import { PortfolioLoadingState } from '@/components/portfolio/PortfolioSkeletons'
 import { RefreshCountdown } from '@/components/LiveRefreshHeader'
 import { useMarketOpen } from '@/hooks/useMarketOpen'
 import { useLivePriceRefresh } from '@/hooks/useLivePriceRefresh'
@@ -263,11 +264,7 @@ function HoldingsSection({
       )}
 
       {loading ? (
-        <div className="space-y-3" aria-busy="true">
-          {[1, 2, 3].map((n) => (
-            <div key={n} className="h-[120px] rounded-2xl bg-zinc-900 animate-pulse" />
-          ))}
-        </div>
+        <PortfolioLoadingState showSummary={false} />
       ) : (
         <div className="space-y-3">
           {filtered.map((h) => (
@@ -510,12 +507,7 @@ export default function PortfolioPage() {
 
           {/* Content */}
           {isLoading ? (
-            <div className="space-y-3" aria-busy="true">
-              <div className="portfolio-summary h-[100px] animate-pulse opacity-60 mb-4" />
-              {[1, 2, 3].map((n) => (
-                <div key={n} className="h-[72px] rounded-2xl bg-zinc-900 animate-pulse" style={{ animationDelay: `${n * 80}ms` }} />
-              ))}
-            </div>
+            <PortfolioLoadingState />
           ) : holdings.length === 0 ? (
             <div className="pt-2 pb-12 space-y-4">
               {showPreview ? (

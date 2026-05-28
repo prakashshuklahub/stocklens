@@ -705,7 +705,6 @@ function PicksRankedList({
   return (
     <section aria-label="Stock picks">
       <FilterChipBar
-        label="Show"
         value={sourceFilter}
         options={PICK_SOURCE_FILTERS}
         onChange={onSourceFilterChange}

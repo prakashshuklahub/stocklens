@@ -5,6 +5,7 @@ import { useSearchParams } from 'next/navigation'
 import useSWR from 'swr'
 import { TrendingUp, ChevronDown } from 'lucide-react'
 import WatchlistCard, { type WatchlistStock } from '@/components/watchlist/WatchlistCard'
+import WatchlistCardSkeleton from '@/components/watchlist/WatchlistCardSkeleton'
 import StockSearchInput, { type StockResult } from '@/components/watchlist/StockSearchInput'
 import WatchlistSuggestions from '@/components/watchlist/WatchlistSuggestions'
 import AppNav from '@/components/AppNav'
@@ -147,7 +148,6 @@ function WatchlistSortBar({
 
   return (
     <FilterChipBar
-      label="Sort"
       value={value}
       options={options}
       onChange={onChange}
@@ -576,7 +576,7 @@ export default function WatchlistPage() {
           {isLoading ? (
             <div className="space-y-5" aria-busy="true" aria-label="Loading watchlist">
               {[1, 2, 3].map((n) => (
-                <div key={n} className="h-[120px] rounded-2xl bg-zinc-900 animate-pulse" style={{ animationDelay: `${n * 80}ms` }} />
+                <WatchlistCardSkeleton key={n} rank={n} />
               ))}
             </div>
           ) : stocks.length === 0 ? (
