@@ -7,6 +7,13 @@
  */
 
 import type { MarketSession } from '@/lib/market-hours'
+import {
+  allowMomentumTarget,
+  applyResearchScore,
+  isEarningsExclusionWindow,
+  passesDiscoveryResearchQualityGate,
+  type ResearchScoringContext,
+} from '@/lib/picks-research-scoring'
 import { isBenchmarkableSector, PICKS_VS_SECTOR_RULES } from '@/lib/sector-relative-strength-scoring'
 import { computeVsSector } from '@/lib/sector-relative-strength'
 import type { MoverQuote } from '@/lib/market-movers'
@@ -19,6 +26,7 @@ import type {
   SectorBenchmark,
   SectorRelativeStrength,
   StockFundamentals,
+  StockResearchSnapshot,
 } from '@/types'
 
 // ── Tunable constants ─────────────────────────────────────────────────────────
@@ -39,7 +47,8 @@ export const PICKS_SCORING_RULES = {
     minNewsSentiment: -0.5,
     momentumMinBuyRatio: 0.45,
     momentumMin30dPct: 5,
-    momentumMaxUpsidePct: 40,
+    /** Synthetic momentum target capped at 20% upside (was 40%). */
+    momentumMaxUpsidePct: 20,
   },
   upsideAnalyst: {
     tiers: [
@@ -104,6 +113,7 @@ export interface PickScoreInput {
   fundamentals: StockFundamentals
   ownership: PickOwnership | null
   benchmark?: SectorBenchmark | null
+  researchContext?: ResearchScoringContext
 }
 
 export interface DiscoveryPickInput {
@@ -113,6 +123,7 @@ export interface DiscoveryPickInput {
   change_1d_session?: MarketSession
   fundamentals: StockFundamentals | null
   benchmark?: SectorBenchmark | null
+  researchContext?: ResearchScoringContext
 }
 
 export type ScoredPick = Omit<
@@ -124,7 +135,6 @@ type TargetLabel = Pick['target_label']
 
 interface BuildPickOptions {
   minScore: number
-  allowMomentumTarget: boolean
   momentumUpsidePointsCap: number | null
 }
 
@@ -195,7 +205,8 @@ function resolveTarget(
   f: StockFundamentals,
   current_price: number,
   buy_ratio: number,
-  allowMomentumTarget: boolean,
+  source: PickSourceTag,
+  research: StockResearchSnapshot | null,
 ): {
   target_mean: number
   target_low: number | null
@@ -231,7 +242,7 @@ function resolveTarget(
   }
 
   if (
-    allowMomentumTarget &&
+    allowMomentumTarget(source, research) &&
     buy_ratio >= rules.gates.momentumMinBuyRatio &&
     (f.change_30d_pct ?? 0) > rules.gates.momentumMin30dPct
   ) {
@@ -347,12 +358,23 @@ function addUpsideScore(
 }
 
 function buildScoredPick(input: PickScoreInput, options: BuildPickOptions): ScoredPick | null {
-  const { candidate, current_price, change_1d_pct, fundamentals: f, ownership, benchmark } = input
+  const {
+    candidate,
+    current_price,
+    change_1d_pct,
+    fundamentals: f,
+    ownership,
+    benchmark,
+    researchContext = { research: null, sectorPeMedian: null },
+  } = input
+  const research = researchContext.research
   const rules = PICKS_SCORING_RULES
   const factors: PickFactor[] = []
   let score = 0
 
   if (current_price <= 0) return null
+
+  if (isEarningsExclusionWindow(research)) return null
 
   const analyst_total = (f.analyst_buy ?? 0) + (f.analyst_hold ?? 0) + (f.analyst_sell ?? 0)
   if (analyst_total < PICKS_MIN_ANALYSTS) return null
@@ -363,7 +385,7 @@ function buildScoredPick(input: PickScoreInput, options: BuildPickOptions): Scor
   if (f.news_sentiment != null && f.news_sentiment < rules.gates.minNewsSentiment) return null
 
   const buy_ratio = (f.analyst_buy ?? 0) / analyst_total
-  const target = resolveTarget(f, current_price, buy_ratio, options.allowMomentumTarget)
+  const target = resolveTarget(f, current_price, buy_ratio, candidate.source, research)
   if (!target) return null
 
   if (target.factor) factors.push(target.factor)
@@ -432,6 +454,8 @@ function buildScoredPick(input: PickScoreInput, options: BuildPickOptions): Scor
   const vs_sector = buildPickVsSector(candidate, f, benchmark)
   score += applyVsSectorScore(vs_sector, candidate.sector, factors)
 
+  score += applyResearchScore(researchContext, candidate.sector, factors)
+
   if (score < options.minScore) return null
 
   const support = f.support_20d ?? current_price * 0.97
@@ -443,6 +467,15 @@ function buildScoredPick(input: PickScoreInput, options: BuildPickOptions): Scor
     confidence = 'high'
   } else if (analyst_total >= rules.confidence.mediumMinAnalysts && buy_ratio > rules.confidence.mediumMinBuyRatio) {
     confidence = 'medium'
+  }
+
+  if (
+    research &&
+    (research.profit_margin_pct ?? 0) < 0 &&
+    research.pe_trailing == null
+  ) {
+    if (confidence === 'high') confidence = 'medium'
+    else if (confidence === 'medium') confidence = 'low'
   }
 
   return {
@@ -525,7 +558,6 @@ function applyDayMoveAndTrendBonuses(
 export function scoreUnifiedPick(input: PickScoreInput): ScoredPick | null {
   const base = buildScoredPick(input, {
     minScore: PICKS_MIN_SCORE,
-    allowMomentumTarget: true,
     momentumUpsidePointsCap: PICKS_MOMENTUM_TARGET_MAX_UPSIDE_POINTS,
   })
   if (!base) return null
@@ -539,7 +571,6 @@ export function scoreUnifiedPick(input: PickScoreInput): ScoredPick | null {
 export function buildNarrativeScoredPick(input: PickScoreInput): ScoredPick | null {
   const base = buildScoredPick(input, {
     minScore: Number.NEGATIVE_INFINITY,
-    allowMomentumTarget: true,
     momentumUpsidePointsCap: PICKS_MOMENTUM_TARGET_MAX_UPSIDE_POINTS,
   })
   if (!base) return null
@@ -547,7 +578,7 @@ export function buildNarrativeScoredPick(input: PickScoreInput): ScoredPick | nu
 }
 
 export function scoreDiscoveryPick(input: DiscoveryPickInput): ScoredPick | null {
-  const { mover, current_price, change_1d_pct, fundamentals: f, benchmark } = input
+  const { mover, current_price, change_1d_pct, fundamentals: f, benchmark, researchContext } = input
   const dRules = PICKS_DISCOVERY_RULES
 
   if (change_1d_pct < dRules.minDayMovePct) return null
@@ -559,6 +590,9 @@ export function scoreDiscoveryPick(input: DiscoveryPickInput): ScoredPick | null
   const total = buy + hold + sell
   if (total < dRules.minAnalysts) return null
   if (buy / total < dRules.minBuyRatio) return null
+
+  const research = researchContext?.research ?? null
+  if (!passesDiscoveryResearchQualityGate(research)) return null
 
   const candidate: PickCandidate = {
     ticker: mover.ticker,
@@ -575,6 +609,7 @@ export function scoreDiscoveryPick(input: DiscoveryPickInput): ScoredPick | null
     fundamentals: f,
     ownership: null,
     benchmark,
+    researchContext,
   })
 
   if (!pick) return null

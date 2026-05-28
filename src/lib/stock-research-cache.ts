@@ -117,8 +117,34 @@ export type ResearchTickerUniverse = {
   all: string[]
 }
 
-/** All users' watchlists + portfolio + fundamentals — shared cache universe. */
-export async function listResearchTickerUniverse(supabase: Supabase): Promise<ResearchTickerUniverse> {
+export async function loadResearchBatchFromDb(
+  supabase: Supabase,
+  tickers: string[],
+): Promise<Map<string, StockResearchSnapshot>> {
+  const unique = [...new Set(tickers.map((t) => t.toUpperCase()))]
+  const out = new Map<string, StockResearchSnapshot>()
+  if (!unique.length) return out
+
+  const CHUNK = 100
+  for (let i = 0; i < unique.length; i += CHUNK) {
+    const chunk = unique.slice(i, i + CHUNK)
+    const { data, error } = await supabase.from('stock_research_cache').select('*').in('ticker', chunk)
+    if (error) {
+      console.warn('[stock-research-cache] batch SELECT failed:', error.message)
+      continue
+    }
+    for (const row of data ?? []) {
+      out.set(String(row.ticker).toUpperCase(), rowToResearchSnapshot(row as StockResearchCacheRow))
+    }
+  }
+  return out
+}
+
+/** All users' watchlists + portfolio + fundamentals + trending discovery pool. */
+export async function listResearchTickerUniverse(
+  supabase: Supabase,
+  options?: { discoveryTickers?: string[] },
+): Promise<ResearchTickerUniverse> {
   const watchlist = new Set<string>()
   const all = new Set<string>()
 
@@ -134,15 +160,19 @@ export async function listResearchTickerUniverse(supabase: Supabase): Promise<Re
   for (const row of [...(wlRes.data ?? []), ...(pfRes.data ?? []), ...(fdRes.data ?? [])]) {
     if (row.ticker) all.add(String(row.ticker).toUpperCase())
   }
+  for (const t of options?.discoveryTickers ?? []) {
+    all.add(t.toUpperCase())
+  }
 
   return { watchlist, all: [...all].sort() }
 }
 
-/** Cron queue: missing rows first, then all-user watchlist, then oldest refresh. */
+/** Cron queue: missing → watchlist missing → discovery missing → oldest refresh. */
 export function sortResearchRefreshQueue(
   tickers: string[],
   watchlist: Set<string>,
   fetchedAtByTicker: Map<string, string>,
+  discoveryPriority?: Set<string>,
 ): string[] {
   return tickers
     .filter((t) => needsResearchRefresh(fetchedAtByTicker.get(t)))
@@ -154,6 +184,10 @@ export function sortResearchRefreshQueue(
       const aWatch = watchlist.has(a)
       const bWatch = watchlist.has(b)
       if (aWatch !== bWatch) return aWatch ? -1 : 1
+
+      const aDiscovery = discoveryPriority?.has(a) ?? false
+      const bDiscovery = discoveryPriority?.has(b) ?? false
+      if (aDiscovery !== bDiscovery) return aDiscovery ? -1 : 1
 
       const aAt = fetchedAtByTicker.get(a)
       const bAt = fetchedAtByTicker.get(b)

@@ -19,6 +19,8 @@ import {
 } from '@/lib/picks-scoring'
 
 export type { DiscoveryPickInput, PickCandidate, PickScoreInput, ScoredPick } from '@/lib/picks-scoring'
+export type { ResearchScoringContext } from '@/lib/picks-research-scoring'
+export { PICKS_RESEARCH_RULES } from '@/lib/picks-research-scoring'
 export {
   PICKS_DISCOVERY_MAX,
   PICKS_MAX_RESULTS,

@@ -1,4 +1,5 @@
 import { fetchStockResearchFromApis } from '@/lib/research-fetch'
+import { loadTrendingCachePayload } from '@/lib/trending-cache'
 import {
   listResearchTickerUniverse,
   needsResearchRefresh,
@@ -38,7 +39,13 @@ export async function refreshResearchInDb(supabase: Supabase): Promise<RefreshRe
     errors: [],
   }
 
-  const { watchlist, all: tickers } = await listResearchTickerUniverse(supabase)
+  const trending = await loadTrendingCachePayload(supabase)
+  const discoveryTickers = (trending?.ranked ?? []).map((s) => s.ticker.toUpperCase())
+  const discoveryPriority = new Set(discoveryTickers)
+
+  const { watchlist, all: tickers } = await listResearchTickerUniverse(supabase, {
+    discoveryTickers,
+  })
   result.tickers_total = tickers.length
   result.watchlist_total = watchlist.size
   if (!tickers.length) return result
@@ -49,7 +56,7 @@ export async function refreshResearchInDb(supabase: Supabase): Promise<RefreshRe
     fetchedAtByTicker.set(row.ticker.toUpperCase(), row.fetched_at)
   }
 
-  const stale = sortResearchRefreshQueue(tickers, watchlist, fetchedAtByTicker)
+  const stale = sortResearchRefreshQueue(tickers, watchlist, fetchedAtByTicker, discoveryPriority)
   result.tickers_stale = stale.length
   const batch = stale.slice(0, BATCH_SIZE)
   result.tickers_attempted = batch.length

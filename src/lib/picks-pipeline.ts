@@ -10,8 +10,9 @@ import {
 import { ensureSectorBenchmarksLoaded } from '@/lib/sector-benchmarks'
 import { isBenchmarkableSector, normalizeWatchlistSector, type BenchmarkableSector } from '@/lib/sector-relative-strength-scoring'
 import { loadTrendingCachePayload } from '@/lib/trending-cache'
-import { buildGlobalTrendingCache } from '@/lib/trending-cache-build'
 import { fetchYahooSector } from '@/lib/sectors'
+import { computeSectorPeMedians, sectorPeMedianForTicker } from '@/lib/picks-research-scoring'
+import { loadResearchBatchFromDb } from '@/lib/stock-research-cache'
 import {
   rankAllPicks,
   scoreDiscoveryPick,
@@ -155,11 +156,12 @@ async function loadFundamentalsAndPrices(
 ): Promise<{
   fundamentalsByTicker: Map<string, StockFundamentals>
   priceByTicker: Map<string, LivePriceSnapshot>
+  staleFundamentals: string[]
 }> {
   const fundamentalsByTicker = new Map<string, StockFundamentals>()
   const unique = [...new Set(tickers.map((t) => t.toUpperCase()))]
   if (!unique.length) {
-    return { fundamentalsByTicker, priceByTicker: new Map() }
+    return { fundamentalsByTicker, priceByTicker: new Map(), staleFundamentals: [] }
   }
 
   const pricesPromise = fetchLivePricesForTickers(unique)
@@ -170,7 +172,7 @@ async function loadFundamentalsAndPrices(
       pricesPromise,
     ])
     for (const [t, row] of Object.entries(loaded)) fundamentalsByTicker.set(t, row)
-    return { fundamentalsByTicker, priceByTicker: prices }
+    return { fundamentalsByTicker, priceByTicker: prices, staleFundamentals: [] }
   }
 
   const [cached, prices] = await Promise.all([
@@ -186,7 +188,10 @@ async function loadFundamentalsAndPrices(
     for (const [t, row] of Object.entries(loaded)) fundamentalsByTicker.set(t, row)
   }
 
-  return { fundamentalsByTicker, priceByTicker: prices }
+  const staleFundamentals =
+    cached.tableMissing || fundamentalsByTicker.size < unique.length * 0.5 ? [] : cached.stale
+
+  return { fundamentalsByTicker, priceByTicker: prices, staleFundamentals }
 }
 
 async function finalizePicks(
@@ -214,7 +219,7 @@ export async function buildUnifiedPicksResponse(
   userId: string,
   forceRefresh: boolean,
   logPrefix = 'picks',
-): Promise<PicksResponse> {
+): Promise<{ response: PicksResponse; staleFundamentals: string[] }> {
   const [watchlistResult, portfolioResult, sectorLoaded, trendingCacheInitial] = await Promise.all([
     supabase.from('watchlist_stocks').select('*').eq('user_id', userId),
     supabase.from('portfolio_holdings').select('*').eq('user_id', userId),
@@ -229,14 +234,7 @@ export async function buildUnifiedPicksResponse(
 
   const sectorBenchmarks = sectorLoaded.benchmarks
 
-  let trendingCache = trendingCacheInitial
-  if (!trendingCache?.ranked.length) {
-    try {
-      trendingCache = await buildGlobalTrendingCache(supabase, { skipBlurbs: true })
-    } catch (err) {
-      console.warn('[picks] trending cache rebuild failed:', err)
-    }
-  }
+  const trendingCache = trendingCacheInitial
 
   const discoveryMovers =
     trendingCache?.ranked.filter((s) => !ownedTickers.has(s.ticker.toUpperCase())) ?? []
@@ -245,15 +243,17 @@ export async function buildUnifiedPicksResponse(
   const discoveryTickers = discoveryMovers.map((s) => s.ticker)
   const allTickers = [...new Set([...candidateTickers, ...discoveryTickers].map((t) => t.toUpperCase()))]
 
-  if (!allTickers.length) return emptyPicksResponse()
+  if (!allTickers.length) return { response: emptyPicksResponse(), staleFundamentals: [] }
 
   void ensureLogosForTickers(supabase, allTickers).catch(() => {})
 
-  const { fundamentalsByTicker, priceByTicker } = await loadFundamentalsAndPrices(
+  const { fundamentalsByTicker, priceByTicker, staleFundamentals } = await loadFundamentalsAndPrices(
     supabase,
     allTickers,
     forceRefresh,
   )
+
+  const researchByTicker = await loadResearchBatchFromDb(supabase, allTickers)
 
   const ownershipByTicker = new Map<string, PickOwnership>()
   for (const h of portfolio) {
@@ -271,6 +271,11 @@ export async function buildUnifiedPicksResponse(
 
   if (candidates.length) {
     const yourCandidates = await enrichCandidatesWithSector(candidates, priceByTicker)
+    const sectorByTicker = new Map(
+      yourCandidates.map((c) => [c.ticker.toUpperCase(), c.sector] as const),
+    )
+    const sectorPeMedians = computeSectorPeMedians(researchByTicker, sectorByTicker)
+
     for (const candidate of yourCandidates) {
       const live = priceByTicker.get(candidate.ticker)
       const current_price = live?.price
@@ -281,6 +286,7 @@ export async function buildUnifiedPicksResponse(
 
       const sector = sectorForBenchmark(candidate.sector)
       const benchmark = sector ? sectorBenchmarks[sector as BenchmarkableSector] ?? null : null
+      const sym = candidate.ticker.toUpperCase()
 
       const pick = scorePick({
         candidate,
@@ -290,10 +296,19 @@ export async function buildUnifiedPicksResponse(
         fundamentals,
         ownership: ownershipByTicker.get(candidate.ticker) ?? null,
         benchmark,
+        researchContext: {
+          research: researchByTicker.get(sym) ?? null,
+          sectorPeMedian: sectorPeMedianForTicker(candidate.sector, sectorPeMedians),
+        },
       })
       if (pick) scoredAll.push(pick)
     }
   }
+
+  const discoverySectorByTicker = new Map(
+    discoveryMovers.map((m) => [m.ticker.toUpperCase(), m.sector] as const),
+  )
+  const discoveryPeMedians = computeSectorPeMedians(researchByTicker, discoverySectorByTicker)
 
   for (const mover of discoveryMovers) {
     const live = priceByTicker.get(mover.ticker)
@@ -328,6 +343,10 @@ export async function buildUnifiedPicksResponse(
       change_1d_session: live.session,
       fundamentals: f ?? null,
       benchmark,
+      researchContext: {
+        research: researchByTicker.get(mover.ticker.toUpperCase()) ?? null,
+        sectorPeMedian: sectorPeMedianForTicker(sector, discoveryPeMedians),
+      },
     })
     if (pick) scoredAll.push(pick)
   }
@@ -343,12 +362,15 @@ export async function buildUnifiedPicksResponse(
   )
 
   return {
-    picks,
-    your_picks: picks.filter((p) => p.source !== 'discovery'),
-    discovery_picks: picks.filter((p) => p.source === 'discovery'),
-    scores_at: scoresAt,
-    narratives_at: latestIso(narrativeTimes),
-    llm_enabled: isLLMEnabled(),
-    sector_benchmarks: sectorBenchmarksRecord(sectorBenchmarks),
+    response: {
+      picks,
+      your_picks: picks.filter((p) => p.source !== 'discovery'),
+      discovery_picks: picks.filter((p) => p.source === 'discovery'),
+      scores_at: scoresAt,
+      narratives_at: latestIso(narrativeTimes),
+      llm_enabled: isLLMEnabled(),
+      sector_benchmarks: sectorBenchmarksRecord(sectorBenchmarks),
+    },
+    staleFundamentals,
   }
 }

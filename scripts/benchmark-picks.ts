@@ -38,7 +38,7 @@ async function main() {
     return data
   })
 
-  const response = await time('2. buildUnifiedPicksResponse', () =>
+  const { response } = await time('2. buildUnifiedPicksResponse', () =>
     buildUnifiedPicksResponse(supabase, sampleUser.user_id, false, 'picks-bench'),
   )
 

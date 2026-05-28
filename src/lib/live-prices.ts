@@ -13,6 +13,14 @@ export type LivePriceSnapshot = {
 
 const YAHOO_UA = 'Mozilla/5.0'
 const QUOTE_CHUNK = 50
+/** Gap between v7 quote batch requests to reduce Yahoo 429s. */
+const QUOTE_CHUNK_GAP_MS = 150
+/** Gap between v8 chart fallback requests. */
+const CHART_FALLBACK_GAP_MS = 100
+
+function sleep(ms: number): Promise<void> {
+  return new Promise((resolve) => setTimeout(resolve, ms))
+}
 
 function yahooTimeToMs(raw: unknown): number | null {
   if (typeof raw !== 'number' || !Number.isFinite(raw)) return null
@@ -235,30 +243,48 @@ async function fetchRegularPriceChunk(symbols: string[]): Promise<Map<string, Li
   return map
 }
 
+async function fetchQuoteChunksSequential(
+  chunks: string[][],
+  fetchChunk: (symbols: string[]) => Promise<Map<string, LivePriceSnapshot>>,
+): Promise<Map<string, LivePriceSnapshot>> {
+  const map = new Map<string, LivePriceSnapshot>()
+  for (let i = 0; i < chunks.length; i++) {
+    if (i > 0) await sleep(QUOTE_CHUNK_GAP_MS)
+    const chunkMap = await fetchChunk(chunks[i])
+    for (const [sym, snap] of chunkMap) map.set(sym, snap)
+  }
+  return map
+}
+
+async function fetchChartFallbacksSequential(
+  syms: string[],
+): Promise<Map<string, LivePriceSnapshot>> {
+  const map = new Map<string, LivePriceSnapshot>()
+  for (let i = 0; i < syms.length; i++) {
+    if (i > 0) await sleep(CHART_FALLBACK_GAP_MS)
+    const snap = await fetchChartFallback(syms[i])
+    if (snap) map.set(syms[i], snap)
+  }
+  return map
+}
+
 async function fetchRegularPricesForTickers(
   tickers: string[],
 ): Promise<Map<string, LivePriceSnapshot>> {
   const syms = [...new Set(tickers.map((t) => t.toUpperCase()))]
-  const map = new Map<string, LivePriceSnapshot>()
-  if (!syms.length) return map
+  if (!syms.length) return new Map()
 
   const chunks: string[][] = []
   for (let i = 0; i < syms.length; i += QUOTE_CHUNK) {
     chunks.push(syms.slice(i, i + QUOTE_CHUNK))
   }
 
-  const chunkResults = await Promise.all(chunks.map((chunk) => fetchRegularPriceChunk(chunk)))
-  for (const chunkMap of chunkResults) {
-    for (const [sym, snap] of chunkMap) map.set(sym, snap)
-  }
+  const map = await fetchQuoteChunksSequential(chunks, fetchRegularPriceChunk)
 
   const missing = syms.filter((sym) => !map.has(sym))
   if (missing.length) {
-    const fallbacks = await Promise.all(missing.map((sym) => fetchChartFallback(sym)))
-    missing.forEach((sym, i) => {
-      const snap = fallbacks[i]
-      if (snap) map.set(sym, snap)
-    })
+    const fallbacks = await fetchChartFallbacksSequential(missing)
+    for (const [sym, snap] of fallbacks) map.set(sym, snap)
   }
 
   return map
@@ -302,26 +328,19 @@ export async function fetchLivePricesForTickers(
   tickers: string[],
 ): Promise<Map<string, LivePriceSnapshot>> {
   const syms = [...new Set(tickers.map((t) => t.toUpperCase()))]
-  const map = new Map<string, LivePriceSnapshot>()
-  if (!syms.length) return map
+  if (!syms.length) return new Map()
 
   const chunks: string[][] = []
   for (let i = 0; i < syms.length; i += QUOTE_CHUNK) {
     chunks.push(syms.slice(i, i + QUOTE_CHUNK))
   }
 
-  const chunkResults = await Promise.all(chunks.map((chunk) => fetchLivePriceChunk(chunk)))
-  for (const chunkMap of chunkResults) {
-    for (const [sym, snap] of chunkMap) map.set(sym, snap)
-  }
+  const map = await fetchQuoteChunksSequential(chunks, fetchLivePriceChunk)
 
   const missing = syms.filter((sym) => !map.has(sym))
   if (missing.length) {
-    const fallbacks = await Promise.all(missing.map((sym) => fetchChartFallback(sym)))
-    missing.forEach((sym, i) => {
-      const snap = fallbacks[i]
-      if (snap) map.set(sym, snap)
-    })
+    const fallbacks = await fetchChartFallbacksSequential(missing)
+    for (const [sym, snap] of fallbacks) map.set(sym, snap)
   }
 
   return map
