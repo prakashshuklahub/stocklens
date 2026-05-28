@@ -9,7 +9,7 @@ function authorized(req: NextRequest): boolean {
   return req.headers.get('authorization') === `Bearer ${secret}`
 }
 
-/** Send WhatsApp daily portfolio briefings — Mon–Fri 10:30 AM ET (1h after US open). */
+/** Send WhatsApp daily portfolio briefings — Mon–Fri 15:30 UTC (~10:30 AM ET). */
 export async function GET(req: NextRequest) {
   if (!authorized(req)) {
     return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })

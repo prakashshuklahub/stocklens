@@ -13,7 +13,6 @@ const CLOSE_MINUTES = 16 * 60
 
 /** WhatsApp daily briefing: 1 hour after US cash open (10:30 AM ET). */
 const WHATSAPP_BRIEFING_MINUTES_AFTER_OPEN = 60
-const WHATSAPP_SEND_WINDOW_MINUTES = 30
 
 function easternClock(now: Date): { weekday: string; minutes: number } {
   const parts = new Intl.DateTimeFormat('en-US', {
@@ -49,13 +48,14 @@ export function whatsAppBriefingSendMinutes(): number {
 }
 
 /**
- * Mon–Fri, 10:30–11:00 AM ET — daily WhatsApp send window (cron may fire slightly early/late).
+ * Mon–Fri from 10:30 AM ET until market close — matches once-daily Vercel Hobby cron (15:30 UTC).
+ * Dedupe ensures a single send per US trading day.
  */
 export function isWhatsAppBriefingSendWindow(now = new Date()): boolean {
   if (!isUSMarketWeekday(now)) return false
   const { minutes } = easternClock(now)
   const start = whatsAppBriefingSendMinutes()
-  return minutes >= start && minutes < start + WHATSAPP_SEND_WINDOW_MINUTES
+  return minutes >= start && minutes < CLOSE_MINUTES
 }
 
 /** Start of the current US Eastern calendar day (for once-per-trading-day dedupe). */

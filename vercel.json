@@ -14,7 +14,7 @@
     },
     {
       "path": "/api/cron/send-whatsapp-briefings",
-      "schedule": "*/15 14-16 * * 1-5"
+      "schedule": "30 15 * * 1-5"
     }
   ]
 }
