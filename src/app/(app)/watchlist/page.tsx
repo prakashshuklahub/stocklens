@@ -496,7 +496,7 @@ export default function WatchlistPage() {
   }
   const [adding, setAdding] = useState(false)
   const [error, setError] = useState('')
-  const [sortMode, setSortMode] = useState<WatchlistSort>('sector')
+  const [sortMode, setSortMode] = useState<WatchlistSort>(() => loadSortMode())
 
   const refreshPrices = useCallback(() => {
     void mutate()
@@ -506,10 +506,6 @@ export default function WatchlistPage() {
 
   const refreshing = isValidating && !isLoading
   const countdown = useLivePriceRefresh(marketOpen && stocks.length > 0, refreshPrices)
-
-  useEffect(() => {
-    setSortMode(loadSortMode())
-  }, [])
 
   useEffect(() => {
     sessionStorage.setItem(SORT_STORAGE_KEY, sortMode)
@@ -666,6 +662,12 @@ export default function WatchlistPage() {
           />
 
           {/* Content */}
+          {(isLoading || stocks.length > 0) && (
+            <div className="mb-3">
+              <WatchlistSortBar value={sortMode} onChange={setSortMode} />
+            </div>
+          )}
+
           {isLoading ? (
             <div className="space-y-5" aria-busy="true" aria-label="Loading watchlist">
               {[1, 2, 3, 4, 5, 6].map((n) => (
@@ -688,10 +690,6 @@ export default function WatchlistPage() {
                   <RefreshCountdown seconds={countdown} refreshing={refreshing} />
                 </div>
               )}
-
-              <div className="mb-1">
-                <WatchlistSortBar value={sortMode} onChange={setSortMode} />
-              </div>
 
               {layout.type === 'sector' ? (
                 layout.groups.map(([sector, sectorStocks]) => (

@@ -1,6 +1,6 @@
 'use client'
 
-import { useCallback, useMemo, useRef, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import useSWR from 'swr'
 import * as XLSX from 'xlsx'
 import {
@@ -17,7 +17,10 @@ import FilterChipBar, { type FilterChipOption } from '@/components/FilterChipBar
 import StockLogo from '@/components/StockLogo'
 import { HoldingCard } from '@/components/portfolio/HoldingCard'
 import PortfolioDailySummary from '@/components/portfolio/PortfolioDailySummary'
-import { PortfolioLoadingState } from '@/components/portfolio/PortfolioSkeletons'
+import {
+  PortfolioHoldingsSkeleton,
+  PortfolioSummarySkeleton,
+} from '@/components/portfolio/PortfolioSkeletons'
 import { RefreshCountdown } from '@/components/LiveRefreshHeader'
 import { useMarketOpen } from '@/hooks/useMarketOpen'
 import { useLivePriceRefresh } from '@/hooks/useLivePriceRefresh'
@@ -34,6 +37,17 @@ import type {
 } from '@/types'
 
 type TierFilter = 'all' | 'attention' | 'soft' | 'profit'
+
+const TIER_FILTER_STORAGE_KEY = 'portfolio-tier-filter'
+
+function loadTierFilter(): TierFilter {
+  if (typeof window === 'undefined') return 'all'
+  const saved = sessionStorage.getItem(TIER_FILTER_STORAGE_KEY)
+  if (saved === 'all' || saved === 'attention' || saved === 'soft' || saved === 'profit') {
+    return saved
+  }
+  return 'all'
+}
 
 const signalsFetcher = async (url: string): Promise<PortfolioWithSignalsResponse> => {
   const res = await fetch(url, { cache: 'no-store' })
@@ -237,12 +251,16 @@ function HoldingsSection({
   loading?: boolean
   preview?: boolean
 }) {
-  const [tierFilter, setTierFilter] = useState<TierFilter>('all')
+  const [tierFilter, setTierFilter] = useState<TierFilter>(() => loadTierFilter())
   const filtered = useMemo(() => filterHoldings(holdings, tierFilter), [holdings, tierFilter])
+
+  useEffect(() => {
+    sessionStorage.setItem(TIER_FILTER_STORAGE_KEY, tierFilter)
+  }, [tierFilter])
 
   return (
     <section className="mb-5" aria-label="Your holdings">
-      {marketOpen && !preview && (
+      {marketOpen && !preview && !loading && (
         <div className="flex items-center justify-end gap-2 mb-2 px-0.5">
           <RefreshCountdown seconds={countdown} refreshing={refreshing} />
         </div>
@@ -254,7 +272,7 @@ function HoldingsSection({
         </p>
       )}
 
-      {!preview && holdings.length > 0 && (
+      {!preview && (loading || holdings.length > 0) && (
         <FilterChipBar
           value={tierFilter}
           options={TIER_FILTERS}
@@ -264,7 +282,7 @@ function HoldingsSection({
       )}
 
       {loading ? (
-        <PortfolioLoadingState showSummary={false} />
+        <PortfolioHoldingsSkeleton count={4} />
       ) : (
         <div className="space-y-3">
           {filtered.map((h) => (
@@ -456,6 +474,7 @@ export default function PortfolioPage() {
   }
 
   const syncedLabel = savedAt ? timeAgo(savedAt) : null
+  const portfolioPending = isLoading && !portfolioData
 
   return (
     <>
@@ -506,8 +525,18 @@ export default function PortfolioPage() {
           )}
 
           {/* Content */}
-          {isLoading ? (
-            <PortfolioLoadingState />
+          {portfolioPending ? (
+            <>
+              <PortfolioSummarySkeleton />
+              <PortfolioDailySummary holdingCount={0} pending />
+              <HoldingsSection
+                holdings={[]}
+                countdown={0}
+                refreshing={false}
+                marketOpen={marketOpen}
+                loading
+              />
+            </>
           ) : holdings.length === 0 ? (
             <div className="pt-2 pb-12 space-y-4">
               {showPreview ? (
@@ -572,7 +601,6 @@ export default function PortfolioPage() {
                 countdown={countdown}
                 refreshing={refreshing}
                 marketOpen={marketOpen}
-                loading={isLoading && !portfolioData}
               />
             </>
           )}

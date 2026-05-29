@@ -109,6 +109,22 @@ function timeAgo(iso: string): string {
   return `${Math.floor(h / 24)}d ago`
 }
 
+const PICKS_FILTER_STORAGE_KEY = 'picks-source-filter'
+
+function loadPickSourceFilter(): PickSourceFilter {
+  if (typeof window === 'undefined') return 'all'
+  const saved = sessionStorage.getItem(PICKS_FILTER_STORAGE_KEY)
+  if (
+    saved === 'all' ||
+    saved === 'movers' ||
+    saved === 'watchlist' ||
+    saved === 'portfolio'
+  ) {
+    return saved
+  }
+  return 'all'
+}
+
 const PICK_SOURCE_FILTERS: FilterChipOption<PickSourceFilter>[] = [
   { id: 'all', label: 'All' },
   {
@@ -645,12 +661,28 @@ function PicksRankedList({
   )
 
   if (loading) {
-    return <PicksLoadingState />
+    return (
+      <section aria-label="Stock picks">
+        <FilterChipBar
+          value={sourceFilter}
+          options={PICK_SOURCE_FILTERS}
+          onChange={onSourceFilterChange}
+          ariaLabel="Filter picks by source"
+        />
+        <PicksLoadingState />
+      </section>
+    )
   }
 
   if (!data.picks.length) {
     return (
       <section aria-label="Stock picks">
+        <FilterChipBar
+          value={sourceFilter}
+          options={PICK_SOURCE_FILTERS}
+          onChange={onSourceFilterChange}
+          ariaLabel="Filter picks by source"
+        />
         <div className="text-center py-24">
           <div className="w-16 h-16 rounded-3xl bg-zinc-900 flex items-center justify-center mx-auto mb-5">
             <Sparkles className="w-7 h-7 text-zinc-700" aria-hidden="true" />
@@ -708,7 +740,7 @@ function PicksRankedList({
 
 export default function PicksPage() {
   const marketSession = useMarketSession()
-  const [sourceFilter, setSourceFilter] = useState<PickSourceFilter>('all')
+  const [sourceFilter, setSourceFilter] = useState<PickSourceFilter>(() => loadPickSourceFilter())
   const { data, isLoading, error } = useSWR<PicksResponse>('/api/picks', fetchJson, {
     revalidateOnFocus: false,
     dedupingInterval: 0,
@@ -775,6 +807,10 @@ export default function PicksPage() {
 
     return merged
   }, [data, narrativeData, headlineData])
+
+  useEffect(() => {
+    sessionStorage.setItem(PICKS_FILTER_STORAGE_KEY, sourceFilter)
+  }, [sourceFilter])
 
   return (
     <div className="min-h-screen bg-zinc-950">

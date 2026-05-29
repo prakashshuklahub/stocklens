@@ -48,11 +48,14 @@ function updatedLabel(generatedAt: string, marketSession: 'regular' | 'closed'):
 
 type Props = {
   holdingCount: number
+  /** Portfolio holdings still loading — show static header, defer summary fetch. */
+  pending?: boolean
 }
 
-export default function PortfolioDailySummary({ holdingCount }: Props) {
+export default function PortfolioDailySummary({ holdingCount, pending = false }: Props) {
+  const shouldFetch = !pending && holdingCount > 0
   const { data, isLoading, mutate } = useSWR<PortfolioSummaryResponse>(
-    holdingCount > 0 ? '/api/portfolio/summary' : null,
+    shouldFetch ? '/api/portfolio/summary' : null,
     fetcher,
     { revalidateOnFocus: false, refreshInterval: (latest) => (latest?.stale ? 5000 : 0) },
   )
@@ -75,12 +78,13 @@ export default function PortfolioDailySummary({ holdingCount }: Props) {
   const refreshing = Boolean(data?.refreshing || data?.stale)
 
   const metaLine = useMemo(() => {
-    if (isLoading && !summary) return 'Preparing…'
-    if (!summary) return 'Tap to load'
+    if (pending) return 'Preparing…'
+    if (isLoading && !summary) return 'Loading…'
+    if (!summary) return 'Tap to expand'
     return `${summary.holdings.length} stocks · ${updatedLabel(summary.generated_at, summary.market_session)}`
-  }, [isLoading, summary])
+  }, [pending, isLoading, summary])
 
-  if (holdingCount === 0) return null
+  if (!pending && holdingCount === 0) return null
 
   return (
     <section className="mb-2" aria-label="Daily portfolio briefing">
@@ -99,7 +103,7 @@ export default function PortfolioDailySummary({ holdingCount }: Props) {
               <span className="text-xs text-zinc-500 truncate">· {metaLine}</span>
             </div>
           </div>
-          {refreshing && (
+          {refreshing && !pending && (
             <Loader2 className="w-3.5 h-3.5 text-zinc-500 animate-spin shrink-0" aria-hidden="true" />
           )}
           <CollapseChevron open={open} className="shrink-0" />
@@ -107,10 +111,18 @@ export default function PortfolioDailySummary({ holdingCount }: Props) {
 
         {open && (
           <div id="portfolio-daily-summary-panel" className="border-t border-white/[0.06]">
-            {isLoading && !summary ? (
-              <div className="px-3 py-2 space-y-1.5" aria-busy="true">
-                <div className="h-3 w-3/4 rounded bg-zinc-800/70 animate-pulse" />
-                <div className="h-3 w-1/2 rounded bg-zinc-800/70 animate-pulse" />
+            {pending || (isLoading && !summary) ? (
+              <div className="px-3 py-3 space-y-2.5" aria-busy="true" aria-label="Loading daily briefing">
+                {[0, 1, 2].map((row) => (
+                  <div key={row} className="flex items-start gap-2">
+                    <div className="h-8 w-8 rounded-lg bg-zinc-800/70 animate-pulse shrink-0" />
+                    <div className="flex-1 min-w-0 space-y-1.5">
+                      <div className="h-3.5 w-20 rounded bg-zinc-800/70 animate-pulse" />
+                      <div className="h-3 w-full rounded bg-zinc-800/60 animate-pulse" />
+                      <div className="h-3 w-[80%] rounded bg-zinc-800/60 animate-pulse" />
+                    </div>
+                  </div>
+                ))}
               </div>
             ) : summary ? (
               <>
