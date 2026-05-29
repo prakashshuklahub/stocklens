@@ -225,6 +225,7 @@ export default function WatchlistSuggestions({
               </div>
 
               <NarrativeSummaryBlocks
+                variant="combined"
                 company_blurb={s.company_blurb}
                 thesis={s.thesis}
                 main_risk={s.main_risk}
