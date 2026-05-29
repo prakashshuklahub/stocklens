@@ -18,7 +18,6 @@ import {
   computeTargetUpsidePct,
   hasDisplayTargetPrice,
 } from '@/lib/target-price-display'
-import { vsSectorSortKey } from '@/lib/sector-relative-strength'
 import { cn } from '@/lib/utils'
 import { compareSignalsByScore } from '@/lib/signals-scoring'
 import type { FundamentalsBatchResponse, SectorBenchmark, SectorRelativeStrength, Signal, SignalsResponse, StockFundamentals } from '@/types'
@@ -40,7 +39,7 @@ const SECTOR_ORDER = [
   'Other',
 ]
 
-type WatchlistSort = 'sector' | 'day_change' | 'target_upside' | 'alphabetical' | 'vs_sector' | 'bullish' | 'bearish'
+type WatchlistSort = 'sector' | 'day_change' | 'target_upside' | 'alphabetical' | 'bullish' | 'bearish'
 
 const SORT_STORAGE_KEY = 'watchlist-sort'
 
@@ -52,7 +51,6 @@ function loadSortMode(): WatchlistSort {
     saved === 'target_upside' ||
     saved === 'alphabetical' ||
     saved === 'sector' ||
-    saved === 'vs_sector' ||
     saved === 'bullish' ||
     saved === 'bearish'
   ) {
@@ -120,15 +118,6 @@ function sortByTargetUpside(
   )
 }
 
-function sortByVsSector(
-  stocks: WatchlistStock[],
-  vsSectorByTicker: FundamentalsBatchResponse['vs_sector'],
-): WatchlistStock[] {
-  return [...stocks].sort(
-    (a, b) => vsSectorSortKey(vsSectorByTicker[b.ticker]) - vsSectorSortKey(vsSectorByTicker[a.ticker]),
-  )
-}
-
 function WatchlistSortBar({
   value,
   onChange,
@@ -141,7 +130,6 @@ function WatchlistSortBar({
     { id: 'day_change', label: 'Day %' },
     { id: 'bullish', label: 'Bullish', tone: 'bullish' },
     { id: 'bearish', label: 'Bearish', tone: 'bearish' },
-    { id: 'vs_sector', label: 'Vs sector' },
     { id: 'target_upside', label: 'Room to grow' },
     { id: 'alphabetical', label: 'A–Z' },
   ]
@@ -465,14 +453,8 @@ export default function WatchlistPage() {
         stocks: sortByTargetUpside(stocks, fundamentalsByTicker),
       }
     }
-    if (sortMode === 'vs_sector') {
-      return {
-        type: 'flat' as const,
-        stocks: sortByVsSector(stocks, vsSectorByTicker),
-      }
-    }
     return { type: 'flat' as const, stocks: sortAlphabetical(stocks) }
-  }, [stocks, sortMode, fundamentalsByTicker, vsSectorByTicker, signalsByTicker])
+  }, [stocks, sortMode, fundamentalsByTicker, signalsByTicker])
 
   async function handleAdd(result: StockResult) {
     setError('')
