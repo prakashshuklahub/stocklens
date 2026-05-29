@@ -3,9 +3,10 @@
 import { useCallback, useState, useEffect, useMemo } from 'react'
 import { useSearchParams } from 'next/navigation'
 import useSWR from 'swr'
-import { TrendingUp, ChevronDown } from 'lucide-react'
+import { TrendingUp } from 'lucide-react'
 import WatchlistCard, { type WatchlistStock } from '@/components/watchlist/WatchlistCard'
 import WatchlistCardSkeleton from '@/components/watchlist/WatchlistCardSkeleton'
+import WatchlistCollapsibleGroup from '@/components/watchlist/WatchlistCollapsibleGroup'
 import StockSearchInput, { type StockResult } from '@/components/watchlist/StockSearchInput'
 import WatchlistSuggestions from '@/components/watchlist/WatchlistSuggestions'
 import AppNav from '@/components/AppNav'
@@ -18,9 +19,8 @@ import {
   computeTargetUpsidePct,
   hasDisplayTargetPrice,
 } from '@/lib/target-price-display'
-import { cn } from '@/lib/utils'
 import { compareSignalsByScore } from '@/lib/signals-scoring'
-import type { FundamentalsBatchResponse, SectorBenchmark, SectorRelativeStrength, Signal, SignalsResponse, StockFundamentals } from '@/types'
+import type { FundamentalsBatchResponse, SectorBenchmark, SectorRelativeStrength, Signal, SignalsResponse, StockFundamentals, WatchlistTag } from '@/types'
 import type { MarketSession } from '@/lib/market-hours'
 
 // Deterministic sector order
@@ -39,9 +39,10 @@ const SECTOR_ORDER = [
   'Other',
 ]
 
-type WatchlistSort = 'sector' | 'day_change' | 'target_upside' | 'alphabetical' | 'bullish' | 'bearish'
+type WatchlistSort = 'sector' | 'tag' | 'day_change' | 'target_upside' | 'alphabetical' | 'bullish' | 'bearish'
 
 const SORT_STORAGE_KEY = 'watchlist-sort'
+const UNTAGGED_LABEL = 'Untagged'
 
 function loadSortMode(): WatchlistSort {
   if (typeof window === 'undefined') return 'sector'
@@ -51,6 +52,7 @@ function loadSortMode(): WatchlistSort {
     saved === 'target_upside' ||
     saved === 'alphabetical' ||
     saved === 'sector' ||
+    saved === 'tag' ||
     saved === 'bullish' ||
     saved === 'bearish'
   ) {
@@ -127,6 +129,7 @@ function WatchlistSortBar({
 }) {
   const options: FilterChipOption<WatchlistSort>[] = [
     { id: 'sector', label: 'Sector' },
+    { id: 'tag', label: 'Tag' },
     { id: 'day_change', label: 'Day %' },
     { id: 'bullish', label: 'Bullish', tone: 'bullish' },
     { id: 'bearish', label: 'Bearish', tone: 'bearish' },
@@ -156,6 +159,8 @@ function sectorBenchmarkForStock(
 function StockList({
   stocks,
   onRemove,
+  onTagsChange,
+  tagSuggestions,
   marketSession,
   fundamentalsByTicker,
   fundamentalsLoading,
@@ -168,6 +173,8 @@ function StockList({
 }: {
   stocks: WatchlistStock[]
   onRemove: (ticker: string) => void
+  onTagsChange?: (ticker: string, tags: WatchlistTag[]) => void | Promise<void>
+  tagSuggestions?: string[]
   marketSession: MarketSession
   fundamentalsByTicker: Record<string, StockFundamentals>
   fundamentalsLoading: boolean
@@ -185,6 +192,8 @@ function StockList({
           <WatchlistCard
             stock={stock}
             onRemove={onRemove}
+            onTagsChange={onTagsChange}
+            tagSuggestions={tagSuggestions}
             marketSession={marketSession}
             fundamentals={fundamentalsByTicker[stock.ticker] ?? null}
             fundamentalsLoading={fundamentalsLoading}
@@ -199,6 +208,33 @@ function StockList({
       ))}
     </ul>
   )
+}
+
+function groupByTag(stocks: WatchlistStock[]): [string, WatchlistStock[]][] {
+  const tagMap = new Map<string, WatchlistStock[]>()
+  const untagged: WatchlistStock[] = []
+
+  for (const stock of stocks) {
+    const tags = stock.tags ?? []
+    if (!tags.length) {
+      untagged.push(stock)
+      continue
+    }
+    for (const tag of tags) {
+      if (!tagMap.has(tag.name)) tagMap.set(tag.name, [])
+      tagMap.get(tag.name)!.push(stock)
+    }
+  }
+
+  const groups: [string, WatchlistStock[]][] = [...tagMap.entries()]
+    .sort(([a], [b]) => a.localeCompare(b))
+    .map(([label, groupStocks]) => [label, sortByDailyChange(groupStocks)])
+
+  if (untagged.length) {
+    groups.push([UNTAGGED_LABEL, sortByDailyChange(untagged)])
+  }
+
+  return groups
 }
 
 function groupBySector(stocks: WatchlistStock[]): [string, WatchlistStock[]][] {
@@ -226,6 +262,8 @@ function SectorGroup({
   sector,
   stocks,
   onRemove,
+  onTagsChange,
+  tagSuggestions,
   marketSession,
   fundamentalsByTicker,
   fundamentalsLoading,
@@ -240,6 +278,8 @@ function SectorGroup({
   sector: string
   stocks: WatchlistStock[]
   onRemove: (ticker: string) => void
+  onTagsChange?: (ticker: string, tags: WatchlistTag[]) => void | Promise<void>
+  tagSuggestions?: string[]
   marketSession: MarketSession
   fundamentalsByTicker: Record<string, StockFundamentals>
   fundamentalsLoading: boolean
@@ -251,60 +291,102 @@ function SectorGroup({
   signalsLoading: boolean
   defaultOpen?: boolean
 }) {
-  const [open, setOpen] = useState(defaultOpen)
-  const id = `sector-${sector.replace(/\s+/g, '-').toLowerCase()}`
+  const groupId = sector.replace(/\s+/g, '-').toLowerCase()
 
   return (
-    <section aria-labelledby={id}>
-      <button
-        type="button"
-        id={id}
-        aria-expanded={open}
-        aria-controls={`${id}-list`}
-        onClick={() => setOpen((o) => !o)}
-        className="w-full flex items-center justify-between px-0.5 min-h-[44px] focus-visible:outline-none [touch-action:manipulation]"
-      >
-        <div className="flex items-center gap-2">
-          <span className="text-xs font-bold text-zinc-500 uppercase tracking-[0.1em]">
-            {sector}
-          </span>
-          <span className="text-xs tabular-nums text-muted font-medium">
-            {stocks.length}
-          </span>
-        </div>
-        <ChevronDown
-          aria-hidden="true"
-          className={cn(
-            'w-3.5 h-3.5 text-muted transition-transform duration-200',
-            open ? 'rotate-0' : '-rotate-90',
-          )}
-        />
-      </button>
+    <WatchlistCollapsibleGroup
+      groupId={groupId}
+      label={sector}
+      count={stocks.length}
+      defaultOpen={defaultOpen}
+      listLabel={`${sector} stocks`}
+    >
+      {stocks.map((stock) => (
+        <li key={stock.id}>
+          <WatchlistCard
+            stock={stock}
+            onRemove={onRemove}
+            onTagsChange={onTagsChange}
+            tagSuggestions={tagSuggestions}
+            marketSession={marketSession}
+            fundamentals={fundamentalsByTicker[stock.ticker] ?? null}
+            fundamentalsLoading={fundamentalsLoading}
+            vsSector={vsSectorByTicker[stock.ticker] ?? null}
+            sectorBenchmark={sectorBenchmarkForStock(stock, sectorBenchmarks)}
+            regularChange1dPct={regularChange1dByTicker[stock.ticker] ?? null}
+            sectorBenchmarksRefreshing={sectorBenchmarksRefreshing}
+            signal={signalsByTicker.get(stock.ticker.toUpperCase()) ?? null}
+            signalLoading={signalsLoading}
+          />
+        </li>
+      ))}
+    </WatchlistCollapsibleGroup>
+  )
+}
 
-      {open && (
-        <ul id={`${id}-list`} className="space-y-3 mt-2 mb-6" aria-label={`${sector} stocks`}>
-          {stocks.map((stock) => (
-            <li key={stock.id}>
-              <WatchlistCard
-                stock={stock}
-                onRemove={onRemove}
-                marketSession={marketSession}
-                fundamentals={fundamentalsByTicker[stock.ticker] ?? null}
-                fundamentalsLoading={fundamentalsLoading}
-                vsSector={vsSectorByTicker[stock.ticker] ?? null}
-                sectorBenchmark={sectorBenchmarkForStock(stock, sectorBenchmarks)}
-                regularChange1dPct={regularChange1dByTicker[stock.ticker] ?? null}
-                sectorBenchmarksRefreshing={sectorBenchmarksRefreshing}
-                signal={signalsByTicker.get(stock.ticker.toUpperCase()) ?? null}
-                signalLoading={signalsLoading}
-              />
-            </li>
-          ))}
-        </ul>
-      )}
+function TagGroup({
+  label,
+  stocks,
+  onRemove,
+  onTagsChange,
+  tagSuggestions,
+  marketSession,
+  fundamentalsByTicker,
+  fundamentalsLoading,
+  vsSectorByTicker,
+  sectorBenchmarks,
+  regularChange1dByTicker,
+  sectorBenchmarksRefreshing,
+  signalsByTicker,
+  signalsLoading,
+  defaultOpen = true,
+}: {
+  label: string
+  stocks: WatchlistStock[]
+  onRemove: (ticker: string) => void
+  onTagsChange?: (ticker: string, tags: WatchlistTag[]) => void | Promise<void>
+  tagSuggestions?: string[]
+  marketSession: MarketSession
+  fundamentalsByTicker: Record<string, StockFundamentals>
+  fundamentalsLoading: boolean
+  vsSectorByTicker: Record<string, SectorRelativeStrength>
+  sectorBenchmarks: Record<string, SectorBenchmark>
+  regularChange1dByTicker: Record<string, number>
+  sectorBenchmarksRefreshing: boolean
+  signalsByTicker: Map<string, Signal>
+  signalsLoading: boolean
+  defaultOpen?: boolean
+}) {
+  const groupId = label.replace(/\s+/g, '-').toLowerCase()
 
-      {!open && <div className="mb-3" />}
-    </section>
+  return (
+    <WatchlistCollapsibleGroup
+      groupId={`tag-${groupId}`}
+      label={label}
+      count={stocks.length}
+      defaultOpen={defaultOpen}
+      listLabel={`${label} stocks`}
+    >
+      {stocks.map((stock) => (
+        <li key={`${label}-${stock.id}`}>
+          <WatchlistCard
+            stock={stock}
+            onRemove={onRemove}
+            onTagsChange={onTagsChange}
+            tagSuggestions={tagSuggestions}
+            marketSession={marketSession}
+            fundamentals={fundamentalsByTicker[stock.ticker] ?? null}
+            fundamentalsLoading={fundamentalsLoading}
+            vsSector={vsSectorByTicker[stock.ticker] ?? null}
+            sectorBenchmark={sectorBenchmarkForStock(stock, sectorBenchmarks)}
+            regularChange1dPct={regularChange1dByTicker[stock.ticker] ?? null}
+            sectorBenchmarksRefreshing={sectorBenchmarksRefreshing}
+            signal={signalsByTicker.get(stock.ticker.toUpperCase()) ?? null}
+            signalLoading={signalsLoading}
+          />
+        </li>
+      ))}
+    </WatchlistCollapsibleGroup>
   )
 }
 
@@ -444,6 +526,9 @@ export default function WatchlistPage() {
     if (sortMode === 'sector') {
       return { type: 'sector' as const, groups: groupBySector(stocks) }
     }
+    if (sortMode === 'tag') {
+      return { type: 'tag' as const, groups: groupByTag(stocks) }
+    }
     if (sortMode === 'day_change') {
       return { type: 'flat' as const, stocks: sortByDailyChange(stocks) }
     }
@@ -482,6 +567,17 @@ export default function WatchlistPage() {
     }
   }
 
+  async function handleTagsChange(ticker: string, tags: WatchlistTag[]) {
+    const sym = ticker.toUpperCase()
+    await mutate(
+      (current) =>
+        (current ?? []).map((s) =>
+          s.ticker.toUpperCase() === sym ? { ...s, tags } : s,
+        ),
+      { revalidate: false },
+    )
+  }
+
   async function handleRemove(ticker: string) {
     const sym = ticker.toUpperCase()
     setError('')
@@ -508,6 +604,21 @@ export default function WatchlistPage() {
     () => new Set(stocks.map((s) => s.ticker.toUpperCase())),
     [stocks],
   )
+
+  const tagSuggestions = useMemo(() => {
+    const names = new Set<string>()
+    for (const stock of stocks) {
+      for (const tag of stock.tags ?? []) {
+        names.add(tag.name)
+      }
+    }
+    return [...names].sort((a, b) => a.localeCompare(b))
+  }, [stocks])
+
+  const tagListProps = {
+    onTagsChange: handleTagsChange,
+    tagSuggestions,
+  }
 
   return (
     <>
@@ -557,7 +668,7 @@ export default function WatchlistPage() {
           {/* Content */}
           {isLoading ? (
             <div className="space-y-5" aria-busy="true" aria-label="Loading watchlist">
-              {[1, 2, 3].map((n) => (
+              {[1, 2, 3, 4, 5, 6].map((n) => (
                 <WatchlistCardSkeleton key={n} rank={n} />
               ))}
             </div>
@@ -593,9 +704,31 @@ export default function WatchlistPage() {
                     fundamentalsByTicker={fundamentalsByTicker}
                     fundamentalsLoading={fundamentalsLoading}
                     {...cardBatchProps}
+                    {...tagListProps}
                     defaultOpen
                   />
                 ))
+              ) : layout.type === 'tag' ? (
+                layout.groups.length === 0 ? (
+                  <p className="text-sm text-muted text-center py-12">
+                    Add tags from a stock&apos;s menu to group your watchlist.
+                  </p>
+                ) : (
+                  layout.groups.map(([label, tagStocks]) => (
+                    <TagGroup
+                      key={label}
+                      label={label}
+                      stocks={tagStocks}
+                      onRemove={handleRemove}
+                      marketSession={marketSession}
+                      fundamentalsByTicker={fundamentalsByTicker}
+                      fundamentalsLoading={fundamentalsLoading}
+                      {...cardBatchProps}
+                      {...tagListProps}
+                      defaultOpen
+                    />
+                  ))
+                )
               ) : layout.stocks.length === 0 && (sortMode === 'bullish' || sortMode === 'bearish') ? (
                 <p className="text-sm text-muted text-center py-12">
                   No {sortMode} signals in your watchlist right now.
@@ -608,6 +741,7 @@ export default function WatchlistPage() {
                   fundamentalsByTicker={fundamentalsByTicker}
                   fundamentalsLoading={fundamentalsLoading}
                   {...cardBatchProps}
+                  {...tagListProps}
                 />
               )}
             </div>

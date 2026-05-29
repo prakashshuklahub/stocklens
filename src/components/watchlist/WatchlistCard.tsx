@@ -1,7 +1,7 @@
 'use client'
 
 import { useState, useRef, useEffect, useCallback, useMemo, type ReactNode } from 'react'
-import { MoreVertical, Trash2, Target, Activity, BarChart3, Users, Gauge, Newspaper } from 'lucide-react'
+import { MoreVertical, Trash2, Target, Activity, BarChart3, Users, Gauge, Newspaper, Tag } from 'lucide-react'
 import useSWR from 'swr'
 import StockLogo from '@/components/StockLogo'
 import AnalystMiniGrid from '@/components/AnalystMiniGrid'
@@ -12,6 +12,8 @@ import VsSectorPanel from '@/components/VsSectorPanel'
 import SessionPriceBadge from '@/components/SessionPriceBadge'
 import Week52Range from '@/components/Week52Range'
 import SignalReasonChips from '@/components/signals/SignalReasonChips'
+import WatchlistTagPicker from '@/components/watchlist/WatchlistTagPicker'
+import type { WatchlistTag } from '@/types'
 import {
   computeTargetUpsidePct,
   formatDisplayTargetPrice,
@@ -46,12 +48,15 @@ export interface WatchlistStock {
   company_name: string
   sector: string | null
   added_at: string
+  tags?: WatchlistTag[]
   snapshot?: StockSnapshot | null
 }
 
 interface Props {
   stock: WatchlistStock
   onRemove: (ticker: string) => void | Promise<void>
+  onTagsChange?: (ticker: string, tags: WatchlistTag[]) => void | Promise<void>
+  tagSuggestions?: string[]
   /** Client clock session — Closed badge when outside regular hours. */
   marketSession?: MarketSession
   /** When provided (watchlist batch load), skips per-card fundamentals fetch. */
@@ -400,6 +405,8 @@ function WatchlistSectionTabs({
 export default function WatchlistCard({
   stock,
   onRemove,
+  onTagsChange,
+  tagSuggestions = [],
   marketSession = 'regular',
   fundamentals: fundamentalsProp,
   fundamentalsLoading: fundamentalsLoadingProp,
@@ -419,6 +426,7 @@ export default function WatchlistCard({
   }, [])
 
   const [menuOpen, setMenuOpen] = useState(false)
+  const [tagPickerOpen, setTagPickerOpen] = useState(false)
   const [confirming, setConfirming] = useState(false)
   const [removing, setRemoving] = useState(false)
   const menuRef = useRef<HTMLDivElement>(null)
@@ -471,6 +479,24 @@ export default function WatchlistCard({
     (fundamentals?.analyst_sell ?? 0)
 
   const fundamentalsPending = fundamentalsLoading && fundamentals == null
+  const stockTags = stock.tags ?? []
+  const visibleTags = stockTags.slice(0, 3)
+  const hiddenTagCount = Math.max(0, stockTags.length - visibleTags.length)
+
+  const handleSaveTags = useCallback(
+    async (tagNames: string[]) => {
+      if (!onTagsChange) return
+      const res = await fetch(`/api/watchlist/${encodeURIComponent(stock.ticker)}`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ tags: tagNames }),
+      })
+      const data = (await res.json().catch(() => ({}))) as { tags?: WatchlistTag[]; error?: string }
+      if (!res.ok) throw new Error(data.error ?? 'Failed to save tags')
+      await onTagsChange(stock.ticker, data.tags ?? [])
+    },
+    [onTagsChange, stock.ticker],
+  )
 
   const sectionTabs = useMemo(() => {
     const tabs: SectionTab[] = [
@@ -631,6 +657,23 @@ export default function WatchlistCard({
                 {stock.ticker}
               </span>
               <p className="text-sm text-zinc-500 truncate leading-relaxed">{stock.company_name}</p>
+              {stockTags.length > 0 && (
+                <div className="mt-1.5 flex flex-wrap items-center gap-1">
+                  {visibleTags.map((tag) => (
+                    <span
+                      key={tag.id}
+                      className="watchlist-chip bg-violet-500/10 text-violet-300/90"
+                    >
+                      {tag.name}
+                    </span>
+                  ))}
+                  {hiddenTagCount > 0 && (
+                    <span className="watchlist-chip bg-zinc-800/80 text-zinc-500 tabular-nums">
+                      +{hiddenTagCount}
+                    </span>
+                  )}
+                </div>
+              )}
             </div>
           </div>
 
@@ -728,6 +771,15 @@ export default function WatchlistCard({
             <button
               role="menuitem"
               type="button"
+              onClick={() => { setMenuOpen(false); setTagPickerOpen(true) }}
+              className="w-full flex items-center gap-3 px-4 py-3.5 text-sm text-zinc-200 active:bg-white/5 transition-colors focus-visible:outline-none [touch-action:manipulation]"
+            >
+              <Tag className="w-4 h-4 text-violet-400" aria-hidden="true" />
+              Manage tags
+            </button>
+            <button
+              role="menuitem"
+              type="button"
               onClick={() => { setMenuOpen(false); setConfirming(true) }}
               className="w-full flex items-center gap-3 px-4 py-3.5 text-sm text-red-400 active:bg-red-500/10 transition-colors focus-visible:outline-none [touch-action:manipulation]"
             >
@@ -737,6 +789,17 @@ export default function WatchlistCard({
           </div>
         )}
       </div>
+
+      {onTagsChange && (
+        <WatchlistTagPicker
+          open={tagPickerOpen}
+          ticker={stock.ticker}
+          initialTags={stockTags}
+          suggestions={tagSuggestions}
+          onClose={() => setTagPickerOpen(false)}
+          onSave={handleSaveTags}
+        />
+      )}
     </div>
   )
 }

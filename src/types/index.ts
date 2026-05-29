@@ -16,6 +16,11 @@ export interface AllowedEmail {
   added_at: string
 }
 
+export interface WatchlistTag {
+  id: string
+  name: string
+}
+
 export interface WatchlistStock {
   id: string
   user_id: string
@@ -23,6 +28,7 @@ export interface WatchlistStock {
   company_name: string
   sector: string | null
   added_at: string
+  tags?: WatchlistTag[]
 }
 
 export interface StockSnapshot {

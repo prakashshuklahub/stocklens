@@ -4,6 +4,7 @@ import { isPriceRefreshActive } from '@/lib/market-hours'
 import { resolveSectorForTicker } from '@/lib/sectors'
 import { ensureResearchForTicker } from '@/lib/stock-research-cache'
 import { ensureLogosForTickers } from '@/lib/stock-logo-cache'
+import { loadTagsByStockIds } from '@/lib/watchlist-tags-db'
 import { createServerClient } from '@/lib/supabase'
 import { NextRequest, NextResponse } from 'next/server'
 
@@ -24,12 +25,21 @@ export async function GET() {
   if (error) return NextResponse.json({ error: error.message }, { status: 500 })
   if (!stocks?.length) return NextResponse.json([])
 
+  const stockIds = stocks.map((s) => s.id as string)
+  let tagsByStockId = new Map<string, { id: string; name: string }[]>()
+  try {
+    tagsByStockId = await loadTagsByStockIds(supabase, userId, stockIds)
+  } catch (err) {
+    console.warn('[watchlist] tag load failed:', err instanceof Error ? err.message : err)
+  }
+
   const tickers = stocks.map((s) => s.ticker)
   const priceLive = isPriceRefreshActive()
   const prices = await fetchStockSnapshotsForTickers(tickers)
 
   const enriched = stocks.map((s) => ({
     ...s,
+    tags: tagsByStockId.get(s.id as string) ?? [],
     snapshot: prices.get(s.ticker.toUpperCase()) ?? null,
   }))
 
