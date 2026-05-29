@@ -32,26 +32,22 @@ export default function WatchlistCardSkeleton({ rank = 1 }: { rank?: number }) {
         </div>
 
         <div className="mt-2 flex flex-wrap gap-1.5">
-          <SkeletonBar className="h-6 w-20 rounded-full" delayMs={stagger + 90} />
-          <SkeletonBar className="h-6 w-16 rounded-full" delayMs={stagger + 110} />
-          <SkeletonBar className="h-6 w-24 rounded-full" delayMs={stagger + 130} />
+          <SkeletonBar className="h-5 w-20 rounded-full" delayMs={stagger + 90} />
+          <SkeletonBar className="h-5 w-16 rounded-full" delayMs={stagger + 110} />
+          <SkeletonBar className="h-5 w-24 rounded-full" delayMs={stagger + 130} />
         </div>
       </div>
 
-      {[0, 1, 2, 3, 4].map((row) => (
-        <div key={row} className="border-t border-white/[0.04] px-5 py-3 min-h-[48px]">
-          <div className="flex items-start justify-between gap-2">
-            <div className="min-w-0 flex-1 space-y-2">
-              <div className="flex items-center gap-1.5">
-                <SkeletonBar className="h-3.5 w-3.5 rounded-sm shrink-0" delayMs={stagger + 150 + row * 25} />
-                <SkeletonBar className="h-3 w-24" delayMs={stagger + 165 + row * 25} />
-              </div>
-              <SkeletonBar className="h-3 w-[min(100%,12rem)]" delayMs={stagger + 180 + row * 25} />
+      <div className="border-t border-white/[0.04] px-2 py-2">
+        <div className="flex items-stretch gap-1">
+          {[0, 1, 2, 3, 4, 5].map((tab) => (
+            <div key={tab} className="flex-1 flex flex-col items-center gap-1 py-2">
+              <SkeletonBar className="h-4 w-4 rounded-sm" delayMs={stagger + 150 + tab * 20} />
+              <SkeletonBar className="h-2 w-8" delayMs={stagger + 165 + tab * 20} />
             </div>
-            <SkeletonBar className="h-4 w-4 rounded shrink-0 mt-0.5" delayMs={stagger + 195 + row * 25} />
-          </div>
+          ))}
         </div>
-      ))}
+      </div>
 
       <div className="absolute right-3 top-3">
         <SkeletonBar className="h-8 w-8 rounded-lg" delayMs={stagger + 20} />

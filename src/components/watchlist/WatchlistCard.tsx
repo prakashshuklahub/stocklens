@@ -1,16 +1,15 @@
 'use client'
 
-import { useState, useRef, useEffect, useCallback, type ReactNode } from 'react'
+import { useState, useRef, useEffect, useCallback, useMemo, type ReactNode } from 'react'
 import { MoreVertical, Trash2, Target, Activity, BarChart3, Users, Gauge, Newspaper } from 'lucide-react'
 import useSWR from 'swr'
 import StockLogo from '@/components/StockLogo'
 import AnalystMiniGrid from '@/components/AnalystMiniGrid'
 import NewsRow from '@/components/NewsRow'
-import PriceChartPanel, { priceChartCollapsedPreview } from '@/components/PriceChartPanel'
-import StockResearchPanel, { researchCollapsedPreview } from '@/components/StockResearchPanel'
-import VsSectorPanel, { vsSectorCollapsedPreview } from '@/components/VsSectorPanel'
+import PriceChartPanel from '@/components/PriceChartPanel'
+import StockResearchPanel from '@/components/StockResearchPanel'
+import VsSectorPanel from '@/components/VsSectorPanel'
 import SessionPriceBadge from '@/components/SessionPriceBadge'
-import CollapseChevron from '@/components/CollapseChevron'
 import Week52Range from '@/components/Week52Range'
 import SignalReasonChips from '@/components/signals/SignalReasonChips'
 import {
@@ -25,7 +24,7 @@ import { priceBadgeSession, type MarketSession } from '@/lib/market-hours'
 import { vsSectorBadgeLabel } from '@/lib/sector-relative-strength'
 import { isBenchmarkableSector, normalizeWatchlistSector } from '@/lib/sector-relative-strength-scoring'
 import { cn } from '@/lib/utils'
-import type { SectorBenchmark, SectorRelativeStrength, Signal, SignalNewsItem, SignalReason, StockFundamentals, StockSnapshot } from '@/types'
+import type { SectorBenchmark, SectorRelativeStrength, Signal, SignalReason, StockFundamentals, StockSnapshot } from '@/types'
 
 const SECTOR_COLORS: Record<string, { bg: string; text: string }> = {
   Technology:               { bg: 'bg-blue-500/10',    text: 'text-blue-400' },
@@ -185,7 +184,7 @@ function SupplementalSummaryChips({
       )
     : null
 
-  const chipClass = 'text-sm sm:text-xs font-semibold px-2 py-0.5 rounded-full whitespace-nowrap'
+  const chipClass = 'watchlist-chip'
 
   return (
     <>
@@ -260,9 +259,9 @@ function CollapsedSummary({
   if (loading && !fundamentals) {
     return (
       <div className={cn('flex gap-2 pb-1', inset ? 'px-0' : 'px-5 pb-1')}>
-        <div className="h-6 w-16 rounded-full bg-zinc-800 animate-pulse" />
-        <div className="h-6 w-16 rounded-full bg-zinc-800 animate-pulse" />
-        <div className="h-6 w-24 rounded-full bg-zinc-800 animate-pulse" />
+        <div className="h-5 w-16 rounded-full bg-zinc-800 animate-pulse" />
+        <div className="h-5 w-16 rounded-full bg-zinc-800 animate-pulse" />
+        <div className="h-5 w-24 rounded-full bg-zinc-800 animate-pulse" />
       </div>
     )
   }
@@ -279,7 +278,7 @@ function CollapsedSummary({
       {showSectorBadge && (
         <span
           className={cn(
-            'text-sm sm:text-xs font-semibold px-2 py-0.5 rounded-full',
+            'watchlist-chip',
             vsSector?.badge === 'leader' && 'bg-emerald-500/10 text-emerald-400',
             vsSector?.badge === 'lagger' && 'bg-red-500/10 text-red-400',
             vsSector?.badge === 'inline' && 'bg-zinc-800 text-zinc-400',
@@ -292,7 +291,7 @@ function CollapsedSummary({
       {fundamentals?.change_7d_pct != null && (
         <span
           className={cn(
-            'text-sm sm:text-xs font-semibold tabular-nums px-2 py-0.5 rounded-full',
+            'watchlist-chip tabular-nums',
             fundamentals.change_7d_pct >= 0
               ? 'bg-emerald-500/10 text-emerald-400'
               : 'bg-red-500/10 text-red-400',
@@ -304,7 +303,7 @@ function CollapsedSummary({
       {fundamentals?.change_30d_pct != null && (
         <span
           className={cn(
-            'text-sm sm:text-xs font-semibold tabular-nums px-2 py-0.5 rounded-full',
+            'watchlist-chip tabular-nums',
             fundamentals.change_30d_pct >= 0
               ? 'bg-emerald-500/10 text-emerald-400'
               : 'bg-red-500/10 text-red-400',
@@ -314,11 +313,11 @@ function CollapsedSummary({
         </span>
       )}
       {showTarget && upside && upside !== '—' ? (
-        <span className="text-sm sm:text-xs font-semibold tabular-nums px-2 py-0.5 rounded-full bg-zinc-800 text-zinc-300">
+        <span className="watchlist-chip tabular-nums bg-zinc-800 text-zinc-300">
           Room to grow {upside}
         </span>
       ) : (
-        <span className="text-sm sm:text-xs font-medium px-2 py-0.5 rounded-full bg-zinc-800/80 text-zinc-500">
+        <span className="watchlist-chip font-medium bg-zinc-800/80 text-zinc-500">
           No target
         </span>
       )}
@@ -328,141 +327,70 @@ function CollapsedSummary({
 
 type WatchlistAccordionKey = 'room' | 'moves' | 'research' | 'sector' | 'analyst' | 'headlines'
 
-const WATCHLIST_SECTIONS_CLOSED: Record<WatchlistAccordionKey, boolean> = {
-  room: false,
-  moves: false,
-  research: false,
-  sector: false,
-  analyst: false,
-  headlines: false,
-}
-
-function truncatePreview(text: string, max = 72): string {
-  const t = text.trim()
-  if (t.length <= max) return t
-  return `${t.slice(0, max - 1).trim()}…`
-}
-
-function headlinesPreview(news: SignalNewsItem[]): string {
-  const top = news[0]
-  if (top) return truncatePreview(top.title)
-  return 'No headlines right now'
-}
-
-function roomPreview(
-  fundamentals: StockFundamentals | null | undefined,
-  currentPrice: number | null,
-): string {
-  const showTarget = hasDisplayTargetPrice(
-    fundamentals?.target_price,
-    fundamentals?.target_source ?? null,
-  )
-  const upside = showTarget
-    ? formatDisplayUpsidePct(
-        fundamentals?.target_price,
-        currentPrice,
-        fundamentals?.target_source ?? null,
-      )
-    : null
-  const target = showTarget && fundamentals?.target_price != null
-    ? formatDisplayTargetPrice(fundamentals.target_price, fundamentals.target_source ?? null)
-    : null
-
-  const parts: string[] = []
-  if (upside && upside !== '—') parts.push(`Room to grow ${upside}`)
-  else parts.push('No target')
-  if (target) parts.push(`target ${target}`)
-  return parts.join(' · ')
-}
-
-function movesPreview(
-  fundamentals: StockFundamentals | null | undefined,
-  change1dPct: number | null | undefined,
-): string {
-  return priceChartCollapsedPreview({
-    change1d: change1dPct,
-    change7d: fundamentals?.change_7d_pct,
-    change30d: fundamentals?.change_30d_pct,
-  })
-}
-
-function sectorPreview(
-  vsSector: SectorRelativeStrength | null | undefined,
-  stockSector: string | null | undefined,
-): string | null {
-  return vsSectorCollapsedPreview(vsSector, stockSector)
-}
-
-function analystPreview(fundamentals: StockFundamentals | null | undefined): string {
-  if (fundamentals?.analyst_buy == null) return 'Analyst ratings'
-  return `${fundamentals.analyst_buy} buy · ${fundamentals.analyst_hold ?? 0} hold · ${fundamentals.analyst_sell ?? 0} sell`
-}
-
-function WatchlistAccordionRow({
-  id,
-  label,
-  preview,
-  open,
-  onToggle,
-  icon: Icon,
-  children,
-}: {
-  id: string
+type SectionTab = {
+  key: WatchlistAccordionKey
   label: string
-  preview: string
-  open: boolean
-  onToggle: () => void
+  shortLabel: string
   icon: typeof Target
-  children: ReactNode
+}
+
+function WatchlistSectionTabs({
+  cardId,
+  tabs,
+  active,
+  onSelect,
+  panel,
+}: {
+  cardId: string
+  tabs: SectionTab[]
+  active: WatchlistAccordionKey | null
+  onSelect: (key: WatchlistAccordionKey) => void
+  panel: ReactNode
 }) {
-  const [panelMounted, setPanelMounted] = useState(open)
-
-  useEffect(() => {
-    if (open) setPanelMounted(true)
-  }, [open])
-
   return (
     <div className="border-t border-white/[0.04]">
-      <button
-        type="button"
-        id={`${id}-trigger`}
-        aria-expanded={open}
-        aria-controls={`${id}-panel`}
-        onClick={onToggle}
-        className={cn(
-          'w-full text-left px-5 py-3 min-h-[48px]',
-          'active:bg-zinc-800/50 transition-colors [touch-action:manipulation]',
-          'focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-blue-500/40',
-        )}
-      >
-        <div className="flex items-start justify-between gap-2">
-          <div className="min-w-0 flex-1">
-            <div className="flex items-center gap-1.5">
-              <Icon className="w-3.5 h-3.5 text-zinc-500 shrink-0" aria-hidden="true" />
-              <span className="type-meta font-semibold text-zinc-300">{label}</span>
-            </div>
-            <p
-              className={cn(
-                'type-meta text-muted-preview mt-1 leading-snug truncate overflow-hidden transition-[opacity,max-height,margin] duration-150',
-                open ? 'opacity-0 max-h-0 mt-0' : 'opacity-100 max-h-6',
-              )}
-              aria-hidden={open}
-            >
-              {preview}
-            </p>
-          </div>
-          <CollapseChevron open={open} className="text-muted shrink-0 mt-0.5" />
+      <div className="px-2 py-2" role="tablist" aria-label="Stock details">
+        <div className="flex items-stretch gap-0.5">
+          {tabs.map(({ key, shortLabel, label, icon: Icon }) => {
+            const selected = active === key
+            return (
+              <button
+                key={key}
+                type="button"
+                role="tab"
+                id={`${cardId}-tab-${key}`}
+                aria-selected={selected}
+                aria-controls={`${cardId}-panel-${key}`}
+                aria-label={label}
+                onClick={() => onSelect(key)}
+                className={cn(
+                  'flex-1 flex flex-col items-center justify-center gap-0.5 min-w-0 py-2 px-0.5 rounded-xl',
+                  '[touch-action:manipulation] transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500/40',
+                  selected
+                    ? 'bg-blue-500/15 text-blue-300'
+                    : 'text-zinc-400 active:bg-zinc-800/80',
+                )}
+              >
+                <Icon
+                  className={cn('w-4 h-4 shrink-0', selected ? 'text-blue-400' : 'text-zinc-400')}
+                  aria-hidden="true"
+                />
+                <span className="text-[10px] font-semibold leading-none truncate max-w-full">
+                  {shortLabel}
+                </span>
+              </button>
+            )
+          })}
         </div>
-      </button>
-      {panelMounted && (
+      </div>
+      {active && (
         <div
-          id={`${id}-panel`}
-          role="region"
-          aria-labelledby={`${id}-trigger`}
-          hidden={!open}
-          className={cn('px-5 pb-3.5 pt-0', !open && 'hidden')}
+          role="tabpanel"
+          id={`${cardId}-panel-${active}`}
+          aria-labelledby={`${cardId}-tab-${active}`}
+          className="px-4 pb-3.5 pt-2 border-t border-white/[0.04]"
         >
-          {children}
+          {panel}
         </div>
       )}
     </div>
@@ -484,12 +412,10 @@ export default function WatchlistCard({
 }: Props) {
   const cardId = `watchlist-${stock.ticker}`
 
-  const [sections, setSections] = useState<Record<WatchlistAccordionKey, boolean>>(() => ({
-    ...WATCHLIST_SECTIONS_CLOSED,
-  }))
+  const [activeSection, setActiveSection] = useState<WatchlistAccordionKey | null>(null)
 
-  const toggleSection = useCallback((key: WatchlistAccordionKey) => {
-    setSections((prev) => ({ ...prev, [key]: !prev[key] }))
+  const selectSection = useCallback((key: WatchlistAccordionKey) => {
+    setActiveSection((prev) => (prev === key ? null : key))
   }, [])
 
   const [menuOpen, setMenuOpen] = useState(false)
@@ -537,16 +463,119 @@ export default function WatchlistCard({
   const badgeSession = priceBadgeSession(snap?.session, marketSession)
   const sectorLabel = vsSector?.sector ?? normalizeWatchlistSector(stock.sector)
   const hasSector = sectorLabel !== 'Other' && isBenchmarkableSector(sectorLabel)
-  const sectorPreviewText = sectorPreview(vsSector, stock.sector)
   const sectorBadgeLabel = vsSectorBadgeLabel(vsSector?.badge ?? null)
   const showSectorBadge = Boolean(sectorBadgeLabel && vsSector?.sector !== 'Other')
-  const change1d = regularChange1dPct ?? snap?.change_1d_pct ?? null
   const analystTotal =
     (fundamentals?.analyst_buy ?? 0) +
     (fundamentals?.analyst_hold ?? 0) +
     (fundamentals?.analyst_sell ?? 0)
 
   const fundamentalsPending = fundamentalsLoading && fundamentals == null
+
+  const sectionTabs = useMemo(() => {
+    const tabs: SectionTab[] = [
+      { key: 'room', label: 'Room to grow', shortLabel: 'Target', icon: Target },
+      { key: 'moves', label: 'Price chart', shortLabel: 'Chart', icon: Activity },
+      { key: 'research', label: 'Key research', shortLabel: 'Research', icon: Gauge },
+    ]
+    if (hasSector) {
+      tabs.push({ key: 'sector', label: 'Vs sector', shortLabel: 'Sector', icon: BarChart3 })
+    }
+    tabs.push({ key: 'analyst', label: 'Analyst views', shortLabel: 'Analysts', icon: Users })
+    if (signal || signalLoading) {
+      tabs.push({ key: 'headlines', label: 'Headlines', shortLabel: 'News', icon: Newspaper })
+    }
+    return tabs
+  }, [hasSector, signal, signalLoading])
+
+  useEffect(() => {
+    if (activeSection && !sectionTabs.some((tab) => tab.key === activeSection)) {
+      setActiveSection(null)
+    }
+  }, [activeSection, sectionTabs])
+
+  const sectionPanel = useMemo(() => {
+    switch (activeSection) {
+      case 'room':
+        return (
+          <div className="space-y-2.5 rounded-xl bg-zinc-800/50 px-3 py-2.5 border border-white/[0.04]">
+            <TargetPrice
+              targetPrice={fundamentals?.target_price ?? null}
+              targetLow={fundamentals?.target_low ?? null}
+              targetHigh={fundamentals?.target_high ?? null}
+              targetSource={fundamentals?.target_source ?? null}
+              current={currentPrice}
+              loading={fundamentalsPending && !fundamentals}
+            />
+            <Week52Range
+              high={fundamentals?.week52_high ?? null}
+              low={fundamentals?.week52_low ?? null}
+              current={currentPrice}
+            />
+          </div>
+        )
+      case 'moves':
+        return (
+          <PriceChartPanel
+            ticker={stock.ticker}
+            volumeRatio={fundamentals?.volume_ratio ?? null}
+          />
+        )
+      case 'research':
+        return <StockResearchPanel ticker={stock.ticker} />
+      case 'sector':
+        return (
+          <VsSectorPanel
+            vsSector={vsSector}
+            sectorBenchmark={sectorBenchmark}
+            stockSector={stock.sector}
+            regularChange1dPct={regularChange1dPct}
+            stockChange1d={snap?.change_1d_pct ?? null}
+            snapshotSession={snap?.session}
+            marketSession={marketSession}
+            refreshing={sectorBenchmarksRefreshing}
+          />
+        )
+      case 'analyst':
+        return (
+          <AnalystMiniGrid
+            buy={fundamentals?.analyst_buy ?? null}
+            hold={fundamentals?.analyst_hold ?? null}
+            sell={fundamentals?.analyst_sell ?? null}
+            total={analystTotal}
+            loading={fundamentalsPending}
+          />
+        )
+      case 'headlines':
+        return signal?.news?.length ? (
+          <div className="space-y-2">
+            {signal.news.map((n, i) => (
+              <NewsRow key={`${n.url}-${i}`} item={n} />
+            ))}
+          </div>
+        ) : (
+          <p className="type-meta text-muted px-1 py-2">No headlines for this stock right now.</p>
+        )
+      default:
+        return null
+    }
+  }, [
+    activeSection,
+    analystTotal,
+    currentPrice,
+    fundamentals,
+    fundamentalsPending,
+    marketSession,
+    regularChange1dPct,
+    sectorBenchmark,
+    sectorBenchmarksRefreshing,
+    signal,
+    snap?.change_1d_pct,
+    snap?.session,
+    stock.sector,
+    stock.ticker,
+    vsSector,
+  ])
 
   if (confirming) {
     return (
@@ -629,16 +658,16 @@ export default function WatchlistCard({
         <div className="mt-2 flex flex-wrap items-center gap-1.5">
           {signalLoading && !signal ? (
             <>
-              <div className="h-6 w-20 rounded-full bg-zinc-800 animate-pulse" aria-hidden="true" />
-              <div className="h-6 w-24 rounded-full bg-zinc-800 animate-pulse" aria-hidden="true" />
-              <div className="h-6 w-16 rounded-full bg-zinc-800 animate-pulse" aria-hidden="true" />
+              <div className="h-5 w-20 rounded-full bg-zinc-800 animate-pulse" aria-hidden="true" />
+              <div className="h-5 w-24 rounded-full bg-zinc-800 animate-pulse" aria-hidden="true" />
+              <div className="h-5 w-16 rounded-full bg-zinc-800 animate-pulse" aria-hidden="true" />
             </>
           ) : signal?.reasons.length ? (
             <>
               {showSectorBadge && (
                 <span
                   className={cn(
-                    'text-sm sm:text-xs font-semibold px-2 py-0.5 rounded-full whitespace-nowrap',
+                    'watchlist-chip',
                     vsSector?.badge === 'leader' && 'bg-emerald-500/10 text-emerald-400',
                     vsSector?.badge === 'lagger' && 'bg-red-500/10 text-red-400',
                     vsSector?.badge === 'inline' && 'bg-zinc-800 text-zinc-400',
@@ -668,115 +697,13 @@ export default function WatchlistCard({
         </div>
       </div>
 
-      <WatchlistAccordionRow
-        id={`${cardId}-room`}
-        label="Room to grow"
-        preview={roomPreview(fundamentals, currentPrice)}
-        open={sections.room}
-        onToggle={() => toggleSection('room')}
-        icon={Target}
-      >
-        <div className="space-y-2.5 rounded-xl bg-zinc-800/50 px-3 py-2.5 border border-white/[0.04]">
-          <TargetPrice
-            targetPrice={fundamentals?.target_price ?? null}
-            targetLow={fundamentals?.target_low ?? null}
-            targetHigh={fundamentals?.target_high ?? null}
-            targetSource={fundamentals?.target_source ?? null}
-            current={currentPrice}
-            loading={fundamentalsPending && !fundamentals}
-          />
-          <Week52Range
-            high={fundamentals?.week52_high ?? null}
-            low={fundamentals?.week52_low ?? null}
-            current={currentPrice}
-          />
-        </div>
-      </WatchlistAccordionRow>
-
-      <WatchlistAccordionRow
-        id={`${cardId}-moves`}
-        label="Price chart"
-        preview={movesPreview(fundamentals, change1d)}
-        open={sections.moves}
-        onToggle={() => toggleSection('moves')}
-        icon={Activity}
-      >
-        <PriceChartPanel
-          ticker={stock.ticker}
-          volumeRatio={fundamentals?.volume_ratio ?? null}
-        />
-      </WatchlistAccordionRow>
-
-      <WatchlistAccordionRow
-        id={`${cardId}-research`}
-        label="Key research"
-        preview={researchCollapsedPreview()}
-        open={sections.research}
-        onToggle={() => toggleSection('research')}
-        icon={Gauge}
-      >
-        <StockResearchPanel ticker={stock.ticker} />
-      </WatchlistAccordionRow>
-
-      {hasSector && sectorPreviewText && (
-        <WatchlistAccordionRow
-          id={`${cardId}-sector`}
-          label="Vs sector"
-          preview={sectorPreviewText}
-          open={sections.sector}
-          onToggle={() => toggleSection('sector')}
-          icon={BarChart3}
-        >
-          <VsSectorPanel
-            vsSector={vsSector}
-            sectorBenchmark={sectorBenchmark}
-            stockSector={stock.sector}
-            regularChange1dPct={regularChange1dPct}
-            stockChange1d={snap?.change_1d_pct ?? null}
-            snapshotSession={snap?.session}
-            marketSession={marketSession}
-            refreshing={sectorBenchmarksRefreshing}
-          />
-        </WatchlistAccordionRow>
-      )}
-
-      <WatchlistAccordionRow
-        id={`${cardId}-analyst`}
-        label="Analyst views"
-        preview={analystPreview(fundamentals)}
-        open={sections.analyst}
-        onToggle={() => toggleSection('analyst')}
-        icon={Users}
-      >
-        <AnalystMiniGrid
-          buy={fundamentals?.analyst_buy ?? null}
-          hold={fundamentals?.analyst_hold ?? null}
-          sell={fundamentals?.analyst_sell ?? null}
-          total={analystTotal}
-          loading={fundamentalsPending}
-        />
-      </WatchlistAccordionRow>
-
-      {(signal || signalLoading) && (
-        <WatchlistAccordionRow
-          id={`${cardId}-headlines`}
-          label="Headlines"
-          preview={headlinesPreview(signal?.news ?? [])}
-          open={sections.headlines}
-          onToggle={() => toggleSection('headlines')}
-          icon={Newspaper}
-        >
-          {signal?.news?.length ? (
-            <div className="space-y-2">
-              {signal.news.map((n, i) => (
-                <NewsRow key={`${n.url}-${i}`} item={n} />
-              ))}
-            </div>
-          ) : (
-            <p className="type-meta text-muted px-1 py-2">No headlines for this stock right now.</p>
-          )}
-        </WatchlistAccordionRow>
-      )}
+      <WatchlistSectionTabs
+        cardId={cardId}
+        tabs={sectionTabs}
+        active={activeSection}
+        onSelect={selectSection}
+        panel={sectionPanel}
+      />
 
       {/* ── 3-dot menu ── */}
       <div ref={menuRef} className="absolute right-1 top-2">

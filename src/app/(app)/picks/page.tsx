@@ -1,16 +1,14 @@
 'use client'
 
 import useSWR from 'swr'
-import { useCallback, useMemo, useState, type ReactNode } from 'react'
+import { useCallback, useEffect, useMemo, useState, type ReactNode } from 'react'
 import AppNav from '@/components/AppNav'
 import FilterChipBar, { type FilterChipOption } from '@/components/FilterChipBar'
 import PicksLoadingState from '@/components/picks/PicksLoadingState'
 import AnalystMiniGrid from '@/components/AnalystMiniGrid'
-import PriceChartPanel, { priceChartCollapsedPreview } from '@/components/PriceChartPanel'
-import StockResearchPanel, { researchCollapsedPreview } from '@/components/StockResearchPanel'
-import VsSectorPanel, { vsSectorCollapsedPreview } from '@/components/VsSectorPanel'
-import { useMarketSession } from '@/hooks/useMarketOpen'
-import CollapseChevron from '@/components/CollapseChevron'
+import PriceChartPanel from '@/components/PriceChartPanel'
+import StockResearchPanel from '@/components/StockResearchPanel'
+import VsSectorPanel from '@/components/VsSectorPanel'
 import {
   Sparkles,
   TrendingUp,
@@ -24,6 +22,7 @@ import {
   Newspaper,
   Gauge,
 } from 'lucide-react'
+import { useMarketSession } from '@/hooks/useMarketOpen'
 import NewsRow from '@/components/NewsRow'
 import StockLogo from '@/components/StockLogo'
 import Week52Range from '@/components/Week52Range'
@@ -323,105 +322,72 @@ function sectorBenchmarkForPick(
   return benchmarks[sector] ?? null
 }
 
-function truncatePreview(text: string, max = 72): string {
-  const t = text.trim()
-  if (t.length <= max) return t
-  return `${t.slice(0, max - 1).trim()}…`
-}
-
 type PickAccordionKey = 'price' | 'momentum' | 'research' | 'sector' | 'headlines' | 'why'
 
-const PICK_SECTIONS_CLOSED: Record<PickAccordionKey, boolean> = {
-  price: false,
-  momentum: false,
-  research: false,
-  sector: false,
-  headlines: false,
-  why: false,
-}
-
-function pricePreview(pick: Pick, showTarget: boolean, targetCopy: ReturnType<typeof pickDisplayCopy>): string {
-  const buy = `Buy $${fmt(pick.entry_low)}–$${fmt(pick.entry_high)}`
-  if (!showTarget) return buy
-  const target = formatTargetPrice(pick.target_mean)
-  const extra = targetCopy.targetSub ? ` · ${targetCopy.targetSub}` : ''
-  return `${buy} · Target ${target}${extra}`
-}
-
-function momentumPreview(pick: Pick): string {
-  return priceChartCollapsedPreview({
-    change1d: pick.change_1d_pct,
-    change7d: pick.change_7d_pct,
-    change30d: pick.change_30d_pct,
-    volumeRatio: pick.volume_ratio,
-  })
-}
-
-function sectorPreview(pick: Pick): string | null {
-  return vsSectorCollapsedPreview(pick.vs_sector, pick.sector)
-}
-
-function headlinesPreview(pick: Pick): string {
-  const top = pick.news?.[0]
-  if (top) return truncatePreview(top.title)
-  return 'No headlines right now'
-}
-
-function whyPreview(pick: Pick): string {
-  if (pick.company_blurb) return truncatePreview(pick.company_blurb)
-  if (pick.thesis) return truncatePreview(pick.thesis)
-  const top = pick.factors.find((f) => f.tone === 'positive')
-  if (top) return truncatePreview(top.label)
-  return 'Company overview and signals'
-}
-
-function PickAccordionRow({
-  id,
-  label,
-  preview,
-  open,
-  onToggle,
-  icon: Icon,
-  children,
-}: {
-  id: string
+type PickSectionTab = {
+  key: PickAccordionKey
   label: string
-  preview: string
-  open: boolean
-  onToggle: () => void
+  shortLabel: string
   icon: typeof Target
-  children: ReactNode
+}
+
+function PickSectionTabs({
+  cardId,
+  tabs,
+  active,
+  onSelect,
+  panel,
+}: {
+  cardId: string
+  tabs: PickSectionTab[]
+  active: PickAccordionKey | null
+  onSelect: (key: PickAccordionKey) => void
+  panel: ReactNode
 }) {
   return (
     <div className="border-t border-white/[0.04]">
-      <button
-        type="button"
-        id={`${id}-trigger`}
-        aria-expanded={open}
-        aria-controls={`${id}-panel`}
-        onClick={onToggle}
-        className={cn(
-          'w-full text-left px-3.5 py-3 min-h-[48px]',
-          'active:bg-zinc-800/50 transition-colors [touch-action:manipulation]',
-          'focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-blue-500/40',
-        )}
-      >
-        <div className="flex items-start justify-between gap-2">
-          <div className="min-w-0 flex-1">
-            <div className="flex items-center gap-1.5">
-              <Icon className="w-3.5 h-3.5 text-zinc-500 shrink-0" aria-hidden="true" />
-              <span className="type-meta font-semibold text-zinc-300">{label}</span>
-            </div>
-            {!open && (
-              <p className="type-meta text-muted-preview mt-1 leading-snug truncate">{preview}</p>
-            )}
-          </div>
-          <CollapseChevron open={open} className="text-muted shrink-0 mt-0.5" />
+      <div className="px-2 py-2" role="tablist" aria-label="Pick details">
+        <div className="flex items-stretch gap-0.5">
+          {tabs.map(({ key, shortLabel, label, icon: Icon }) => {
+            const selected = active === key
+            return (
+              <button
+                key={key}
+                type="button"
+                role="tab"
+                id={`${cardId}-tab-${key}`}
+                aria-selected={selected}
+                aria-controls={`${cardId}-panel-${key}`}
+                aria-label={label}
+                onClick={() => onSelect(key)}
+                className={cn(
+                  'flex-1 flex flex-col items-center justify-center gap-0.5 min-w-0 py-2 px-0.5 rounded-xl',
+                  '[touch-action:manipulation] transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500/40',
+                  selected
+                    ? 'bg-blue-500/15 text-blue-300'
+                    : 'text-zinc-400 active:bg-zinc-800/80',
+                )}
+              >
+                <Icon
+                  className={cn('w-4 h-4 shrink-0', selected ? 'text-blue-400' : 'text-zinc-400')}
+                  aria-hidden="true"
+                />
+                <span className="text-[10px] font-semibold leading-none truncate max-w-full">
+                  {shortLabel}
+                </span>
+              </button>
+            )
+          })}
         </div>
-      </button>
-      {open && (
-        <div id={`${id}-panel`} role="region" aria-labelledby={`${id}-trigger`} className="px-3.5 pb-3.5 pt-0">
-          {children}
+      </div>
+      {active && (
+        <div
+          role="tabpanel"
+          id={`${cardId}-panel-${active}`}
+          aria-labelledby={`${cardId}-tab-${active}`}
+          className="px-3.5 pb-3.5 pt-2 border-t border-white/[0.04]"
+        >
+          {panel}
         </div>
       )}
     </div>
@@ -443,10 +409,10 @@ function PickCard({
 }) {
   const cardId = `pick-${pick.ticker}-${pick.source}`
 
-  const [sections, setSections] = useState<Record<PickAccordionKey, boolean>>(() => ({ ...PICK_SECTIONS_CLOSED }))
+  const [activeSection, setActiveSection] = useState<PickAccordionKey | null>(null)
 
-  const toggleSection = useCallback((key: PickAccordionKey) => {
-    setSections((prev) => ({ ...prev, [key]: !prev[key] }))
+  const selectSection = useCallback((key: PickAccordionKey) => {
+    setActiveSection((prev) => (prev === key ? null : key))
   }, [])
 
   const showTarget = hasDisplayTargetFromPickLabel(pick.target_mean, pick.target_label)
@@ -459,9 +425,171 @@ function PickCard({
     pick.target_low != null &&
     pick.target_high != null &&
     pick.target_high > pick.target_low
-  const sectorPreviewText = sectorPreview(pick)
   const sectorLabel = pick.vs_sector?.sector ?? normalizeWatchlistSector(pick.sector)
   const hasSector = sectorLabel !== 'Other' && isBenchmarkableSector(sectorLabel)
+
+  const sectionTabs = useMemo(() => {
+    const tabs: PickSectionTab[] = [
+      { key: 'price', label: 'Price & targets', shortLabel: 'Price', icon: Target },
+      { key: 'momentum', label: 'Price chart', shortLabel: 'Chart', icon: Activity },
+      { key: 'research', label: 'Key research', shortLabel: 'Research', icon: Gauge },
+    ]
+    if (hasSector) {
+      tabs.push({ key: 'sector', label: 'Vs sector', shortLabel: 'Sector', icon: BarChart3 })
+    }
+    tabs.push(
+      { key: 'headlines', label: 'Headlines', shortLabel: 'News', icon: Newspaper },
+      { key: 'why', label: 'Why we picked this', shortLabel: 'Why', icon: Eye },
+    )
+    return tabs
+  }, [hasSector])
+
+  useEffect(() => {
+    if (activeSection && !sectionTabs.some((tab) => tab.key === activeSection)) {
+      setActiveSection(null)
+    }
+  }, [activeSection, sectionTabs])
+
+  const sectionPanel = useMemo(() => {
+    switch (activeSection) {
+      case 'price':
+        return (
+          <div className="space-y-3 rounded-xl bg-zinc-900/60 border border-white/[0.04] px-3 py-3">
+            <div className="grid grid-cols-2 gap-3">
+              <div>
+                <p className="type-micro font-semibold text-zinc-500 uppercase tracking-wide">Price to buy</p>
+                <p className="text-sm font-bold text-white tabular-nums leading-tight">
+                  ${fmt(pick.entry_low)} – ${fmt(pick.entry_high)}
+                </p>
+                <p className="type-meta text-zinc-500 tabular-nums">Current ${fmt(pick.current_price)}</p>
+              </div>
+              <div className="text-right">
+                <p className="type-micro font-semibold text-zinc-500 uppercase tracking-wide">
+                  {targetCopy.targetHeading}
+                </p>
+                <p className={cn(
+                  'text-sm font-bold tabular-nums leading-tight',
+                  showTarget ? 'text-white' : 'text-zinc-500',
+                )}>
+                  {showTarget ? formatTargetPrice(pick.target_mean) : TARGET_UNAVAILABLE}
+                </p>
+                {subline && <p className="type-meta text-zinc-500">{subline}</p>}
+                {showAnalystRange && (
+                  <p className="type-micro text-muted tabular-nums mt-0.5">
+                    Range ${fmt(pick.target_low!)} – ${fmt(pick.target_high!)}
+                  </p>
+                )}
+              </div>
+            </div>
+            <Week52Range
+              high={pick.week52_high}
+              low={pick.week52_low}
+              current={pick.current_price}
+            />
+          </div>
+        )
+      case 'momentum':
+        return <PriceChartPanel ticker={pick.ticker} volumeRatio={pick.volume_ratio} />
+      case 'research':
+        return <StockResearchPanel ticker={pick.ticker} />
+      case 'sector':
+        return (
+          <VsSectorPanel
+            vsSector={pick.vs_sector}
+            sectorBenchmark={sectorBenchmarkForPick(pick, sectorBenchmarks)}
+            stockSector={pick.sector}
+            regularChange1dPct={pick.change_1d_pct}
+            stockChange1d={pick.change_1d_pct}
+            snapshotSession={pick.change_1d_session}
+            marketSession={marketSession}
+          />
+        )
+      case 'headlines':
+        return pick.news?.length ? (
+          <div className="space-y-2">
+            {pick.news.map((n, i) => (
+              <NewsRow key={i} item={n} />
+            ))}
+          </div>
+        ) : (
+          <p className="type-meta text-muted px-1 py-2">No headlines for this stock right now.</p>
+        )
+      case 'why':
+        return (
+          <div className="space-y-4">
+            {pick.factors.length > 0 && (
+              <div className="flex flex-wrap gap-1.5">
+                {pick.factors.map((f, i) => (
+                  <FactorChip key={i} factor={f} />
+                ))}
+              </div>
+            )}
+
+            <AnalystMiniGrid
+              buy={pick.analyst_buy}
+              hold={pick.analyst_hold}
+              sell={pick.analyst_sell}
+              total={pick.analyst_total}
+            />
+
+            {pick.company_blurb && (
+              <div>
+                <div className="flex items-center gap-1.5 mb-1.5">
+                  <Briefcase className="w-3.5 h-3.5 text-blue-400" aria-hidden="true" />
+                  <p className="type-meta font-bold text-blue-400 uppercase tracking-wide">What they do</p>
+                </div>
+                <p className="text-sm text-zinc-300 leading-relaxed">{pick.company_blurb}</p>
+              </div>
+            )}
+
+            {pick.thesis && (
+              <div>
+                <div className="flex items-center gap-1.5 mb-1.5">
+                  <TrendingUp className="w-3.5 h-3.5 text-emerald-400" aria-hidden="true" />
+                  <p className="type-meta font-bold text-emerald-400 uppercase tracking-wide">Why it looks good</p>
+                </div>
+                <p className="text-sm text-zinc-200 leading-relaxed">{pick.thesis}</p>
+              </div>
+            )}
+
+            {pick.main_risk && (
+              <div>
+                <div className="flex items-center gap-1.5 mb-1.5">
+                  <AlertTriangle className="w-3.5 h-3.5 text-yellow-400" aria-hidden="true" />
+                  <p className="type-meta font-bold text-yellow-400 uppercase tracking-wide">Main thing to watch</p>
+                </div>
+                <p className="text-sm text-zinc-300 leading-relaxed">{pick.main_risk}</p>
+              </div>
+            )}
+
+            <p className="type-micro text-muted pt-1">
+              {pick.narrative_source === 'llm'
+                ? 'Summary written by AI · prices and ratings from public data'
+                : llmEnabled
+                  ? 'Signal-based summary · AI summary loading…'
+                  : 'Summary from the signals above · prices and ratings from public data'}
+              {pick.narrative_generated_at && (
+                <span className="block mt-0.5">
+                  Summary from {timeAgo(pick.narrative_generated_at)}
+                </span>
+              )}
+            </p>
+          </div>
+        )
+      default:
+        return null
+    }
+  }, [
+    activeSection,
+    llmEnabled,
+    marketSession,
+    pick,
+    sectorBenchmarks,
+    showAnalystRange,
+    showTarget,
+    subline,
+    targetCopy.targetHeading,
+  ])
 
   return (
     <div
@@ -479,179 +607,13 @@ function PickCard({
       />
 
       <div className="border-t border-amber-500/10 bg-zinc-950/35">
-      <PickAccordionRow
-        id={`${cardId}-price`}
-        label="Price & targets"
-        preview={pricePreview(pick, showTarget, targetCopy)}
-        open={sections.price}
-        onToggle={() => toggleSection('price')}
-        icon={Target}
-      >
-        <div className="space-y-3 rounded-xl bg-zinc-900/60 border border-white/[0.04] px-3 py-3">
-          <div className="grid grid-cols-2 gap-3">
-            <div>
-              <p className="type-micro font-semibold text-zinc-500 uppercase tracking-wide">Price to buy</p>
-              <p className="text-sm font-bold text-white tabular-nums leading-tight">
-                ${fmt(pick.entry_low)} – ${fmt(pick.entry_high)}
-              </p>
-              <p className="type-meta text-zinc-500 tabular-nums">Current ${fmt(pick.current_price)}</p>
-            </div>
-            <div className="text-right">
-              <p className="type-micro font-semibold text-zinc-500 uppercase tracking-wide">
-                {targetCopy.targetHeading}
-              </p>
-              <p className={cn(
-                'text-sm font-bold tabular-nums leading-tight',
-                showTarget ? 'text-white' : 'text-zinc-500',
-              )}>
-                {showTarget ? formatTargetPrice(pick.target_mean) : TARGET_UNAVAILABLE}
-              </p>
-              {subline && <p className="type-meta text-zinc-500">{subline}</p>}
-              {showAnalystRange && (
-                <p className="type-micro text-muted tabular-nums mt-0.5">
-                  Range ${fmt(pick.target_low!)} – ${fmt(pick.target_high!)}
-                </p>
-              )}
-            </div>
-          </div>
-          <Week52Range
-            high={pick.week52_high}
-            low={pick.week52_low}
-            current={pick.current_price}
-          />
-        </div>
-      </PickAccordionRow>
-
-      <PickAccordionRow
-        id={`${cardId}-momentum`}
-        label="Price chart"
-        preview={momentumPreview(pick)}
-        open={sections.momentum}
-        onToggle={() => toggleSection('momentum')}
-        icon={Activity}
-      >
-        <PriceChartPanel ticker={pick.ticker} volumeRatio={pick.volume_ratio} />
-      </PickAccordionRow>
-
-      <PickAccordionRow
-        id={`${cardId}-research`}
-        label="Key research"
-        preview={researchCollapsedPreview()}
-        open={sections.research}
-        onToggle={() => toggleSection('research')}
-        icon={Gauge}
-      >
-        <StockResearchPanel ticker={pick.ticker} />
-      </PickAccordionRow>
-
-      {hasSector && sectorPreviewText && (
-        <PickAccordionRow
-          id={`${cardId}-sector`}
-          label="Vs sector"
-          preview={sectorPreviewText}
-          open={sections.sector}
-          onToggle={() => toggleSection('sector')}
-          icon={BarChart3}
-        >
-          <VsSectorPanel
-            vsSector={pick.vs_sector}
-            sectorBenchmark={sectorBenchmarkForPick(pick, sectorBenchmarks)}
-            stockSector={pick.sector}
-            regularChange1dPct={pick.change_1d_pct}
-            stockChange1d={pick.change_1d_pct}
-            snapshotSession={pick.change_1d_session}
-            marketSession={marketSession}
-          />
-        </PickAccordionRow>
-      )}
-
-      <PickAccordionRow
-        id={`${cardId}-headlines`}
-        label="Headlines"
-        preview={headlinesPreview(pick)}
-        open={sections.headlines}
-        onToggle={() => toggleSection('headlines')}
-        icon={Newspaper}
-      >
-        {pick.news?.length ? (
-          <div className="space-y-2">
-            {pick.news.map((n, i) => (
-              <NewsRow key={i} item={n} />
-            ))}
-          </div>
-        ) : (
-          <p className="type-meta text-muted px-1 py-2">No headlines for this stock right now.</p>
-        )}
-      </PickAccordionRow>
-
-      <PickAccordionRow
-        id={`${cardId}-why`}
-        label="Why we picked this"
-        preview={whyPreview(pick)}
-        open={sections.why}
-        onToggle={() => toggleSection('why')}
-        icon={Eye}
-      >
-        <div className="space-y-4">
-          {pick.factors.length > 0 && (
-            <div className="flex flex-wrap gap-1.5">
-              {pick.factors.map((f, i) => (
-                <FactorChip key={i} factor={f} />
-              ))}
-            </div>
-          )}
-
-          <AnalystMiniGrid
-            buy={pick.analyst_buy}
-            hold={pick.analyst_hold}
-            sell={pick.analyst_sell}
-            total={pick.analyst_total}
-          />
-
-          {pick.company_blurb && (
-            <div>
-              <div className="flex items-center gap-1.5 mb-1.5">
-                <Briefcase className="w-3.5 h-3.5 text-blue-400" aria-hidden="true" />
-                <p className="type-meta font-bold text-blue-400 uppercase tracking-wide">What they do</p>
-              </div>
-              <p className="text-sm text-zinc-300 leading-relaxed">{pick.company_blurb}</p>
-            </div>
-          )}
-
-          {pick.thesis && (
-            <div>
-              <div className="flex items-center gap-1.5 mb-1.5">
-                <TrendingUp className="w-3.5 h-3.5 text-emerald-400" aria-hidden="true" />
-                <p className="type-meta font-bold text-emerald-400 uppercase tracking-wide">Why it looks good</p>
-              </div>
-              <p className="text-sm text-zinc-200 leading-relaxed">{pick.thesis}</p>
-            </div>
-          )}
-
-          {pick.main_risk && (
-            <div>
-              <div className="flex items-center gap-1.5 mb-1.5">
-                <AlertTriangle className="w-3.5 h-3.5 text-yellow-400" aria-hidden="true" />
-                <p className="type-meta font-bold text-yellow-400 uppercase tracking-wide">Main thing to watch</p>
-              </div>
-              <p className="text-sm text-zinc-300 leading-relaxed">{pick.main_risk}</p>
-            </div>
-          )}
-
-          <p className="type-micro text-muted pt-1">
-            {pick.narrative_source === 'llm'
-              ? 'Summary written by AI · prices and ratings from public data'
-              : llmEnabled
-                ? 'Signal-based summary · AI summary loading…'
-                : 'Summary from the signals above · prices and ratings from public data'}
-            {pick.narrative_generated_at && (
-              <span className="block mt-0.5">
-                Summary from {timeAgo(pick.narrative_generated_at)}
-              </span>
-            )}
-          </p>
-        </div>
-      </PickAccordionRow>
+        <PickSectionTabs
+          cardId={cardId}
+          tabs={sectionTabs}
+          active={activeSection}
+          onSelect={selectSection}
+          panel={sectionPanel}
+        />
       </div>
     </div>
   )
