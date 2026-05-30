@@ -7,10 +7,23 @@ const STALE_MS = 24 * 3600 * 1000
 const WHATSAPP_SAFE_MAX = 3900
 const MAX_TAGS = 2
 
-const FOOTER = '\n\nReply STOP to opt out'
+const HOLDING_DIVIDER = '\n\n────────────────\n\n'
+const FOOTER = '\n\n—\n_Reply STOP to opt out_'
 
 export type FormatBriefingOptions = {
   payload: PortfolioDailySummaryPayload
+}
+
+function sentimentEmoji(s: PortfolioSummarySentiment): string {
+  if (s === 'positive') return '🟢'
+  if (s === 'negative') return '🔴'
+  return '⚪'
+}
+
+function portfolioEmoji(s: PortfolioSummarySentiment): string {
+  if (s === 'positive') return '📈'
+  if (s === 'negative') return '📉'
+  return '📊'
 }
 
 function sentimentLabel(s: PortfolioSummarySentiment): string {
@@ -28,7 +41,30 @@ function holdingLabelsLine(h: HoldingDailySummary): string {
 }
 
 function formatHoldingBlock(h: HoldingDailySummary): string {
-  return `*${h.ticker}*\n${holdingLabelsLine(h)}\n${h.summary.trim()}\n`
+  return [
+    `*${h.ticker}*`,
+    `${sentimentEmoji(h.sentiment)} ${holdingLabelsLine(h)}`,
+    '',
+    h.summary.trim(),
+  ].join('\n')
+}
+
+function formatOverflowNote(remaining: number): string {
+  if (remaining <= 0) return ''
+  return `\n\n➕ *+${remaining} more in the app*`
+}
+
+function buildHeader(payload: PortfolioDailySummaryPayload, isStale: boolean): string {
+  const lines = ['📊 *Stocklens · Daily briefing*']
+  if (isStale) {
+    lines.push(`🕐 As of ${formatIstShortDate(payload.generated_at)}`)
+  }
+  lines.push(
+    '',
+    `${portfolioEmoji(payload.portfolio_sentiment)} *${payload.portfolio_headline.trim()}*`,
+    '',
+  )
+  return lines.join('\n')
 }
 
 export function formatBriefingForWhatsApp(options: FormatBriefingOptions): string {
@@ -37,18 +73,14 @@ export function formatBriefingForWhatsApp(options: FormatBriefingOptions): strin
   const ageMs = Date.now() - new Date(payload.generated_at).getTime()
   const isStale = ageMs > STALE_MS
 
-  const headerLines = ['Stocklens · Daily briefing']
-  if (isStale) {
-    headerLines.push(`As of ${formatIstShortDate(payload.generated_at)}`)
-  }
-
-  let body = [...headerLines, '', payload.portfolio_headline.trim(), ''].join('\n')
+  let body = buildHeader(payload, isStale)
 
   let omitted = 0
   for (let i = 0; i < payload.holdings.length; i++) {
     const h = payload.holdings[i]!
-    const block = formatHoldingBlock(h)
-    const overflowNote = omitted > 0 ? '' : `\n+${payload.holdings.length - i} more in the app\n`
+    const prefix = i > 0 ? HOLDING_DIVIDER : ''
+    const block = prefix + formatHoldingBlock(h)
+    const overflowNote = omitted > 0 ? '' : formatOverflowNote(payload.holdings.length - i)
     const projected = body + block + overflowNote + FOOTER
 
     if (projected.length > WHATSAPP_SAFE_MAX) {
@@ -59,7 +91,7 @@ export function formatBriefingForWhatsApp(options: FormatBriefingOptions): strin
   }
 
   if (omitted > 0) {
-    body += `\n+${omitted} more in the app\n`
+    body += formatOverflowNote(omitted)
   }
 
   return (body.trimEnd() + FOOTER).trim()
