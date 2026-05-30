@@ -166,6 +166,11 @@ function signalCoversTarget(reasons: SignalReason[]): boolean {
   return reasons.some((r) => /target|room to grow/i.test(r.label))
 }
 
+/** Day % is already shown under the price in the card header. */
+function isDayMoveReason(reason: SignalReason): boolean {
+  return /% today$/i.test(reason.label)
+}
+
 function SupplementalSummaryChips({
   fundamentals,
   currentPrice,
@@ -725,7 +730,10 @@ export default function WatchlistCard({
                 currentPrice={currentPrice}
                 signalReasons={signal.reasons}
               />
-              <SignalReasonChips reasons={signal.reasons} className="contents" />
+              <SignalReasonChips
+                reasons={signal.reasons.filter((r) => !isDayMoveReason(r))}
+                className="contents"
+              />
             </>
           ) : (
             <CollapsedSummary

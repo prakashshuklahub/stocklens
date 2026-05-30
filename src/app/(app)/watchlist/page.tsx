@@ -45,7 +45,7 @@ const SORT_STORAGE_KEY = 'watchlist-sort'
 const UNTAGGED_LABEL = 'Untagged'
 
 function loadSortMode(): WatchlistSort {
-  if (typeof window === 'undefined') return 'sector'
+  if (typeof window === 'undefined') return 'day_change'
   const saved = sessionStorage.getItem(SORT_STORAGE_KEY)
   if (
     saved === 'day_change' ||
@@ -58,7 +58,7 @@ function loadSortMode(): WatchlistSort {
   ) {
     return saved
   }
-  return 'sector'
+  return 'day_change'
 }
 
 function sortBySignalBias(
@@ -128,9 +128,9 @@ function WatchlistSortBar({
   onChange: (mode: WatchlistSort) => void
 }) {
   const options: FilterChipOption<WatchlistSort>[] = [
+    { id: 'day_change', label: 'Day %' },
     { id: 'sector', label: 'Sector' },
     { id: 'tag', label: 'Tag' },
-    { id: 'day_change', label: 'Day %' },
     { id: 'bullish', label: 'Bullish', tone: 'bullish' },
     { id: 'bearish', label: 'Bearish', tone: 'bearish' },
     { id: 'target_upside', label: 'Room to grow' },
