@@ -34,6 +34,10 @@ export interface WatchlistStock {
 export interface StockSnapshot {
   price: number | null
   change_1d_pct: number | null
+  /** Regular-session day high from Yahoo quote. */
+  day_high?: number | null
+  /** Regular-session day low from Yahoo quote. */
+  day_low?: number | null
   /** pre | regular | post | closed — from Yahoo marketState */
   session?: MarketSession
   /** @deprecated use session !== 'closed' */

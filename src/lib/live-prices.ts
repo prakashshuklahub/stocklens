@@ -5,6 +5,8 @@ import type { StockSnapshot } from '@/types'
 export type LivePriceSnapshot = {
   price: number
   change_1d_pct: number
+  day_high?: number | null
+  day_low?: number | null
   session: MarketSession
   as_of?: number | null
   sector?: WatchlistSector | null
@@ -44,6 +46,18 @@ function quoteSector(q: Record<string, unknown>): WatchlistSector | null {
   return raw ? normalizeSector(raw) : null
 }
 
+function dayRangeFromYahoo(q: Record<string, unknown>): {
+  day_high: number | null
+  day_low: number | null
+} {
+  const high = q.regularMarketDayHigh
+  const low = q.regularMarketDayLow
+  return {
+    day_high: typeof high === 'number' && high > 0 ? high : null,
+    day_low: typeof low === 'number' && low > 0 ? low : null,
+  }
+}
+
 /** Regular-session price only — last close when market is closed. */
 function parseYahooQuote(q: Record<string, unknown>): LivePriceSnapshot | null {
   if (typeof q.regularMarketPrice !== 'number') return null
@@ -55,10 +69,13 @@ function parseYahooQuote(q: Record<string, unknown>): LivePriceSnapshot | null {
       ? q.regularMarketChangePercent
       : pctChange(price, prevClose)
   const state = String(q.marketState ?? '').toUpperCase()
+  const { day_high, day_low } = dayRangeFromYahoo(q)
 
   return {
     price,
     change_1d_pct,
+    day_high,
+    day_low,
     session: state === 'REGULAR' ? 'regular' : 'closed',
     as_of: yahooTimeToMs(q.regularMarketTime),
     sector: quoteSector(q),
@@ -146,10 +163,13 @@ async function fetchChartFallback(sym: string): Promise<LivePriceSnapshot | null
 
     const price = meta.regularMarketPrice
     const prevClose = (meta.chartPreviousClose ?? meta.previousClose) as number | undefined
+    const { day_high, day_low } = dayRangeFromYahoo(meta)
 
     return {
       price,
       change_1d_pct: pctChange(price, prevClose),
+      day_high,
+      day_low,
       session: isUSMarketOpen() ? 'regular' : 'closed',
       as_of: yahooTimeToMs(meta.regularMarketTime),
     }
@@ -181,6 +201,8 @@ export function toStockSnapshot(snap: LivePriceSnapshot): StockSnapshot {
   return {
     price: snap.price,
     change_1d_pct: snap.change_1d_pct,
+    day_high: snap.day_high ?? null,
+    day_low: snap.day_low ?? null,
     session: snap.session,
     is_live: snap.session === 'regular',
     as_of: snap.as_of ?? null,

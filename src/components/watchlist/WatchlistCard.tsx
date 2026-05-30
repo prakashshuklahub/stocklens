@@ -472,6 +472,9 @@ export default function WatchlistCard({
   const price = fmtPrice(snap?.price)
   const pct = fmtPct(snap?.change_1d_pct)
   const isUp = (snap?.change_1d_pct ?? 0) >= 0
+  const dayHigh = fmtPrice(snap?.day_high)
+  const dayLow = fmtPrice(snap?.day_low)
+  const showDayRange = Boolean(dayHigh && dayLow)
   const currentPrice = snap?.price ?? null
   const badgeSession = priceBadgeSession(snap?.session, marketSession)
   const sectorLabel = vsSector?.sector ?? normalizeWatchlistSector(stock.sector)
@@ -694,6 +697,11 @@ export default function WatchlistCard({
                 {pct && (
                   <p className={cn('text-sm font-semibold tabular-nums mt-0.5', isUp ? 'text-emerald-400' : 'text-red-400')}>
                     {pct}
+                  </p>
+                )}
+                {showDayRange && (
+                  <p className="text-xs text-zinc-500 tabular-nums mt-0.5">
+                    H {dayHigh} · L {dayLow}
                   </p>
                 )}
               </>
