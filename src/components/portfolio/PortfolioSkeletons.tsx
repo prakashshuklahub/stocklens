@@ -83,29 +83,29 @@ export function HoldingCardSkeleton({
 
   return (
     <div className={cn('card-surface overflow-hidden', holdingBorderClass(variant))} aria-hidden="true">
-      <div className="px-4 py-3.5 space-y-2.5">
-        <div className="flex items-start gap-3">
+      <div className="px-4 py-3.5">
+        <div className="flex gap-3">
           <SkeletonBar className="h-10 w-10 rounded-xl shrink-0" delayMs={stagger} />
           <div className="flex-1 min-w-0">
-            <div className="flex items-center gap-2 flex-wrap">
-              <SkeletonBar className="h-6 w-14" delayMs={stagger + 30} />
-              {flagged && <SkeletonBar className="h-5 w-[7.5rem] rounded-full" delayMs={stagger + 50} />}
+            <div className="flex items-start justify-between gap-3">
+              <div className="min-w-0 flex-1 space-y-1">
+                <div className="flex items-center gap-2 flex-wrap">
+                  <SkeletonBar className="h-6 w-14" delayMs={stagger + 30} />
+                  {flagged && <SkeletonBar className="h-5 w-[7.5rem] rounded-full" delayMs={stagger + 50} />}
+                </div>
+                <SkeletonBar className="h-4 w-[min(100%,10rem)]" delayMs={stagger + 70} />
+              </div>
+              <div className="text-right shrink-0 space-y-1">
+                <SkeletonBar className="h-6 w-20 ml-auto" delayMs={stagger + 40} />
+                <SkeletonBar className="h-4 w-24 ml-auto" delayMs={stagger + 55} />
+              </div>
             </div>
-            <SkeletonBar className="h-4 w-[min(100%,10rem)] mt-1.5" delayMs={stagger + 70} />
+            <div className="mt-3 pt-3 border-t border-white/[0.06] grid grid-cols-3 gap-x-4 gap-y-3">
+              <SkeletonBar className="h-10 w-full" delayMs={stagger + 80} />
+              <SkeletonBar className="h-10 w-full" delayMs={stagger + 90} />
+              <SkeletonBar className="h-10 w-full" delayMs={stagger + 100} />
+            </div>
           </div>
-          <div className="text-right shrink-0 space-y-1.5">
-            <SkeletonBar className="h-5 w-16 ml-auto" delayMs={stagger + 40} />
-            <SkeletonBar className="h-4 w-12 ml-auto" delayMs={stagger + 60} />
-          </div>
-        </div>
-
-        <div className="space-y-1">
-          <SkeletonBar className="h-3.5 w-40" delayMs={stagger + 90} />
-          <SkeletonBar className="h-3.5 w-[min(100%,13rem)]" delayMs={stagger + 110} />
-        </div>
-
-        <div className="pt-0.5">
-          <SkeletonBar className="h-9 w-44 rounded-full" delayMs={stagger + 130} />
         </div>
       </div>
 
@@ -136,6 +136,55 @@ export function PortfolioHoldingsSkeleton({ count = 4 }: { count?: number }) {
           variant={HOLDING_VARIANTS[i % HOLDING_VARIANTS.length]}
         />
       ))}
+    </div>
+  )
+}
+
+export function PortfolioCompactHoldingsSkeleton({ count = 6 }: { count?: number }) {
+  return (
+    <div className="card-surface overflow-hidden divide-y divide-white/[0.06]" aria-hidden="true">
+      {Array.from({ length: count }, (_, i) => (
+        <div key={i} className="flex items-center justify-between gap-3 px-3 py-2.5 min-h-[52px]">
+          <div className="flex-1 space-y-1.5">
+            <div className="h-3.5 w-12 rounded bg-zinc-800/75 animate-pulse" style={{ animationDelay: `${i * 40}ms` }} />
+            <div className="h-3 w-28 rounded bg-zinc-800/60 animate-pulse" style={{ animationDelay: `${i * 40 + 20}ms` }} />
+          </div>
+          <div className="space-y-1.5 text-right">
+            <div className="h-3.5 w-16 rounded bg-zinc-800/75 animate-pulse ml-auto" style={{ animationDelay: `${i * 40 + 10}ms` }} />
+            <div className="h-3 w-14 rounded bg-zinc-800/60 animate-pulse ml-auto" style={{ animationDelay: `${i * 40 + 30}ms` }} />
+          </div>
+        </div>
+      ))}
+    </div>
+  )
+}
+
+export function PortfolioTableHoldingsSkeleton({ count = 5 }: { count?: number }) {
+  return (
+    <div className="card-surface overflow-hidden" aria-hidden="true">
+      <div className="grid grid-cols-[minmax(0,1fr)_4.75rem_5.25rem] gap-x-2 px-3 py-2 border-b border-white/[0.06]">
+        <SkeletonBar className="h-3 w-10" />
+        <SkeletonBar className="h-3 w-10 ml-auto" />
+        <SkeletonBar className="h-3 w-10 ml-auto" />
+      </div>
+      <div className="divide-y divide-white/[0.06]">
+        {Array.from({ length: count }, (_, i) => (
+          <div
+            key={i}
+            className="grid grid-cols-[minmax(0,1fr)_4.75rem_5.25rem] gap-x-2 items-center px-3 py-2.5 min-h-[56px]"
+          >
+            <div className="flex items-center gap-2 min-w-0">
+              <SkeletonBar className="h-8 w-8 rounded-lg shrink-0" delayMs={i * 40} />
+              <div className="flex-1 space-y-1.5 min-w-0">
+                <SkeletonBar className="h-3.5 w-12" delayMs={i * 40 + 20} />
+                <SkeletonBar className="h-3 w-20" delayMs={i * 40 + 35} />
+              </div>
+            </div>
+            <SkeletonBar className="h-8 w-full" delayMs={i * 40 + 10} />
+            <SkeletonBar className="h-8 w-full" delayMs={i * 40 + 15} />
+          </div>
+        ))}
+      </div>
     </div>
   )
 }

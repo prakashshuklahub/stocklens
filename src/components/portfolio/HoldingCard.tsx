@@ -5,12 +5,13 @@ import { Eye } from 'lucide-react'
 import CollapseChevron from '@/components/CollapseChevron'
 import StockLogo from '@/components/StockLogo'
 import { TIER_BADGE_LABELS } from '@/lib/portfolio-alerts'
+import {
+  computeHoldingMetrics,
+  fmtHolding,
+  formatShareQty,
+} from '@/lib/portfolio-holding-metrics'
 import { cn } from '@/lib/utils'
 import type { HoldingSignal, HoldingSignalTier, PickFactor, PortfolioHoldingWithSignal } from '@/types'
-
-function fmt(n: number, decimals = 2) {
-  return n.toLocaleString('en-US', { minimumFractionDigits: decimals, maximumFractionDigits: decimals })
-}
 
 function truncatePreview(text: string, max = 72): string {
   const t = text.trim()
@@ -32,19 +33,38 @@ function tierBorderClass(tier: HoldingSignalTier): string {
   return 'border-white/[0.06]'
 }
 
-function PnlPill({ pnl, pnlPct, isPos }: { pnl: number; pnlPct: number; isPos: boolean }) {
+function pnlToneClass(isPos: boolean): string {
+  return isPos ? 'text-emerald-400' : 'text-red-400'
+}
+
+function StatCell({
+  label,
+  value,
+  detail,
+  detailTone,
+}: {
+  label: string
+  value: string
+  detail?: string
+  detailTone?: 'pos' | 'neg' | 'neutral'
+}) {
   return (
-    <span
-      className={cn(
-        'inline-flex items-center gap-1.5 rounded-full tabular-nums font-bold text-sm px-3 py-1.5',
-        isPos ? 'bg-emerald-500/15 text-emerald-400' : 'bg-red-500/15 text-red-400',
+    <div className="min-w-0">
+      <p className="type-micro font-medium text-zinc-500 uppercase tracking-wide">{label}</p>
+      <p className="text-sm font-semibold text-white tabular-nums leading-snug mt-0.5 truncate">{value}</p>
+      {detail && (
+        <p
+          className={cn(
+            'text-xs tabular-nums mt-0.5 truncate',
+            detailTone === 'pos' && 'text-emerald-400/90',
+            detailTone === 'neg' && 'text-red-400/90',
+            (!detailTone || detailTone === 'neutral') && 'text-zinc-500',
+          )}
+        >
+          {detail}
+        </p>
       )}
-    >
-      {isPos ? '+' : '-'}${fmt(Math.abs(pnl))}
-      <span className="opacity-90">
-        ({isPos ? '+' : ''}{fmt(pnlPct)}%)
-      </span>
-    </span>
+    </div>
   )
 }
 
@@ -102,7 +122,7 @@ function SignalDetailRow({
         aria-controls={`${cardId}-panel`}
         onClick={() => setOpen((o) => !o)}
         className={cn(
-          'w-full text-left px-4 py-2',
+          'w-full text-left px-4 py-2.5',
           'active:brightness-95 transition-all [touch-action:manipulation]',
           'focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-blue-500/40',
         )}
@@ -136,7 +156,7 @@ function SignalDetailRow({
             </div>
           )}
           {signal.review_reason && (
-            <p className="text-sm text-zinc-200 leading-relaxed">{signal.review_reason}</p>
+            <p className="text-sm text-zinc-200 leading-relaxed [text-wrap:pretty]">{signal.review_reason}</p>
           )}
           {signal.caveat && (
             <p className="text-xs text-zinc-500 leading-relaxed border-l-2 border-zinc-700 pl-3">
@@ -159,15 +179,24 @@ export function HoldingCard({
   h: PortfolioHoldingWithSignal
   preview?: boolean
 }) {
-  const price = h.snapshot?.price ?? null
-  const change1d = h.snapshot?.change_1d_pct ?? null
-  const currentValue = price != null ? price * h.quantity : null
-  const invested = h.avg_cost_basis * h.quantity
-  const pnl = currentValue != null ? currentValue - invested : null
-  const pnlPct = invested && pnl != null ? (pnl / invested) * 100 : null
-  const isPos = pnl != null ? pnl >= 0 : null
+  const {
+    price,
+    change1d,
+    currentValue,
+    invested,
+    pnl,
+    pnlPct,
+    isPos,
+  } = computeHoldingMetrics(h)
   const signal = h.signal
   const flagged = signal.tier !== 'quiet'
+
+  const priceDetail =
+    change1d != null
+      ? `${change1d >= 0 ? '+' : ''}${fmtHolding(change1d)}% today`
+      : undefined
+  const priceDetailTone: 'pos' | 'neg' | undefined =
+    change1d != null ? (change1d >= 0 ? 'pos' : 'neg') : undefined
 
   return (
     <div className={cn(
@@ -175,60 +204,65 @@ export function HoldingCard({
       flagged ? tierBorderClass(signal.tier) : 'border-white/[0.06]',
       preview && flagged && 'opacity-90',
     )}>
-      <div className="px-4 py-3.5 space-y-2.5">
-        <div className="flex items-start gap-3">
-          <StockLogo ticker={h.ticker} size="md" />
+      <div className="px-4 py-3.5">
+        <div className="flex gap-3">
+          <StockLogo ticker={h.ticker} size="md" className="shrink-0 mt-0.5" />
+
           <div className="flex-1 min-w-0">
-            <div className="flex items-center gap-2 flex-wrap">
-              <span className="text-lg font-bold text-white tracking-tight">{h.ticker}</span>
-              {flagged && (
-                <span className={cn(
-                  'type-micro font-bold uppercase tracking-wide px-2 py-0.5 rounded-full',
-                  tierBadgeClass(signal.tier),
-                )}>
-                  {TIER_BADGE_LABELS[signal.tier as keyof typeof TIER_BADGE_LABELS]}
-                </span>
-              )}
-            </div>
-            {h.company_name && (
-              <p className="text-sm text-zinc-400 truncate leading-snug">{h.company_name}</p>
-            )}
-          </div>
-          <div className="text-right shrink-0">
-            <p className="text-base font-bold text-white tabular-nums leading-tight">
-              {price != null ? `$${fmt(price)}` : '—'}
-            </p>
-            {change1d != null && (
-              <p
-                className={cn(
-                  'text-sm tabular-nums font-semibold mt-0.5',
-                  change1d >= 0 ? 'text-emerald-400' : 'text-red-400',
+            {/* Primary: identity + hero numbers */}
+            <div className="flex items-start justify-between gap-3">
+              <div className="min-w-0 flex-1">
+                <div className="flex items-center gap-2 flex-wrap">
+                  <span className="text-lg font-bold text-white tracking-tight">{h.ticker}</span>
+                  {flagged && (
+                    <span className={cn(
+                      'type-micro font-bold uppercase tracking-wide px-2 py-0.5 rounded-full',
+                      tierBadgeClass(signal.tier),
+                    )}>
+                      {TIER_BADGE_LABELS[signal.tier as keyof typeof TIER_BADGE_LABELS]}
+                    </span>
+                  )}
+                </div>
+                {h.company_name && (
+                  <p className="text-sm text-zinc-400 truncate leading-snug mt-0.5">{h.company_name}</p>
                 )}
-              >
-                {change1d >= 0 ? '+' : ''}{fmt(change1d)}%
-              </p>
-            )}
+              </div>
+
+              <div className="text-right shrink-0 tabular-nums">
+                <p className="text-lg font-bold text-white leading-none">
+                  {currentValue != null ? `$${fmtHolding(currentValue)}` : '—'}
+                </p>
+                {pnl != null && pnlPct != null && isPos != null && (
+                  <p className={cn('text-sm font-semibold mt-1 leading-tight', pnlToneClass(isPos))}>
+                    {isPos ? '+' : '-'}${fmtHolding(Math.abs(pnl))}
+                    <span className="opacity-90 font-medium">
+                      {' '}({isPos ? '+' : ''}{fmtHolding(pnlPct)}%)
+                    </span>
+                  </p>
+                )}
+              </div>
+            </div>
+
+            {/* Secondary: labeled stats grid — scan top-to-bottom, label then value */}
+            <div className="mt-3 pt-3 border-t border-white/[0.06] grid grid-cols-3 gap-x-4 gap-y-3">
+              <StatCell
+                label="Position"
+                value={`${formatShareQty(h.quantity)} sh`}
+                detail={`Avg $${fmtHolding(h.avg_cost_basis)}`}
+              />
+              <StatCell
+                label="Price"
+                value={price != null ? `$${fmtHolding(price)}` : '—'}
+                detail={priceDetail}
+                detailTone={priceDetailTone}
+              />
+              <StatCell
+                label="Invested"
+                value={`$${fmtHolding(invested)}`}
+              />
+            </div>
           </div>
         </div>
-
-        <div className="space-y-1">
-          <p className="type-meta text-zinc-300 tabular-nums">
-            <span className="font-semibold text-white">{fmt(h.quantity, 0)} shares</span>
-            {' '}@ ${fmt(h.avg_cost_basis)} avg
-          </p>
-          <p className="type-meta text-muted-preview tabular-nums">
-            Invested ${fmt(invested)}
-            {currentValue != null && (
-              <> → worth <span className="text-zinc-200 font-semibold">${fmt(currentValue)}</span></>
-            )}
-          </p>
-        </div>
-
-        {pnl != null && pnlPct != null && isPos != null && (
-          <div className="pt-0.5">
-            <PnlPill pnl={pnl} pnlPct={pnlPct} isPos={isPos} />
-          </div>
-        )}
       </div>
 
       {flagged && (

@@ -13,18 +13,27 @@ import {
   Eye,
 } from 'lucide-react'
 import AppNav from '@/components/AppNav'
-import FilterChipBar, { type FilterChipOption } from '@/components/FilterChipBar'
 import StockLogo from '@/components/StockLogo'
 import { HoldingCard } from '@/components/portfolio/HoldingCard'
+import HoldingsCompactList from '@/components/portfolio/HoldingsCompactList'
+import HoldingsTableList from '@/components/portfolio/HoldingsTableList'
 import PortfolioDailySummary from '@/components/portfolio/PortfolioDailySummary'
+import PortfolioHoldingsViewToggle, {
+  loadPortfolioHoldingsView,
+  persistPortfolioHoldingsView,
+  type PortfolioHoldingsView,
+} from '@/components/portfolio/PortfolioHoldingsViewToggle'
 import {
+  PortfolioCompactHoldingsSkeleton,
   PortfolioHoldingsSkeleton,
   PortfolioSummarySkeleton,
+  PortfolioTableHoldingsSkeleton,
 } from '@/components/portfolio/PortfolioSkeletons'
 import { RefreshCountdown } from '@/components/LiveRefreshHeader'
 import { useMarketOpen } from '@/hooks/useMarketOpen'
 import { useLivePriceRefresh } from '@/hooks/useLivePriceRefresh'
 import { PORTFOLIO_ALERT_DEMO } from '@/lib/portfolio-alerts'
+import { computeHoldingMetrics } from '@/lib/portfolio-holding-metrics'
 import { mergePriceSnapshots } from '@/lib/portfolio-signals'
 import { cn } from '@/lib/utils'
 import type {
@@ -35,19 +44,6 @@ import type {
   PortfolioWithSignalsResponse,
   VestedRow,
 } from '@/types'
-
-type TierFilter = 'all' | 'attention' | 'soft' | 'profit'
-
-const TIER_FILTER_STORAGE_KEY = 'portfolio-tier-filter'
-
-function loadTierFilter(): TierFilter {
-  if (typeof window === 'undefined') return 'all'
-  const saved = sessionStorage.getItem(TIER_FILTER_STORAGE_KEY)
-  if (saved === 'all' || saved === 'attention' || saved === 'soft' || saved === 'profit') {
-    return saved
-  }
-  return 'all'
-}
 
 const signalsFetcher = async (url: string): Promise<PortfolioWithSignalsResponse> => {
   const res = await fetch(url, { cache: 'no-store' })
@@ -224,16 +220,17 @@ function alertToDemoHolding(alert: PortfolioAlert, index: number): PortfolioHold
 
 const DEMO_HOLDINGS = PORTFOLIO_ALERT_DEMO.map(alertToDemoHolding)
 
-const TIER_FILTERS: FilterChipOption<TierFilter>[] = [
-  { id: 'all', label: 'All' },
-  { id: 'attention', label: 'Needs attention', tone: 'attention' },
-  { id: 'soft', label: 'Worth watching', tone: 'soft' },
-  { id: 'profit', label: 'Target reached', tone: 'profit' },
-]
-
-function filterHoldings(holdings: PortfolioHoldingWithSignal[], filter: TierFilter): PortfolioHoldingWithSignal[] {
-  if (filter === 'all') return holdings
-  return holdings.filter((h) => h.signal.tier === filter)
+/** Highest unrealized P&L first; missing prices last; tie-break by ticker. */
+function sortHoldingsByPnlDesc(holdings: PortfolioHoldingWithSignal[]): PortfolioHoldingWithSignal[] {
+  return [...holdings].sort((a, b) => {
+    const pa = computeHoldingMetrics(a).pnl
+    const pb = computeHoldingMetrics(b).pnl
+    if (pa == null && pb == null) return a.ticker.localeCompare(b.ticker)
+    if (pa == null) return 1
+    if (pb == null) return -1
+    if (pb !== pa) return pb - pa
+    return a.ticker.localeCompare(b.ticker)
+  })
 }
 
 function HoldingsSection({
@@ -251,18 +248,35 @@ function HoldingsSection({
   loading?: boolean
   preview?: boolean
 }) {
-  const [tierFilter, setTierFilter] = useState<TierFilter>(() => loadTierFilter())
-  const filtered = useMemo(() => filterHoldings(holdings, tierFilter), [holdings, tierFilter])
+  const [view, setView] = useState<PortfolioHoldingsView>(() => loadPortfolioHoldingsView())
 
   useEffect(() => {
-    sessionStorage.setItem(TIER_FILTER_STORAGE_KEY, tierFilter)
-  }, [tierFilter])
+    persistPortfolioHoldingsView(view)
+  }, [view])
+
+  const onViewChange = useCallback((next: PortfolioHoldingsView) => {
+    setView(next)
+  }, [])
+
+  const sortedHoldings = useMemo(() => sortHoldingsByPnlDesc(holdings), [holdings])
+
+  const showToolbar = !preview && (loading || holdings.length > 0)
 
   return (
     <section className="mb-5" aria-label="Your holdings">
-      {marketOpen && !preview && !loading && (
-        <div className="flex items-center justify-end gap-2 mb-2 px-0.5">
-          <RefreshCountdown seconds={countdown} refreshing={refreshing} />
+      {showToolbar && (
+        <div className="flex items-center justify-between gap-2 mb-2 px-0.5 min-h-[28px]">
+          <span className="type-meta text-zinc-500 tabular-nums">
+            {loading ? '…' : `${holdings.length} stock${holdings.length === 1 ? '' : 's'}`}
+          </span>
+          <div className="flex items-center gap-2 shrink-0">
+            {marketOpen && !loading && (
+              <RefreshCountdown seconds={countdown} refreshing={refreshing} />
+            )}
+            {!loading && (
+              <PortfolioHoldingsViewToggle value={view} onChange={onViewChange} />
+            )}
+          </div>
         </div>
       )}
 
@@ -272,27 +286,23 @@ function HoldingsSection({
         </p>
       )}
 
-      {!preview && (loading || holdings.length > 0) && (
-        <FilterChipBar
-          value={tierFilter}
-          options={TIER_FILTERS}
-          onChange={setTierFilter}
-          ariaLabel="Filter holdings by signal"
-        />
-      )}
-
       {loading ? (
-        <PortfolioHoldingsSkeleton count={4} />
+        view === 'compact' ? (
+          <PortfolioCompactHoldingsSkeleton count={Math.max(holdings.length, 4)} />
+        ) : view === 'table' ? (
+          <PortfolioTableHoldingsSkeleton count={Math.max(holdings.length, 5)} />
+        ) : (
+          <PortfolioHoldingsSkeleton count={4} />
+        )
+      ) : view === 'compact' ? (
+        <HoldingsCompactList holdings={sortedHoldings} />
+      ) : view === 'table' ? (
+        <HoldingsTableList holdings={sortedHoldings} />
       ) : (
         <div className="space-y-3">
-          {filtered.map((h) => (
+          {sortedHoldings.map((h) => (
             <HoldingCard key={h.id} h={h} preview={preview} />
           ))}
-          {filtered.length === 0 && tierFilter !== 'all' && (
-            <p className="type-meta text-muted text-center py-6">
-              No holdings in this category.
-            </p>
-          )}
         </div>
       )}
 
