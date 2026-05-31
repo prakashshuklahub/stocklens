@@ -8,7 +8,8 @@ const WHATSAPP_SAFE_MAX = 3900
 const MAX_TAGS = 2
 
 const HOLDING_DIVIDER = '\n\n────────────────\n\n'
-const FOOTER = '\n\n—\n_Reply STOP to opt out_'
+export const WHATSAPP_HOLDING_DIVIDER = HOLDING_DIVIDER
+export const WHATSAPP_BRIEFING_FOOTER = '\n\n—\n_Reply STOP to opt out_'
 
 export type FormatBriefingOptions = {
   payload: PortfolioDailySummaryPayload
@@ -59,11 +60,7 @@ function buildHeader(payload: PortfolioDailySummaryPayload, isStale: boolean): s
   if (isStale) {
     lines.push(`🕐 As of ${formatIstShortDate(payload.generated_at)}`)
   }
-  lines.push(
-    '',
-    `${portfolioEmoji(payload.portfolio_sentiment)} *${payload.portfolio_headline.trim()}*`,
-    '',
-  )
+  lines.push('', `${portfolioEmoji(payload.portfolio_sentiment)} *${payload.portfolio_headline.trim()}*`)
   return lines.join('\n')
 }
 
@@ -78,10 +75,9 @@ export function formatBriefingForWhatsApp(options: FormatBriefingOptions): strin
   let omitted = 0
   for (let i = 0; i < payload.holdings.length; i++) {
     const h = payload.holdings[i]!
-    const prefix = i > 0 ? HOLDING_DIVIDER : ''
-    const block = prefix + formatHoldingBlock(h)
+    const block = WHATSAPP_HOLDING_DIVIDER + formatHoldingBlock(h)
     const overflowNote = omitted > 0 ? '' : formatOverflowNote(payload.holdings.length - i)
-    const projected = body + block + overflowNote + FOOTER
+    const projected = body + block + overflowNote + WHATSAPP_BRIEFING_FOOTER
 
     if (projected.length > WHATSAPP_SAFE_MAX) {
       omitted = payload.holdings.length - i
@@ -94,5 +90,5 @@ export function formatBriefingForWhatsApp(options: FormatBriefingOptions): strin
     body += formatOverflowNote(omitted)
   }
 
-  return (body.trimEnd() + FOOTER).trim()
+  return (body.trimEnd() + WHATSAPP_BRIEFING_FOOTER).trim()
 }

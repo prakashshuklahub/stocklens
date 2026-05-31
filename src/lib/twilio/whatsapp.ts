@@ -1,4 +1,8 @@
 import { env } from '@/lib/env'
+import {
+  WHATSAPP_BRIEFING_FOOTER,
+  WHATSAPP_HOLDING_DIVIDER,
+} from '@/lib/whatsapp/format-briefing'
 
 const INDIAN_MOBILE_RE = /^[6-9]\d{9}$/
 
@@ -74,15 +78,22 @@ function isPermanentTwilioError(code: number | null): boolean {
 /** Twilio WhatsApp sandbox body limit; production allows ~4096. */
 export const WHATSAPP_SANDBOX_BODY_MAX = 1600
 
-const FOOTER_RE = /\n\nReply STOP to opt out\s*$/
+const FOOTER_RE = /\n\n(?:—\n_)?Reply STOP to opt out_?\s*$/
+
+function stripBriefingFooter(body: string): string {
+  const idx = body.lastIndexOf(WHATSAPP_BRIEFING_FOOTER)
+  if (idx >= 0) return body.slice(0, idx).trimEnd()
+  const legacy = body.match(FOOTER_RE)
+  if (legacy?.index != null) return body.slice(0, legacy.index).trimEnd()
+  return body.trimEnd()
+}
 
 /** Split long briefings for sandbox (1600 char) at holding boundaries. */
 export function splitWhatsAppBody(body: string, maxLen = WHATSAPP_SANDBOX_BODY_MAX): string[] {
   if (body.length <= maxLen) return [body]
 
-  const footerMatch = body.match(FOOTER_RE)
-  const footer = footerMatch?.[0] ?? '\n\nReply STOP to opt out'
-  const main = footerMatch ? body.slice(0, -footer.length).trimEnd() : body.trimEnd()
+  const footer = WHATSAPP_BRIEFING_FOOTER
+  const main = stripBriefingFooter(body)
 
   const parts: string[] = []
   let rest = main
@@ -97,7 +108,8 @@ export function splitWhatsAppBody(body: string, maxLen = WHATSAPP_SANDBOX_BODY_M
     }
 
     const budget = maxLen - `\n\n(continued ${partIndex + 1}/…)`.length
-    let splitAt = rest.lastIndexOf('\n*', budget)
+    let splitAt = rest.lastIndexOf(WHATSAPP_HOLDING_DIVIDER, budget)
+    if (splitAt <= 0) splitAt = rest.lastIndexOf('\n*', budget)
     if (splitAt <= 0) splitAt = budget
 
     parts.push(`${rest.slice(0, splitAt).trim()}\n\n(continued ${partIndex + 1}/…)`)

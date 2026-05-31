@@ -6,7 +6,6 @@ import { Briefcase, Loader2 } from 'lucide-react'
 import CollapseChevron from '@/components/CollapseChevron'
 import StockLogo from '@/components/StockLogo'
 import { PORTFOLIO_SUMMARY_TAG_LABELS } from '@/lib/portfolio-summary-tags'
-import { getUSMarketSession } from '@/lib/market-hours'
 import { cn } from '@/lib/utils'
 import type { PortfolioSummaryResponse, PortfolioSummarySentiment } from '@/types'
 
@@ -57,7 +56,7 @@ export default function PortfolioDailySummary({ holdingCount, pending = false }:
   const { data, isLoading, mutate } = useSWR<PortfolioSummaryResponse>(
     shouldFetch ? '/api/portfolio/summary' : null,
     fetcher,
-    { revalidateOnFocus: false, refreshInterval: (latest) => (latest?.stale ? 5000 : 0) },
+    { revalidateOnFocus: false, refreshInterval: (latest) => (latest?.refreshing ? 5000 : 0) },
   )
 
   const [open, setOpen] = useState(false)
@@ -75,7 +74,7 @@ export default function PortfolioDailySummary({ holdingCount, pending = false }:
   }, [open, hydrated])
 
   const summary = data?.summary
-  const refreshing = Boolean(data?.refreshing || data?.stale)
+  const refreshing = Boolean(data?.refreshing)
 
   const metaLine = useMemo(() => {
     if (pending) return 'Preparing…'
@@ -164,8 +163,8 @@ export default function PortfolioDailySummary({ holdingCount, pending = false }:
                 </ul>
                 <p className="px-3 py-1.5 border-t border-white/[0.04] type-micro text-muted">
                   {summary.narrative_source === 'llm' ? 'AI summary' : 'Signal summary'}
-                  {getUSMarketSession() === 'regular' && data?.stale ? ' · updating…' : ''}
-                  {data?.stale && (
+                  {data?.refreshing ? ' · updating…' : ''}
+                  {(data?.stale || data?.refreshing) && (
                     <>
                       {' · '}
                       <button

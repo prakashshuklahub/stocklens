@@ -306,7 +306,6 @@ export async function regeneratePortfolioSummaryForUser(
   let portfolioSentiment = aggregatePortfolioSentiment(sentimentWeights)
   let portfolioHeadline = mechanicalPortfolioHeadline({
     portfolio_sentiment: portfolioSentiment,
-    day_pct: dayPct,
     leaders,
     laggards,
   })

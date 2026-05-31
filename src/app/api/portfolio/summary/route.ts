@@ -33,7 +33,8 @@ export async function GET(req: NextRequest) {
   const response: PortfolioSummaryResponse = {
     summary,
     stale: forceRefresh ? true : stale,
-    refreshing: refreshing || stale || forceRefresh,
+    /** True only while DB lock / Gemini run is in progress — not merely because cache TTL expired. */
+    refreshing,
     llm_enabled: isLLMEnabled(),
   }
 

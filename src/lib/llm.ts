@@ -471,7 +471,7 @@ For each holding:
 - If editorial.caution is present, state the risk directly.
 - sentiment + suggested_tags: copy suggested_tags subset; align sentiment with the analysis.
 
-portfolio_headline: one sentence on how the session shaped the portfolio. May include the portfolio day % if provided in the user prompt, plus which names drove the move and a material development when relevant.
+portfolio_headline: one sentence on how the session shaped the portfolio. Use qualitative language only (e.g. soft, mixed, constructive) — do NOT include portfolio day % or any aggregate percentage; the briefing refreshes every few hours and a snapshot % goes stale. Name which tickers drove the move and a material development when relevant.
 
 No buy/sell recommendations. No vendor names. Return strict JSON.`
 
@@ -558,15 +558,10 @@ async function callGeminiPortfolioBriefing(
 }
 
 function buildPortfolioBriefingPrompt(input: PortfolioBriefingInput): string {
-  const dayLine =
-    input.day_pct != null
-      ? `Portfolio day change: ${input.day_pct >= 0 ? '+' : ''}${input.day_pct.toFixed(2)}%`
-      : ''
   const lines = [
     'Blend editorial interpretation with selective key_metrics — not a stat dump.',
     '',
-    `Session tone: ${input.day_tone}`,
-    dayLine,
+    `Session tone (qualitative only for portfolio_headline — never quote portfolio day %): ${input.day_tone}`,
     `Holdings covered: ${input.holding_count}`,
     input.leaders.length ? `Primary contributors: ${input.leaders.join(', ')}` : '',
     input.laggards.length ? `Primary detractors: ${input.laggards.join(', ')}` : '',

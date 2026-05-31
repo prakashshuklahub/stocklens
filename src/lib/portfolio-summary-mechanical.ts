@@ -88,23 +88,28 @@ export function mechanicalHoldingHeadline(input: {
 
 export function mechanicalPortfolioHeadline(input: {
   portfolio_sentiment: PortfolioSummarySentiment
-  day_pct: number | null
   leaders: string[]
   laggards: string[]
 }): string {
-  const day =
-    input.day_pct != null
-      ? input.day_pct >= 0
-        ? `up about ${Math.abs(input.day_pct).toFixed(1)}% today`
-        : `down about ${Math.abs(input.day_pct).toFixed(1)}% today`
-      : 'mixed today'
+  const tone =
+    input.portfolio_sentiment === 'positive'
+      ? 'A constructive session across the portfolio'
+      : input.portfolio_sentiment === 'negative'
+        ? 'A soft session across the portfolio'
+        : 'A mixed session across the portfolio'
 
-  const drag =
-    input.laggards.length > 0 ? `; ${input.laggards.slice(0, 2).join(' and ')} are the main drag` : ''
-  const lift =
-    input.leaders.length > 0 && input.portfolio_sentiment === 'positive'
-      ? `, led by ${input.leaders.slice(0, 2).join(' and ')}`
-      : ''
+  if (input.portfolio_sentiment === 'positive' && input.leaders.length > 0) {
+    return `${tone}, led by ${input.leaders.slice(0, 3).join(', ')}.`
+  }
 
-  return `Portfolio is ${day}${lift}${drag}.`.replace(';. ', '; ')
+  if (input.laggards.length > 0) {
+    const drag = input.laggards.slice(0, 3).join(', ')
+    return `${tone}, with pullbacks concentrated in ${drag}.`
+  }
+
+  if (input.leaders.length > 0) {
+    return `${tone}, with ${input.leaders.slice(0, 3).join(', ')} among the standouts.`
+  }
+
+  return `${tone}.`
 }
