@@ -162,7 +162,7 @@ export function PortfolioCompactHoldingsSkeleton({ count = 6 }: { count?: number
 export function PortfolioTableHoldingsSkeleton({ count = 5 }: { count?: number }) {
   return (
     <div className="card-surface overflow-hidden" aria-hidden="true">
-      <div className="grid grid-cols-[minmax(0,1fr)_4.75rem_5.25rem] gap-x-2 px-3 py-2 border-b border-white/[0.06]">
+      <div className="grid grid-cols-[minmax(0,1fr)_5rem_5.5rem] gap-x-2 px-3 py-2.5 border-b border-white/[0.06]">
         <SkeletonBar className="h-3 w-10" />
         <SkeletonBar className="h-3 w-10 ml-auto" />
         <SkeletonBar className="h-3 w-10 ml-auto" />
@@ -171,7 +171,7 @@ export function PortfolioTableHoldingsSkeleton({ count = 5 }: { count?: number }
         {Array.from({ length: count }, (_, i) => (
           <div
             key={i}
-            className="grid grid-cols-[minmax(0,1fr)_4.75rem_5.25rem] gap-x-2 items-center px-3 py-2.5 min-h-[56px]"
+            className="grid grid-cols-[minmax(0,1fr)_5rem_5.5rem] gap-x-2 items-center px-3 py-3 min-h-[58px]"
           >
             <div className="flex items-center gap-2 min-w-0">
               <SkeletonBar className="h-8 w-8 rounded-lg shrink-0" delayMs={i * 40} />

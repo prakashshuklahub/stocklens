@@ -10,7 +10,6 @@ import {
   CheckCircle,
   X,
   AlertCircle,
-  Eye,
 } from 'lucide-react'
 import AppNav from '@/components/AppNav'
 import StockLogo from '@/components/StockLogo'
@@ -32,13 +31,10 @@ import {
 import { RefreshCountdown } from '@/components/LiveRefreshHeader'
 import { useMarketOpen } from '@/hooks/useMarketOpen'
 import { useLivePriceRefresh } from '@/hooks/useLivePriceRefresh'
-import { PORTFOLIO_ALERT_DEMO } from '@/lib/portfolio-alerts'
 import { computeHoldingMetrics } from '@/lib/portfolio-holding-metrics'
 import { mergePriceSnapshots } from '@/lib/portfolio-signals'
 import { cn } from '@/lib/utils'
 import type {
-  HoldingSignalTier,
-  PortfolioAlert,
   PortfolioHoldingWithPrice,
   PortfolioHoldingWithSignal,
   PortfolioWithSignalsResponse,
@@ -184,42 +180,6 @@ function SummaryBar({
   )
 }
 
-function alertToDemoHolding(alert: PortfolioAlert, index: number): PortfolioHoldingWithSignal {
-  const tier: HoldingSignalTier =
-    alert.headline.includes('target') || alert.factors.some((f) => f.label === 'Target in range')
-      ? 'profit'
-      : alert.severity === 'red'
-        ? 'attention'
-        : 'soft'
-
-  return {
-    id: `demo-${index}`,
-    user_id: 'demo',
-    ticker: alert.ticker,
-    company_name: alert.company_name,
-    quantity: alert.holding.quantity,
-    avg_cost_basis: alert.holding.avg_cost_basis,
-    broker: null,
-    synced_at: new Date().toISOString(),
-    snapshot: {
-      price: alert.holding.current_price,
-      change_1d_pct: 0,
-      as_of: Date.now(),
-    },
-    signal: {
-      tier,
-      score: alert.score,
-      headline: alert.headline,
-      factors: alert.factors,
-      review_reason: alert.review_reason,
-      caveat: alert.caveat,
-      narrative_source: alert.narrative_source,
-    },
-  }
-}
-
-const DEMO_HOLDINGS = PORTFOLIO_ALERT_DEMO.map(alertToDemoHolding)
-
 /** Highest unrealized P&L first; missing prices last; tie-break by ticker. */
 function sortHoldingsByPnlDesc(holdings: PortfolioHoldingWithSignal[]): PortfolioHoldingWithSignal[] {
   return [...holdings].sort((a, b) => {
@@ -239,14 +199,12 @@ function HoldingsSection({
   refreshing,
   marketOpen,
   loading,
-  preview,
 }: {
   holdings: PortfolioHoldingWithSignal[]
   countdown: number
   refreshing: boolean
   marketOpen: boolean
   loading?: boolean
-  preview?: boolean
 }) {
   const [view, setView] = useState<PortfolioHoldingsView>(() => loadPortfolioHoldingsView())
 
@@ -260,13 +218,13 @@ function HoldingsSection({
 
   const sortedHoldings = useMemo(() => sortHoldingsByPnlDesc(holdings), [holdings])
 
-  const showToolbar = !preview && (loading || holdings.length > 0)
+  const showToolbar = loading || holdings.length > 0
 
   return (
     <section className="mb-5" aria-label="Your holdings">
       {showToolbar && (
         <div className="flex items-center justify-between gap-2 mb-2 px-0.5 min-h-[28px]">
-          <span className="type-meta text-zinc-500 tabular-nums">
+          <span className="text-xs text-zinc-500 tabular-nums">
             {loading ? '…' : `${holdings.length} stock${holdings.length === 1 ? '' : 's'}`}
           </span>
           <div className="flex items-center gap-2 shrink-0">
@@ -278,12 +236,6 @@ function HoldingsSection({
             )}
           </div>
         </div>
-      )}
-
-      {preview && (
-        <p className="type-meta text-amber-400/80 mb-2 px-0.5">
-          Preview only — sample flagged holdings, not your portfolio. Sync Vested to scan your real holdings.
-        </p>
       )}
 
       {loading ? (
@@ -301,12 +253,12 @@ function HoldingsSection({
       ) : (
         <div className="space-y-3">
           {sortedHoldings.map((h) => (
-            <HoldingCard key={h.id} h={h} preview={preview} />
+            <HoldingCard key={h.id} h={h} />
           ))}
         </div>
       )}
 
-      {!preview && !loading && holdings.length > 0 && (
+      {!loading && holdings.length > 0 && (
         <p className="type-micro text-muted mt-2 leading-snug px-0.5">
           Live prices update every 13s during market hours.
         </p>
@@ -386,7 +338,6 @@ export default function PortfolioPage() {
   const [parseError, setParseError] = useState('')
   const [saving, setSaving] = useState(false)
   const [savedAt, setSavedAt] = useState<string | null>(null)
-  const [showPreview, setShowPreview] = useState(false)
 
   const marketOpen = useMarketOpen()
 
@@ -549,35 +500,6 @@ export default function PortfolioPage() {
             </>
           ) : holdings.length === 0 ? (
             <div className="pt-2 pb-12 space-y-4">
-              {showPreview ? (
-                <HoldingsSection
-                  holdings={DEMO_HOLDINGS}
-                  preview
-                  countdown={0}
-                  refreshing={false}
-                  marketOpen={marketOpen}
-                />
-              ) : (
-                <button
-                  type="button"
-                  onClick={() => setShowPreview(true)}
-                  className="w-full flex items-center justify-center gap-2 h-11 rounded-xl bg-zinc-900 text-zinc-300 text-sm font-semibold active:scale-[0.98] transition-all [touch-action:manipulation]"
-                >
-                  <Eye className="w-4 h-4 text-zinc-500" aria-hidden="true" />
-                  Preview sample flagged holdings
-                </button>
-              )}
-
-              {showPreview && (
-                <button
-                  type="button"
-                  onClick={() => setShowPreview(false)}
-                  className="w-full text-center text-xs text-zinc-500 py-1 [touch-action:manipulation]"
-                >
-                  Hide preview
-                </button>
-              )}
-
               <div className="flex items-start gap-3 bg-zinc-900 rounded-2xl px-4 py-4">
                 <div className="w-8 h-8 rounded-xl bg-blue-500/10 flex items-center justify-center shrink-0 mt-0.5">
                   <Upload className="w-4 h-4 text-blue-400" />

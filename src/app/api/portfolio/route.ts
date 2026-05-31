@@ -18,6 +18,11 @@ export async function GET(req: NextRequest) {
 
   const includeSignals = req.nextUrl.searchParams.get('include') === 'signals'
   const forceRefresh = req.nextUrl.searchParams.get('refresh') === '1' && isPriceRefreshActive()
+  const priceLive = isPriceRefreshActive()
+  const cacheHeaders = {
+    'X-Market-Open': priceLive ? '1' : '0',
+    'Cache-Control': priceLive ? 'private, no-store' : 'private, max-age=3600',
+  } as const
 
   const supabase = createServerClient()
   const { data: holdings, error } = await supabase
@@ -27,19 +32,15 @@ export async function GET(req: NextRequest) {
     .order('synced_at', { ascending: false })
 
   if (error) return NextResponse.json({ error: error.message }, { status: 500 })
-  if (!holdings?.length) return NextResponse.json(includeSignals ? { holdings: [], meta: null } : [])
+  if (!holdings?.length) {
+    return NextResponse.json(includeSignals ? { holdings: [], meta: null } : [], { headers: cacheHeaders })
+  }
 
   const list = holdings as PortfolioHolding[]
   const tickers = list.map((h) => h.ticker)
-  const priceLive = isPriceRefreshActive()
   const prices = await fetchRegularSnapshotsForTickers(tickers)
 
   void ensureLogosForTickers(supabase, tickers).catch(() => {})
-
-  const cacheHeaders = {
-    'X-Market-Open': priceLive ? '1' : '0',
-    'Cache-Control': priceLive ? 'private, no-store' : 'private, max-age=3600',
-  } as const
 
   if (!includeSignals) {
     const enriched: PortfolioHoldingWithPrice[] = list.map((h) => ({

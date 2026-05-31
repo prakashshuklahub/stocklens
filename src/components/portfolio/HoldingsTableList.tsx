@@ -15,12 +15,12 @@ export default function HoldingsTableList({
   return (
     <div className="card-surface overflow-hidden">
       <div
-        className="grid grid-cols-[minmax(0,1fr)_4.75rem_5.25rem] gap-x-2 items-center px-3 py-2 border-b border-white/[0.06] bg-zinc-900/40"
+        className="grid grid-cols-[minmax(0,1fr)_5rem_5.5rem] gap-x-2 items-center px-3 py-2.5 border-b border-white/[0.06] bg-zinc-900/40"
         aria-hidden="true"
       >
-        <span className="type-micro font-medium text-zinc-500 uppercase tracking-wide">Stock</span>
-        <span className="type-micro font-medium text-zinc-500 uppercase tracking-wide text-right">Today</span>
-        <span className="type-micro font-medium text-zinc-500 uppercase tracking-wide text-right">Total</span>
+        <span className="text-xs font-medium text-zinc-500 uppercase tracking-wide">Stock</span>
+        <span className="text-xs font-medium text-zinc-500 uppercase tracking-wide text-right">Today</span>
+        <span className="text-xs font-medium text-zinc-500 uppercase tracking-wide text-right">Total</span>
       </div>
       <div className="divide-y divide-white/[0.06]">
         {holdings.map((h) => (

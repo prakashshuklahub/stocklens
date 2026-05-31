@@ -93,7 +93,7 @@ export interface PortfolioSignalsMeta {
 
 export interface PortfolioWithSignalsResponse {
   holdings: PortfolioHoldingWithSignal[]
-  meta: PortfolioSignalsMeta
+  meta: PortfolioSignalsMeta | null
 }
 
 // ── Portfolio daily briefing ───────────────────────────────────────────────────

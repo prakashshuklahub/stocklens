@@ -1,21 +1,13 @@
 'use client'
 
 import StockLogo from '@/components/StockLogo'
-import { TIER_BADGE_LABELS } from '@/lib/portfolio-alerts'
 import {
   computeHoldingMetrics,
   fmtHolding,
   holdingWeightPct,
 } from '@/lib/portfolio-holding-metrics'
 import { cn } from '@/lib/utils'
-import type { HoldingSignalTier, PortfolioHoldingWithSignal } from '@/types'
-
-function tierDotClass(tier: HoldingSignalTier): string {
-  if (tier === 'attention') return 'bg-red-400'
-  if (tier === 'soft') return 'bg-amber-400'
-  if (tier === 'profit') return 'bg-emerald-400'
-  return 'bg-transparent'
-}
+import type { PortfolioHoldingWithSignal } from '@/types'
 
 function pnlTone(isPos: boolean): string {
   return isPos ? 'text-emerald-400' : 'text-red-400'
@@ -36,27 +28,17 @@ export default function HoldingTableRow({
     isPos,
     dayPnl,
   } = computeHoldingMetrics(h)
-  const flagged = h.signal.tier !== 'quiet'
   const weightPct = holdingWeightPct(h, totalPortfolioValue)
 
   const dayPos = dayPnl != null ? dayPnl >= 0 : change1d != null ? change1d >= 0 : null
 
   return (
-    <div className="grid grid-cols-[minmax(0,1fr)_4.75rem_5.25rem] gap-x-2 items-center px-3 py-2.5 min-h-[56px]">
+    <div className="grid grid-cols-[minmax(0,1fr)_5rem_5.5rem] gap-x-2 items-center px-3 py-3 min-h-[58px]">
       <div className="flex items-center gap-2 min-w-0">
         <StockLogo ticker={h.ticker} size="sm" className="shrink-0" />
         <div className="min-w-0">
-          <div className="flex items-center gap-1.5 min-w-0">
-            {flagged && (
-              <span
-                className={cn('w-1.5 h-1.5 rounded-full shrink-0', tierDotClass(h.signal.tier))}
-                title={TIER_BADGE_LABELS[h.signal.tier as keyof typeof TIER_BADGE_LABELS]}
-                aria-hidden="true"
-              />
-            )}
-            <span className="text-sm font-bold text-white tracking-tight truncate">{h.ticker}</span>
-          </div>
-          <p className="text-[11px] text-zinc-500 tabular-nums truncate mt-0.5 leading-tight">
+          <span className="text-base font-bold text-white tracking-tight truncate block">{h.ticker}</span>
+          <p className="text-sm text-zinc-500 tabular-nums truncate mt-0.5 leading-tight">
             {weightPct != null && (
               <span>{fmtHolding(weightPct, weightPct >= 10 ? 0 : 1)}%</span>
             )}
@@ -76,7 +58,7 @@ export default function HoldingTableRow({
               {dayPos ? '+' : '-'}${fmtHolding(Math.abs(dayPnl))}
             </p>
             {change1d != null && (
-              <p className={cn('text-[11px] mt-0.5 leading-tight', pnlTone(change1d >= 0))}>
+              <p className={cn('text-xs mt-0.5 leading-tight', pnlTone(change1d >= 0))}>
                 {change1d >= 0 ? '+' : ''}{fmtHolding(change1d)}%
               </p>
             )}
@@ -96,7 +78,7 @@ export default function HoldingTableRow({
             <p className={cn('text-sm font-semibold leading-tight', pnlTone(isPos))}>
               {isPos ? '+' : '-'}${fmtHolding(Math.abs(pnl))}
             </p>
-            <p className={cn('text-[11px] mt-0.5 leading-tight', pnlTone(isPos))}>
+            <p className={cn('text-xs mt-0.5 leading-tight', pnlTone(isPos))}>
               ({isPos ? '+' : ''}{fmtHolding(pnlPct)}%)
             </p>
           </>

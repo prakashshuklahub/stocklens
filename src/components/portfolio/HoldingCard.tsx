@@ -93,11 +93,9 @@ function signalFactorsSummary(factors: PickFactor[]): string {
 function SignalDetailRow({
   ticker,
   signal,
-  preview,
 }: {
   ticker: string
   signal: HoldingSignal
-  preview?: boolean
 }) {
   const [open, setOpen] = useState(false)
 
@@ -163,9 +161,6 @@ function SignalDetailRow({
               {signal.caveat}
             </p>
           )}
-          {preview && (
-            <p className="type-micro text-muted">Sample card for UI preview</p>
-          )}
         </div>
       )}
     </div>
@@ -174,10 +169,8 @@ function SignalDetailRow({
 
 export function HoldingCard({
   h,
-  preview,
 }: {
   h: PortfolioHoldingWithSignal
-  preview?: boolean
 }) {
   const {
     price,
@@ -202,7 +195,6 @@ export function HoldingCard({
     <div className={cn(
       'card-surface overflow-hidden active:scale-[0.99] active:brightness-95 transition-all duration-100',
       flagged ? tierBorderClass(signal.tier) : 'border-white/[0.06]',
-      preview && flagged && 'opacity-90',
     )}>
       <div className="px-4 py-3.5">
         <div className="flex gap-3">
@@ -266,7 +258,7 @@ export function HoldingCard({
       </div>
 
       {flagged && (
-        <SignalDetailRow ticker={h.ticker} signal={signal} preview={preview} />
+        <SignalDetailRow ticker={h.ticker} signal={signal} />
       )}
     </div>
   )

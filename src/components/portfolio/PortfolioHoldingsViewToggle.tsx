@@ -47,7 +47,7 @@ export default function PortfolioHoldingsViewToggle({
             aria-pressed={active}
             onClick={() => onChange(opt.id)}
             className={cn(
-              'px-2 py-1 text-[11px] font-semibold rounded-md transition-colors [touch-action:manipulation]',
+              'px-2.5 py-1.5 text-xs font-semibold rounded-md transition-colors [touch-action:manipulation] min-h-[32px]',
               active ? 'bg-zinc-800 text-white shadow-sm' : 'text-zinc-500 active:text-zinc-300',
             )}
           >
