@@ -200,7 +200,10 @@ export async function buildGlobalPicksInDb(supabase: Supabase): Promise<BuildGlo
     }
 
     const ranked = rankGlobalPicks(rescored, PICKS_V2_MAX_RESULTS)
-    const rankedRisky = rankGlobalPicks(rescoredRisky, PICKS_V2_RISKY_RULES.maxResults)
+    const topTickers = new Set(ranked.map((p) => p.ticker.toUpperCase()))
+    const rankedRisky = rankGlobalPicks(rescoredRisky, PICKS_V2_RISKY_RULES.maxResults).filter(
+      (p) => !topTickers.has(p.ticker.toUpperCase()),
+    )
     const shouldPublish = ranked.length >= PICKS_V2_MIN_PUBLISH_COUNT
 
     if (ranked.length) {

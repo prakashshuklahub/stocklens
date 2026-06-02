@@ -178,6 +178,10 @@ export async function buildGlobalPicksApiResponse(
     ticker: r.ticker.toUpperCase(),
   }))
 
+  // Ensure tickers don't appear in both buckets (safety net for older runs).
+  const topTickerSet = new Set(picks.map((p) => p.ticker.toUpperCase()))
+  risky_picks = risky_picks.filter((p) => !topTickerSet.has(p.ticker.toUpperCase()))
+
   const tickers = [...new Set([...picks.map((p) => p.ticker), ...risky_picks.map((p) => p.ticker)])]
 
   const [portfolioResult, sectorLoaded] = await Promise.all([
