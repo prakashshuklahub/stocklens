@@ -88,6 +88,20 @@ async function loadPicksForRun(supabase: Supabase, run_id: string): Promise<Glob
   return (data ?? []) as GlobalPickRow[]
 }
 
+async function loadRiskyPicksForRun(supabase: Supabase, run_id: string): Promise<GlobalPickRow[]> {
+  const { data, error } = await supabase
+    .from('global_top_picks_risky')
+    .select('rank, ticker, snapshot')
+    .eq('run_id', run_id)
+    .order('rank', { ascending: true })
+
+  if (error) {
+    console.warn('[global-picks] load risky picks:', error.message)
+    return []
+  }
+  return (data ?? []) as GlobalPickRow[]
+}
+
 /** Recompute upside and buy zone when live price differs from the cron snapshot. */
 function applyLivePriceToPick(p: Pick, newPrice: number): Pick {
   const oldPrice = p.current_price
@@ -154,12 +168,17 @@ export async function buildGlobalPicksApiResponse(
   }
 
   const rows = await loadPicksForRun(supabase, activeRun.id)
+  const riskyRows = await loadRiskyPicksForRun(supabase, activeRun.id)
   let picks: Pick[] = rows.map((r) => ({
     ...r.snapshot,
     ticker: r.ticker.toUpperCase(),
   }))
+  let risky_picks: Pick[] = riskyRows.map((r) => ({
+    ...r.snapshot,
+    ticker: r.ticker.toUpperCase(),
+  }))
 
-  const tickers = picks.map((p) => p.ticker)
+  const tickers = [...new Set([...picks.map((p) => p.ticker), ...risky_picks.map((p) => p.ticker)])]
 
   const [portfolioResult, sectorLoaded] = await Promise.all([
     supabase.from('portfolio_holdings').select('*').eq('user_id', userId),
@@ -170,7 +189,7 @@ export async function buildGlobalPicksApiResponse(
 
   if (options.overlayLivePrices && tickers.length) {
     const live = await fetchLivePricesForTickers(tickers)
-    picks = picks.map((p) => {
+    const apply = (p: Pick) => {
       const snap = live.get(p.ticker)
       if (!snap?.price) return p
       return applyLivePriceToPick(
@@ -181,7 +200,9 @@ export async function buildGlobalPicksApiResponse(
         },
         snap.price,
       )
-    })
+    }
+    picks = picks.map(apply)
+    risky_picks = risky_picks.map(apply)
   }
 
   const beforeLiveFilter = picks.length
@@ -211,8 +232,27 @@ export async function buildGlobalPicksApiResponse(
     }
   })
 
+  risky_picks = risky_picks.map((p) => {
+    const sym = p.ticker.toUpperCase()
+    const holding = portfolio.find((h) => h.ticker.toUpperCase() === sym)
+    const ownership =
+      holding && p.current_price > 0
+        ? {
+            shares: holding.quantity,
+            avg_cost_basis: holding.avg_cost_basis,
+            current_value: p.current_price * holding.quantity,
+          }
+        : null
+
+    return {
+      ...p,
+      ownership,
+      source: 'discovery' as const,
+    }
+  })
+
   const fundamentalsByTicker = new Map<string, StockFundamentals>()
-  for (const p of picks) {
+  for (const p of [...picks, ...risky_picks]) {
     fundamentalsByTicker.set(p.ticker, {
       ticker: p.ticker,
       change_7d_pct: p.change_7d_pct,
@@ -238,25 +278,40 @@ export async function buildGlobalPicksApiResponse(
     })
   }
 
-  const scoredShape = picks as unknown as ScoredPick[]
-  const filteredTickers = picks.map((p) => p.ticker)
-  const cachedNarratives = await loadCachedPickNarratives(supabase, filteredTickers, 'global-picks')
-  const { picks: withNarratives, narrativeTimes, pendingLlm } = attachPickNarratives(
-    scoredShape,
+  const scoredTop = picks as unknown as ScoredPick[]
+  const scoredRisky = risky_picks as unknown as ScoredPick[]
+  const allTickers = [...new Set([...picks.map((p) => p.ticker), ...risky_picks.map((p) => p.ticker)])]
+  const cachedNarratives = await loadCachedPickNarratives(supabase, allTickers, 'global-picks')
+
+  const topNarr = attachPickNarratives(
+    scoredTop,
     cachedNarratives,
     EMPTY_NEWS,
     scoresAt,
   )
-  schedulePickNarrativeGeneration(supabase, pendingLlm, fundamentalsByTicker, 'global-picks')
+  const riskyNarr = attachPickNarratives(
+    scoredRisky,
+    cachedNarratives,
+    EMPTY_NEWS,
+    scoresAt,
+  )
+  schedulePickNarrativeGeneration(
+    supabase,
+    [...topNarr.pendingLlm, ...riskyNarr.pendingLlm],
+    fundamentalsByTicker,
+    'global-picks',
+  )
 
   return {
-    picks: withNarratives,
+    picks: topNarr.picks,
+    risky_picks: riskyNarr.picks,
     scores_at: scoresAt,
     generated_at,
     next_refresh_at: nextGlobalPicksRefreshAt(),
     qualified_count,
+    risky_qualified_count: risky_picks.length,
     stale,
-    narratives_at: latestIso(narrativeTimes),
+    narratives_at: latestIso([...topNarr.narrativeTimes, ...riskyNarr.narrativeTimes]),
     llm_enabled: isLLMEnabled(),
     sector_benchmarks: sectorBenchmarksRecord(sectorLoaded.benchmarks),
   }

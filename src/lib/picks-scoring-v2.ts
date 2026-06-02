@@ -57,6 +57,21 @@ export const PICKS_V2_UPSIDE_TO_RAN_RULES = {
   softPenalty: 12,
 } as const
 
+// Secondary bucket: broader, explicitly riskier ideas.
+export const PICKS_V2_RISKY_RULES = {
+  minScore: 25,
+  maxResults: 20,
+  minAnalysts: 6,
+  minUpsidePct: 5,
+  gates: {
+    maxSellRatio: 0.45,
+    minBuyRatio: 0.45,
+    minNewsSentiment: -0.25,
+    min30dPct: -5,
+  },
+  allowConfidence: ['high', 'medium'] as const,
+} as const
+
 export const PICKS_V2_RULES = {
   gates: {
     maxSellRatio: 0.35,
@@ -505,6 +520,175 @@ export function scorePickV2(input: PickScoreInput): ScoredPick | null {
   }
 
   if (confidence !== 'high') return null
+
+  const base: ScoredPick = {
+    ticker: candidate.ticker,
+    company_name: candidate.company_name,
+    sector: candidate.sector,
+    current_price,
+    change_1d_pct,
+    change_1d_session: input.change_1d_session,
+    change_7d_pct: f.change_7d_pct,
+    change_14d_pct: f.change_14d_pct,
+    change_30d_pct: f.change_30d_pct,
+    volume_ratio: f.volume_ratio,
+    news_count_7d: f.news_count_7d,
+    entry_low: Math.min(entry_low, entry_high),
+    entry_high,
+    target_mean: target.target_mean,
+    target_low: target.target_low,
+    target_high: target.target_high,
+    upside_pct,
+    target_label: 'analyst',
+    week52_high: f.week52_high,
+    week52_low: f.week52_low,
+    analyst_total,
+    analyst_buy: f.analyst_buy ?? 0,
+    analyst_hold: f.analyst_hold ?? 0,
+    analyst_sell: f.analyst_sell ?? 0,
+    confidence,
+    score,
+    factors,
+    vs_sector,
+    source: 'discovery',
+    ownership,
+  }
+
+  return applyDayMoveCap(base, change_1d_pct)
+}
+
+export function scorePickV2Risky(input: PickScoreInput): ScoredPick | null {
+  const {
+    candidate,
+    current_price,
+    change_1d_pct,
+    fundamentals: f,
+    ownership,
+    benchmark,
+    researchContext = { research: null, sectorPeMedian: null },
+  } = input
+  const research = researchContext.research
+  const rules = PICKS_V2_RULES
+  const risky = PICKS_V2_RISKY_RULES
+  const factors: PickFactor[] = [{ label: 'Higher risk bucket', tone: 'neutral' }]
+  let score = 0
+
+  if (current_price < PICKS_V2_MIN_PRICE) return null
+  if (isEarningsExclusionWindow(research, PICKS_V2_EARNINGS_EXCLUDE_DAYS)) return null
+  if (!passesResearchQualityGate(research)) return null
+
+  const marketCap = research?.market_cap
+  if (marketCap == null || marketCap < PICKS_V2_MIN_MARKET_CAP) return null
+
+  const analyst_total = (f.analyst_buy ?? 0) + (f.analyst_hold ?? 0) + (f.analyst_sell ?? 0)
+  if (analyst_total < risky.minAnalysts) return null
+
+  const sell_ratio = (f.analyst_sell ?? 0) / analyst_total
+  if (sell_ratio > risky.gates.maxSellRatio) return null
+
+  const buy_ratio = (f.analyst_buy ?? 0) / analyst_total
+  if (buy_ratio < risky.gates.minBuyRatio) return null
+
+  if (f.news_sentiment != null && f.news_sentiment < risky.gates.minNewsSentiment) return null
+  if (f.change_30d_pct != null && f.change_30d_pct < risky.gates.min30dPct) return null
+
+  const target = resolveAnalystTarget(f, current_price)
+  if (!target) return null
+  if (target.upside_pct < risky.minUpsidePct) return null
+
+  const upside_pct = target.upside_pct
+  const tier = rules.upsideAnalyst.tiers.find((t) => upside_pct >= t.minPct)
+  if (tier) {
+    score += tier.points
+    factors.push({ label: `+${upside_pct.toFixed(0)}% room to target`, tone: 'positive' })
+  }
+
+  score += applyEarningsSoftPenalty(research, factors)
+  score += applyTargetDispersionPenalty(target.target_mean, target.target_low, target.target_high, factors)
+  score += apply30dMomentumScore(f.change_30d_pct, factors)
+  score += applyUpsideToRanPenalty(upside_pct, f.change_30d_pct, factors)
+
+  if (buy_ratio > rules.buyConsensus.strongRatio) {
+    score += rules.buyConsensus.strongPoints
+    factors.push({
+      label: 'Most analysts say buy',
+      value: `${f.analyst_buy} of ${analyst_total} analysts`,
+      tone: 'positive',
+    })
+  } else if (buy_ratio > rules.buyConsensus.moderateRatio) {
+    score += rules.buyConsensus.moderatePoints
+    factors.push({
+      label: 'Majority say buy',
+      value: `${f.analyst_buy} of ${analyst_total} analysts`,
+      tone: 'positive',
+    })
+  } else if (buy_ratio >= rules.buyConsensus.leanRatio) {
+    score += rules.buyConsensus.leanPoints
+    factors.push({
+      label: 'Leaning buy',
+      value: `${f.analyst_buy} of ${analyst_total} analysts`,
+      tone: 'positive',
+    })
+  }
+
+  const pb = PICKS_V2_RULES.pullback14d
+  if (
+    f.change_14d_pct != null &&
+    f.change_14d_pct < pb.maxPct &&
+    f.change_14d_pct > pb.minPct &&
+    upside_pct > pb.minUpsidePct
+  ) {
+    score += pb.points
+    factors.push({
+      label: 'Pulled back recently',
+      value: `${f.change_14d_pct.toFixed(1)}% in 14d`,
+      tone: 'positive',
+    })
+  }
+
+  if (f.news_sentiment != null && f.news_sentiment > rules.newsSentiment.minPct) {
+    score += rules.newsSentiment.points
+    factors.push({ label: 'Good news tone', tone: 'positive' })
+  }
+
+  if (f.support_20d && current_price <= f.support_20d * rules.nearSupport20d.proximityRatio) {
+    score += rules.nearSupport20d.points
+    factors.push({ label: 'Near support level', tone: 'positive' })
+  }
+
+  const near52w =
+    f.week52_high != null && current_price >= f.week52_high * rules.near52wHigh.proximityRatio
+  if (near52w && upside_pct < rules.near52wHigh.thinUpsideMaxPct) {
+    score -= rules.near52wHigh.penaltyPoints
+    factors.push({ label: 'Near 52-week high · thin upside', tone: 'negative' })
+  }
+
+  score += applySignalBonusesV2(f, current_price, factors)
+
+  const vs_sector = buildPickVsSector(candidate, f, benchmark)
+  score += applyVsSectorScore(vs_sector, candidate.sector, factors)
+  score += applyResearchScoreV2(researchContext, candidate.sector, factors)
+
+  if (score < risky.minScore) return null
+
+  const support = f.support_20d ?? current_price * 0.97
+  const entry_low = Math.max(support * 1.005, current_price * 0.97)
+  const entry_high = current_price
+
+  let confidence: Pick['confidence'] = 'low'
+  if (
+    analyst_total >= rules.confidence.highMinAnalysts &&
+    buy_ratio > rules.confidence.highMinBuyRatio
+  ) {
+    confidence = 'high'
+  } else if (
+    analyst_total >= rules.confidence.mediumMinAnalysts &&
+    buy_ratio > rules.confidence.mediumMinBuyRatio
+  ) {
+    confidence = 'medium'
+  }
+
+  if (!risky.allowConfidence.includes(confidence as (typeof risky.allowConfidence)[number])) return null
 
   const base: ScoredPick = {
     ticker: candidate.ticker,

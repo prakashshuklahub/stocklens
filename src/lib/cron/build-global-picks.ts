@@ -5,8 +5,10 @@ import {
   PICKS_V2_MIN_PUBLISH_COUNT,
   PICKS_V2_MIN_SCORE,
   PICKS_V2_MIN_ANALYSTS,
+  PICKS_V2_RISKY_RULES,
   rankGlobalPicks,
   scorePickV2,
+  scorePickV2Risky,
   sectorPeMedianForTicker,
 } from '@/lib/picks-scoring-v2'
 import { normalizeWatchlistSector, isBenchmarkableSector, type BenchmarkableSector } from '@/lib/sector-relative-strength-scoring'
@@ -147,6 +149,7 @@ export async function buildGlobalPicksInDb(supabase: Supabase): Promise<BuildGlo
     const sectorPeMedians = computeSectorPeMedians(researchByTicker, yahooSectors)
 
     const rescored: ScoredPick[] = []
+    const rescoredRisky: ScoredPick[] = []
     for (const sym of preTickers) {
       const f = fundamentalsByTicker.get(sym)
       if (!f) continue
@@ -184,9 +187,13 @@ export async function buildGlobalPicksInDb(supabase: Supabase): Promise<BuildGlo
 
       const pick = scorePickV2(input)
       if (pick) rescored.push(pick)
+
+      const riskyPick = scorePickV2Risky(input)
+      if (riskyPick) rescoredRisky.push(riskyPick)
     }
 
     const ranked = rankGlobalPicks(rescored, PICKS_V2_MAX_RESULTS)
+    const rankedRisky = rankGlobalPicks(rescoredRisky, PICKS_V2_RISKY_RULES.maxResults)
     const shouldPublish = ranked.length >= PICKS_V2_MIN_PUBLISH_COUNT
 
     if (ranked.length) {
@@ -204,6 +211,22 @@ export async function buildGlobalPicksInDb(supabase: Supabase): Promise<BuildGlo
 
       const { error: picksError } = await supabase.from('global_top_picks').insert(pickRows)
       if (picksError) throw new Error(picksError.message)
+    }
+
+    if (rankedRisky.length) {
+      const riskyRows = rankedRisky.map((p, i) => ({
+        run_id,
+        rank: i + 1,
+        ticker: p.ticker.toUpperCase(),
+        score: p.score,
+        confidence: p.confidence,
+        snapshot: {
+          ...p,
+          target_label: 'analyst' as const,
+        },
+      }))
+      const { error: riskyError } = await supabase.from('global_top_picks_risky').insert(riskyRows)
+      if (riskyError) throw new Error(riskyError.message)
     }
 
     await supabase

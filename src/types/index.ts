@@ -363,11 +363,14 @@ export interface Pick {
 export interface PicksResponse {
   /** Ranked global buy ideas (nightly cron). */
   picks: Pick[]
+  /** Secondary bucket: broader, riskier ideas (nightly cron). */
+  risky_picks?: Pick[]
   /** When the published run completed. */
   scores_at: string
   generated_at: string | null
   next_refresh_at: string | null
   qualified_count: number
+  risky_qualified_count?: number
   stale: boolean
   /** When pick summaries were last generated (3h narrative cache). */
   narratives_at: string | null

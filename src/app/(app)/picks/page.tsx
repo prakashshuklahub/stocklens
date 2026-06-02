@@ -648,6 +648,7 @@ const EMPTY_PICKS: PicksResponse = {
 export default function PicksPage() {
   const marketSession = useMarketSession()
   const [isRefreshing, setIsRefreshing] = useState(false)
+  const [bucket, setBucket] = useState<'top' | 'risky'>('top')
   const { data, isLoading, error, mutate } = useSWR<PicksResponse>('/api/picks', fetchJson, {
     revalidateOnFocus: false,
     dedupingInterval: 0,
@@ -668,8 +669,9 @@ export default function PicksPage() {
   )
 
   const headlineTickers = useMemo(() => {
-    if (!data?.picks.length) return ''
-    return [...new Set(data.picks.map((p) => p.ticker.toUpperCase()))].join(',')
+    const list = data ? [...(data.picks ?? []), ...(data.risky_picks ?? [])] : []
+    if (!list.length) return ''
+    return [...new Set(list.map((p) => p.ticker.toUpperCase()))].join(',')
   }, [data])
 
   const { data: headlineData } = useSWR<PickHeadlinesResponse>(
@@ -680,7 +682,8 @@ export default function PicksPage() {
 
   const pendingNarrativeTickers = useMemo(() => {
     if (!data?.llm_enabled) return ''
-    const pending = data.picks
+    const allPicks = [...data.picks, ...(data.risky_picks ?? [])]
+    const pending = allPicks
       .filter((p) => p.narrative_source === 'mechanical')
       .map((p) => p.ticker.toUpperCase())
     return [...new Set(pending)].join(',')
@@ -711,12 +714,18 @@ export default function PicksPage() {
       merged = {
         ...merged,
         picks: mergePickNarratives(merged.picks, narrativeData.narratives),
+        risky_picks: merged.risky_picks
+          ? mergePickNarratives(merged.risky_picks, narrativeData.narratives)
+          : merged.risky_picks,
       }
     }
     if (headlineData?.headlines && Object.keys(headlineData.headlines).length) {
       merged = {
         ...merged,
         picks: mergePickHeadlines(merged.picks, headlineData.headlines),
+        risky_picks: merged.risky_picks
+          ? mergePickHeadlines(merged.risky_picks, headlineData.headlines)
+          : merged.risky_picks,
       }
     }
 
@@ -731,11 +740,55 @@ export default function PicksPage() {
         <main id="main" className="page-shell !pt-1">
           <h1 className="sr-only">Picks</h1>
 
+          <div className="px-1 pt-1 pb-3">
+            <div className="rounded-2xl border border-white/10 bg-zinc-900/60 p-1 flex gap-1">
+              <button
+                type="button"
+                onClick={() => setBucket('top')}
+                className={cn(
+                  'flex-1 min-h-[44px] rounded-xl px-3 py-2 text-sm font-semibold',
+                  '[touch-action:manipulation] active:scale-[0.99]',
+                  bucket === 'top'
+                    ? 'bg-white/10 text-white'
+                    : 'text-zinc-400 hover:text-zinc-200',
+                )}
+                aria-pressed={bucket === 'top'}
+              >
+                Top picks
+              </button>
+              <button
+                type="button"
+                onClick={() => setBucket('risky')}
+                className={cn(
+                  'flex-1 min-h-[44px] rounded-xl px-3 py-2 text-sm font-semibold',
+                  '[touch-action:manipulation] active:scale-[0.99]',
+                  bucket === 'risky'
+                    ? 'bg-amber-500/15 text-amber-200'
+                    : 'text-zinc-400 hover:text-zinc-200',
+                )}
+                aria-pressed={bucket === 'risky'}
+              >
+                Higher risk
+              </button>
+            </div>
+            {bucket === 'risky' ? (
+              <p className="type-meta text-amber-200/70 mt-2 px-1 leading-snug">
+                Higher-risk ideas can be more volatile and may have looser gates.
+              </p>
+            ) : null}
+          </div>
+
           {error ? (
             <p className="text-zinc-500 text-sm text-center py-16">Failed to load picks.</p>
           ) : (
             <PicksRankedList
-              data={displayData ?? EMPTY_PICKS}
+              data={{
+                ...(displayData ?? EMPTY_PICKS),
+                picks:
+                  bucket === 'top'
+                    ? (displayData?.picks ?? EMPTY_PICKS.picks)
+                    : (displayData?.risky_picks ?? []),
+              }}
               marketSession={marketSession}
               loading={isLoading && !displayData}
             />
