@@ -12,10 +12,12 @@ import {
 import {
   applyResearchScore,
   computeSectorPeMedians,
+  daysUntilCalendarDate,
   isEarningsExclusionWindow,
   sectorPeMedianForTicker,
   type ResearchScoringContext,
 } from '@/lib/picks-research-scoring'
+import { normalizeWatchlistSector } from '@/lib/sector-relative-strength-scoring'
 import { isAnalystTargetSource } from '@/lib/target-price-display'
 import type { Pick, PickFactor, StockFundamentals, StockResearchSnapshot } from '@/types'
 
@@ -27,6 +29,26 @@ export const PICKS_V2_MIN_UPSIDE_PCT = 8
 export const PICKS_V2_MIN_MARKET_CAP = 500_000_000
 export const PICKS_V2_MIN_PRICE = 5
 export const PICKS_V2_EARNINGS_EXCLUDE_DAYS = 7
+export const PICKS_V2_EARNINGS_SOFT_PENALTY_DAYS = 14
+export const PICKS_V2_EARNINGS_SOFT_PENALTY_POINTS = 10
+export const PICKS_V2_SECTOR_CAP = 3
+export const PICKS_V2_LIVE_MOMENTUM_RULES = {
+  sweetSpotMinPct: 10,
+  sweetSpotMaxPct: 30,
+  sweetSpotPoints: 8,
+  moderateMaxPct: 60,
+  moderatePoints: 4,
+  overheatedMinPct: 60,
+  overheatedPenalty: 10,
+} as const
+export const PICKS_V2_UPSIDE_TO_RAN_RATIO_MIN = 0.2
+export const PICKS_V2_UPSIDE_TO_RAN_RATIO_PENALTY = 12
+export const PICKS_V2_DISPERSION_RULES = {
+  wildMin: 1.0,
+  wildPenalty: 6,
+  extremeMin: 1.5,
+  extremePenalty: 12,
+} as const
 
 export const PICKS_V2_RULES = {
   gates: {
@@ -54,7 +76,7 @@ export const PICKS_V2_RULES = {
   newsSentiment: { minPct: 0.3, points: 10 },
   newsBuzz: { minCount: 8, points: 5 },
   nearSupport20d: { proximityRatio: 1.03, points: 8 },
-  near52wHigh: { proximityRatio: 0.97, thinUpsideMaxPct: 5, penaltyPoints: 15 },
+  near52wHigh: { proximityRatio: 0.97, thinUpsideMaxPct: 10, penaltyPoints: 15 },
   volumeSpike: { minRatio: 1.5, points: 8, strongRatio: 2.0, strongPoints: 12 },
   liquidityBand: { minRatio: 1.2, maxRatio: 2.0, points: 4 },
   weekMomentum: { minPct: 5, points: 6 },
@@ -73,6 +95,79 @@ function passesResearchQualityGate(research: StockResearchSnapshot | null): bool
   const profitable = (research.profit_margin_pct ?? Number.NEGATIVE_INFINITY) > 0
   const growing = (research.revenue_growth_pct ?? Number.NEGATIVE_INFINITY) > 0
   return profitable || growing
+}
+
+function applyEarningsSoftPenalty(research: StockResearchSnapshot | null, factors: PickFactor[]): number {
+  const days = daysUntilCalendarDate(research?.earnings_date)
+  if (days == null) return 0
+  if (days < 0) return 0
+  if (days <= PICKS_V2_EARNINGS_EXCLUDE_DAYS) return 0
+  if (days > PICKS_V2_EARNINGS_SOFT_PENALTY_DAYS) return 0
+  factors.push({
+    label: 'Earnings soon',
+    value: `${days}d`,
+    tone: 'negative',
+  })
+  return -PICKS_V2_EARNINGS_SOFT_PENALTY_POINTS
+}
+
+function apply30dMomentumScore(change_30d_pct: number | null | undefined, factors: PickFactor[]): number {
+  const c30 = change_30d_pct
+  if (c30 == null || !Number.isFinite(c30)) return 0
+  const rules = PICKS_V2_LIVE_MOMENTUM_RULES
+  if (c30 >= rules.sweetSpotMinPct && c30 <= rules.sweetSpotMaxPct) {
+    factors.push({ label: 'Healthy 30d momentum', value: `+${c30.toFixed(0)}%`, tone: 'positive' })
+    return rules.sweetSpotPoints
+  }
+  if (c30 > rules.sweetSpotMaxPct && c30 <= rules.moderateMaxPct) {
+    factors.push({ label: 'Strong 30d momentum', value: `+${c30.toFixed(0)}%`, tone: 'neutral' })
+    return rules.moderatePoints
+  }
+  if (c30 > rules.overheatedMinPct) {
+    factors.push({ label: 'Overheated 30d run', value: `+${c30.toFixed(0)}%`, tone: 'negative' })
+    return -rules.overheatedPenalty
+  }
+  return 0
+}
+
+function applyUpsideToRanPenalty(
+  upside_pct: number,
+  change_30d_pct: number | null | undefined,
+  factors: PickFactor[],
+): number {
+  const c30 = change_30d_pct
+  if (c30 == null || !Number.isFinite(c30) || c30 <= 0) return 0
+  if (!Number.isFinite(upside_pct) || upside_pct <= 0) return 0
+  const ratio = upside_pct / c30
+  if (ratio >= PICKS_V2_UPSIDE_TO_RAN_RATIO_MIN) return 0
+  factors.push({
+    label: 'Limited upside vs recent run',
+    value: `${ratio.toFixed(2)}×`,
+    tone: 'negative',
+  })
+  return -PICKS_V2_UPSIDE_TO_RAN_RATIO_PENALTY
+}
+
+function applyTargetDispersionPenalty(
+  target_mean: number,
+  target_low: number | null,
+  target_high: number | null,
+  factors: PickFactor[],
+): number {
+  if (!(target_mean > 0)) return 0
+  if (target_low == null || target_high == null) return 0
+  if (!(target_high > target_low)) return 0
+  const dispersion = (target_high - target_low) / target_mean
+  const rules = PICKS_V2_DISPERSION_RULES
+  if (dispersion >= rules.extremeMin) {
+    factors.push({ label: 'Analysts disagree widely', value: `${dispersion.toFixed(1)}×`, tone: 'negative' })
+    return -rules.extremePenalty
+  }
+  if (dispersion >= rules.wildMin) {
+    factors.push({ label: 'Analyst dispersion', value: `${dispersion.toFixed(1)}×`, tone: 'negative' })
+    return -rules.wildPenalty
+  }
+  return 0
 }
 
 function resolveAnalystTarget(
@@ -132,6 +227,19 @@ function applyResearchScoreV2(
       }
     }
   }
+
+  // Penalize extremely high P/E when margins don't support it.
+  const margin = r?.profit_margin_pct
+  if (pe != null && pe > 0 && margin != null && Number.isFinite(margin)) {
+    if (pe > 100 && margin < 20) {
+      delta -= 20
+      factors.push({ label: 'High P/E · thin margin', value: `${pe.toFixed(0)} P/E · ${margin.toFixed(0)}%`, tone: 'negative' })
+    } else if (pe > 50 && margin < 10) {
+      delta -= 15
+      factors.push({ label: 'Stretched P/E · low margin', value: `${pe.toFixed(0)} P/E · ${margin.toFixed(0)}%`, tone: 'negative' })
+    }
+  }
+
   return Math.max(-20, Math.min(20, delta))
 }
 
@@ -144,8 +252,14 @@ function applySignalBonusesV2(
   let bonus = 0
 
   if (f.volume_ratio != null) {
-    if (f.volume_ratio >= rules.volumeSpike.strongRatio) {
-      bonus += rules.volumeSpike.strongPoints
+    if (f.volume_ratio >= 3) {
+      factors.push({
+        label: 'Overheated volume',
+        value: `${f.volume_ratio.toFixed(1)}× avg`,
+        tone: 'neutral',
+      })
+    } else if (f.volume_ratio >= rules.volumeSpike.strongRatio) {
+      bonus += Math.max(1, Math.round(rules.volumeSpike.strongPoints / 2))
       factors.push({
         label: 'Unusually high volume',
         value: `${f.volume_ratio.toFixed(1)}× avg`,
@@ -271,6 +385,11 @@ export function scorePickV2(input: PickScoreInput): ScoredPick | null {
     score += tier.points
     factors.push({ label: `+${upside_pct.toFixed(0)}% room to target`, tone: 'positive' })
   }
+
+  score += applyEarningsSoftPenalty(research, factors)
+  score += applyTargetDispersionPenalty(target.target_mean, target.target_low, target.target_high, factors)
+  score += apply30dMomentumScore(f.change_30d_pct, factors)
+  score += applyUpsideToRanPenalty(upside_pct, f.change_30d_pct, factors)
 
   if (buy_ratio > rules.buyConsensus.strongRatio) {
     score += rules.buyConsensus.strongPoints
@@ -401,13 +520,26 @@ export function scorePickV2(input: PickScoreInput): ScoredPick | null {
 
 /** Return all qualifiers up to cap — ranked by score (points) only. */
 export function rankGlobalPicks(scored: ScoredPick[], limit = PICKS_V2_MAX_RESULTS): ScoredPick[] {
-  return [...scored]
-    .sort((a, b) => {
-      if (b.score !== a.score) return b.score - a.score
-      if (b.upside_pct !== a.upside_pct) return b.upside_pct - a.upside_pct
-      return (b.change_1d_pct ?? 0) - (a.change_1d_pct ?? 0)
-    })
-    .slice(0, limit)
+  const sorted = [...scored].sort((a, b) => {
+    if (b.score !== a.score) return b.score - a.score
+    if (b.upside_pct !== a.upside_pct) return b.upside_pct - a.upside_pct
+    return (b.change_1d_pct ?? 0) - (a.change_1d_pct ?? 0)
+  })
+
+  const picked: ScoredPick[] = []
+  const sectorCounts = new Map<string, number>()
+  for (const p of sorted) {
+    if (picked.length >= limit) break
+    const sector = normalizeWatchlistSector(p.sector)
+    if (sector && sector !== 'Other') {
+      const next = (sectorCounts.get(sector) ?? 0) + 1
+      if (next > PICKS_V2_SECTOR_CAP) continue
+      sectorCounts.set(sector, next)
+    }
+    picked.push(p)
+  }
+
+  return picked
 }
 
 export { computeSectorPeMedians, sectorPeMedianForTicker }
