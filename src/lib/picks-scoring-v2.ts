@@ -59,17 +59,17 @@ export const PICKS_V2_UPSIDE_TO_RAN_RULES = {
 
 // Secondary bucket: broader, explicitly riskier ideas.
 export const PICKS_V2_RISKY_RULES = {
-  minScore: 25,
-  maxResults: 20,
-  minAnalysts: 6,
-  minUpsidePct: 5,
+  minScore: 18,
+  maxResults: 25,
+  minAnalysts: 4,
+  minUpsidePct: 3,
   gates: {
-    maxSellRatio: 0.45,
-    minBuyRatio: 0.45,
-    minNewsSentiment: -0.25,
-    min30dPct: -5,
+    maxSellRatio: 0.5,
+    minBuyRatio: 0.4,
+    minNewsSentiment: -0.5,
+    min30dPct: -10,
   },
-  allowConfidence: ['high', 'medium'] as const,
+  allowConfidence: ['high', 'medium', 'low'] as const,
 } as const
 
 export const PICKS_V2_RULES = {

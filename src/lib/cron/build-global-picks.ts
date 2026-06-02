@@ -113,7 +113,8 @@ export async function buildGlobalPicksInDb(supabase: Supabase): Promise<BuildGlo
     const fundamentalsByTicker = new Map<string, StockFundamentals>()
     for (const f of fundamentals) fundamentalsByTicker.set(f.ticker.toUpperCase(), f)
 
-    const coarse: ScoredPick[] = []
+    const coarseTop: ScoredPick[] = []
+    const coarseRisky: ScoredPick[] = []
     for (const f of fundamentals) {
       const sym = f.ticker.toUpperCase()
       const current_price = priceFromFundamentals(f)
@@ -138,11 +139,17 @@ export async function buildGlobalPicksInDb(supabase: Supabase): Promise<BuildGlo
       }
 
       const pick = scorePickV2(input)
-      if (pick) coarse.push(pick)
+      if (pick) coarseTop.push(pick)
+
+      const riskyPick = scorePickV2Risky(input)
+      if (riskyPick) coarseRisky.push(riskyPick)
     }
 
-    const preRank = [...coarse].sort((a, b) => b.score - a.score).slice(0, 120)
-    const preTickers = preRank.map((p) => p.ticker.toUpperCase())
+    const preTop = [...coarseTop].sort((a, b) => b.score - a.score).slice(0, 120)
+    const preRisky = [...coarseRisky].sort((a, b) => b.score - a.score).slice(0, 200)
+    const preTickers = [
+      ...new Set([...preTop.map((p) => p.ticker.toUpperCase()), ...preRisky.map((p) => p.ticker.toUpperCase())]),
+    ]
     const { sectorByTicker: yahooSectors, nameByTicker: yahooNames } =
       await resolveYahooProfilesForTickers(preTickers)
 
