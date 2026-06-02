@@ -773,7 +773,7 @@ export default function PicksPage() {
             </div>
             {bucket === 'risky' ? (
               <p className="type-meta text-amber-200/70 mt-2 px-1 leading-snug">
-                Higher-risk ideas can be more volatile and may have looser gates.
+                Higher-risk ideas can swing more and may be based on weaker signals. Size smaller and use tighter stops.
               </p>
             ) : null}
           </div>
