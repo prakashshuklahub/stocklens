@@ -52,6 +52,13 @@ export function normalizeSector(raw: string | null | undefined): WatchlistSector
 const SECTOR_CACHE_TTL_MS = 24 * 60 * 60 * 1000
 const sectorCache = new Map<string, { sector: WatchlistSector | null; at: number }>()
 
+export type YahooCompanyProfile = {
+  sector: WatchlistSector | null
+  company_name: string | null
+}
+
+const profileCache = new Map<string, { profile: YahooCompanyProfile; at: number }>()
+
 async function fetchYahooSectorUncached(ticker: string): Promise<WatchlistSector | null> {
   const sym = ticker.toUpperCase()
 
@@ -101,6 +108,54 @@ export async function fetchYahooSector(ticker: string): Promise<WatchlistSector 
   const sector = await fetchYahooSectorUncached(key)
   sectorCache.set(key, { sector, at: Date.now() })
   return sector
+}
+
+async function fetchYahooCompanyProfileUncached(ticker: string): Promise<YahooCompanyProfile> {
+  const sym = ticker.toUpperCase()
+
+  // 1) Search endpoint: tends to be reliable for company name and often sector.
+  try {
+    const res = await fetch(
+      `https://query2.finance.yahoo.com/v1/finance/search?q=${encodeURIComponent(sym)}&quotesCount=5&newsCount=0`,
+      { headers: { 'User-Agent': 'Mozilla/5.0' }, cache: 'no-store' },
+    )
+    if (res.ok) {
+      const data = await res.json()
+      const match = (data?.quotes ?? []).find(
+        (q: { symbol?: string; quoteType?: string }) =>
+          q.quoteType === 'EQUITY' && String(q.symbol).toUpperCase() === sym,
+      )
+      const sector = match?.sector ? normalizeSector(String(match.sector)) : 'Other'
+      const name =
+        (match?.shortname as string | undefined) ??
+        (match?.longname as string | undefined) ??
+        null
+      if (sector !== 'Other' || name) {
+        return { sector: sector !== 'Other' ? sector : null, company_name: name }
+      }
+    }
+  } catch {
+    // fall through
+  }
+
+  // 2) Asset profile: sector only (no reliable display name).
+  const sector = await fetchYahooSectorUncached(sym)
+  return { sector, company_name: null }
+}
+
+/** Resolve sector + company name from Yahoo (24h in-memory cache). */
+export async function fetchYahooCompanyProfile(ticker: string): Promise<YahooCompanyProfile> {
+  const key = ticker.toUpperCase()
+  const hit = profileCache.get(key)
+  if (hit && Date.now() - hit.at < SECTOR_CACHE_TTL_MS) return hit.profile
+
+  const profile = await fetchYahooCompanyProfileUncached(key)
+  profileCache.set(key, { profile, at: Date.now() })
+
+  // Keep the legacy sector-only cache warm too.
+  sectorCache.set(key, { sector: profile.sector, at: Date.now() })
+
+  return profile
 }
 
 export async function resolveSectorForTicker(

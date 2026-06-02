@@ -50,7 +50,7 @@ export const PICKS_V2_MOMENTUM_30D_RULES = {
   extremePenalty: 20,
 } as const
 export const PICKS_V2_UPSIDE_TO_RAN_RULES = {
-  minChange30dPct: 20,
+  minChange30dPct: 10,
   hardMinRatio: 0.15,
   hardPenalty: 25,
   softMinRatio: 0.3,

@@ -147,7 +147,7 @@ export function buildPickVsSector(
   const vs = computeVsSector({
     ticker: candidate.ticker,
     sector: candidate.sector,
-    sectorSource: 'watchlist',
+    sectorSource: candidate.source === 'discovery' ? 'resolved' : 'watchlist',
     fundamentals: f,
     benchmark,
   })

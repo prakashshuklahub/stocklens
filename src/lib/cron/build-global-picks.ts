@@ -11,7 +11,7 @@ import {
 } from '@/lib/picks-scoring-v2'
 import { normalizeWatchlistSector, isBenchmarkableSector, type BenchmarkableSector } from '@/lib/sector-relative-strength-scoring'
 import { ensureSectorBenchmarksLoaded } from '@/lib/sector-benchmarks'
-import { fetchYahooSector } from '@/lib/sectors'
+import { fetchYahooCompanyProfile } from '@/lib/sectors'
 import type { PickScoreInput, PickCandidate } from '@/lib/picks-scoring'
 import { loadResearchBatchFromDb } from '@/lib/stock-research-cache'
 import type { createServerClient } from '@/lib/supabase'
@@ -41,21 +41,24 @@ function sectorForBenchmark(sector: string | null | undefined) {
   return isBenchmarkableSector(normalized) ? normalized : null
 }
 
-async function resolveYahooSectorsForTickers(
+async function resolveYahooProfilesForTickers(
   tickers: string[],
-): Promise<Map<string, string | null>> {
-  const out = new Map<string, string | null>()
+): Promise<{ sectorByTicker: Map<string, string | null>; nameByTicker: Map<string, string | null> }> {
+  const sectorByTicker = new Map<string, string | null>()
+  const nameByTicker = new Map<string, string | null>()
   for (const sym of tickers) {
     try {
-      const sector = await fetchYahooSector(sym)
-      out.set(sym.toUpperCase(), sector)
+      const profile = await fetchYahooCompanyProfile(sym)
+      sectorByTicker.set(sym.toUpperCase(), profile.sector)
+      nameByTicker.set(sym.toUpperCase(), profile.company_name)
     } catch {
-      out.set(sym.toUpperCase(), null)
+      sectorByTicker.set(sym.toUpperCase(), null)
+      nameByTicker.set(sym.toUpperCase(), null)
     }
     // Tiny gap to be polite to Yahoo.
     await new Promise((r) => setTimeout(r, 35))
   }
-  return out
+  return { sectorByTicker, nameByTicker }
 }
 
 export async function buildGlobalPicksInDb(supabase: Supabase): Promise<BuildGlobalPicksResult> {
@@ -138,7 +141,8 @@ export async function buildGlobalPicksInDb(supabase: Supabase): Promise<BuildGlo
 
     const preRank = [...coarse].sort((a, b) => b.score - a.score).slice(0, 120)
     const preTickers = preRank.map((p) => p.ticker.toUpperCase())
-    const yahooSectors = await resolveYahooSectorsForTickers(preTickers)
+    const { sectorByTicker: yahooSectors, nameByTicker: yahooNames } =
+      await resolveYahooProfilesForTickers(preTickers)
 
     const sectorPeMedians = computeSectorPeMedians(researchByTicker, yahooSectors)
 
@@ -151,10 +155,11 @@ export async function buildGlobalPicksInDb(supabase: Supabase): Promise<BuildGlo
 
       const research = researchByTicker.get(sym) ?? null
       const sector = yahooSectors.get(sym) ?? null
+      const company_name = yahooNames.get(sym) ?? sym
 
       const candidate: PickCandidate = {
         ticker: sym,
-        company_name: sym,
+        company_name,
         sector,
         source: 'discovery',
       }
