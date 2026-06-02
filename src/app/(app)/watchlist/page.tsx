@@ -102,6 +102,18 @@ function sortAlphabetical(stocks: WatchlistStock[]): WatchlistStock[] {
   return [...stocks].sort((a, b) => a.ticker.localeCompare(b.ticker))
 }
 
+function filterWatchlistStocks(stocks: WatchlistStock[], query: string): WatchlistStock[] {
+  const q = query.trim().toLowerCase()
+  if (!q) return stocks
+  return stocks.filter((stock) => {
+    if (stock.ticker.toLowerCase().includes(q)) return true
+    if (stock.company_name?.toLowerCase().includes(q)) return true
+    if (stock.sector?.toLowerCase().includes(q)) return true
+    if (stock.tags?.some((tag) => tag.name.toLowerCase().includes(q))) return true
+    return false
+  })
+}
+
 function targetUpsidePct(
   stock: WatchlistStock,
   fundamentalsByTicker: Record<string, StockFundamentals>,
@@ -496,7 +508,14 @@ export default function WatchlistPage() {
   }
   const [adding, setAdding] = useState(false)
   const [error, setError] = useState('')
+  const [filterQuery, setFilterQuery] = useState('')
   const [sortMode, setSortMode] = useState<WatchlistSort>(() => loadSortMode())
+
+  const filteredStocks = useMemo(
+    () => filterWatchlistStocks(stocks, filterQuery),
+    [stocks, filterQuery],
+  )
+  const isFiltering = filterQuery.trim().length > 0
 
   const refreshPrices = useCallback(() => {
     void mutate()
@@ -515,27 +534,27 @@ export default function WatchlistPage() {
     if (sortMode === 'bullish' || sortMode === 'bearish') {
       return {
         type: 'flat' as const,
-        stocks: sortBySignalBias(stocks, signalsByTicker, sortMode),
+        stocks: sortBySignalBias(filteredStocks, signalsByTicker, sortMode),
         emptyFilter: sortMode,
       }
     }
     if (sortMode === 'sector') {
-      return { type: 'sector' as const, groups: groupBySector(stocks) }
+      return { type: 'sector' as const, groups: groupBySector(filteredStocks) }
     }
     if (sortMode === 'tag') {
-      return { type: 'tag' as const, groups: groupByTag(stocks) }
+      return { type: 'tag' as const, groups: groupByTag(filteredStocks) }
     }
     if (sortMode === 'day_change') {
-      return { type: 'flat' as const, stocks: sortByDailyChange(stocks) }
+      return { type: 'flat' as const, stocks: sortByDailyChange(filteredStocks) }
     }
     if (sortMode === 'target_upside') {
       return {
         type: 'flat' as const,
-        stocks: sortByTargetUpside(stocks, fundamentalsByTicker),
+        stocks: sortByTargetUpside(filteredStocks, fundamentalsByTicker),
       }
     }
-    return { type: 'flat' as const, stocks: sortAlphabetical(stocks) }
-  }, [stocks, sortMode, fundamentalsByTicker, signalsByTicker])
+    return { type: 'flat' as const, stocks: sortAlphabetical(filteredStocks) }
+  }, [filteredStocks, sortMode, fundamentalsByTicker, signalsByTicker])
 
   async function handleAdd(result: StockResult) {
     setError('')
@@ -634,11 +653,16 @@ export default function WatchlistPage() {
 
           <div className="flex items-center gap-3 mb-4" role="search">
             <div className="flex-1 min-w-0">
-              <StockSearchInput onSelect={handleAdd} disabled={adding} />
+              <StockSearchInput
+                onSelect={handleAdd}
+                onQueryChange={setFilterQuery}
+                disabled={adding}
+              />
             </div>
             {!isLoading && stocks.length > 0 && (
               <p className="type-meta text-zinc-500 tabular-nums shrink-0" aria-live="polite">
-                {stocks.length} stocks
+                {isFiltering ? `${filteredStocks.length} of ${stocks.length}` : stocks.length}{' '}
+                stocks
               </p>
             )}
           </div>
@@ -653,13 +677,15 @@ export default function WatchlistPage() {
             </div>
           )}
 
-          <WatchlistSuggestions
-            ownedTickers={ownedTickers}
-            onAdd={handleAdd}
-            adding={adding}
-            marketOpen={marketOpen}
-            refreshToken={suggestionsRefreshToken}
-          />
+          {!isFiltering && (
+            <WatchlistSuggestions
+              ownedTickers={ownedTickers}
+              onAdd={handleAdd}
+              adding={adding}
+              marketOpen={marketOpen}
+              refreshToken={suggestionsRefreshToken}
+            />
+          )}
 
           {/* Content */}
           {(isLoading || stocks.length > 0) && (
@@ -691,7 +717,11 @@ export default function WatchlistPage() {
                 </div>
               )}
 
-              {layout.type === 'sector' ? (
+              {isFiltering && filteredStocks.length === 0 ? (
+                <p className="text-sm text-muted text-center py-12">
+                  No watchlist stocks match &ldquo;{filterQuery.trim()}&rdquo;.
+                </p>
+              ) : layout.type === 'sector' ? (
                 layout.groups.map(([sector, sectorStocks]) => (
                   <SectorGroup
                     key={sector}

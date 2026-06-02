@@ -18,6 +18,15 @@ type Supabase = ReturnType<typeof createServerClient>
 
 const EMPTY_NEWS = new Map<string, SignalNewsItem[]>()
 
+/** Drop picks when live price is more than this % above avg analyst target (see applyLivePriceToPick). */
+export const PICKS_LIVE_MIN_UPSIDE_PCT = -5
+
+export function pickPassesLiveUpsideGate(p: Pick): boolean {
+  if (!p.target_mean || p.target_mean <= 0) return true
+  if (p.upside_pct == null || !Number.isFinite(p.upside_pct)) return true
+  return p.upside_pct >= PICKS_LIVE_MIN_UPSIDE_PCT
+}
+
 type GlobalRunRow = {
   id: string
   run_date: string
@@ -172,6 +181,14 @@ export async function buildGlobalPicksApiResponse(
     })
   }
 
+  const beforeLiveFilter = picks.length
+  picks = picks.filter(pickPassesLiveUpsideGate)
+  if (beforeLiveFilter > picks.length) {
+    console.info(
+      `[global-picks] filtered ${beforeLiveFilter - picks.length} pick(s) below ${PICKS_LIVE_MIN_UPSIDE_PCT}% live upside`,
+    )
+  }
+
   picks = picks.map((p) => {
     const sym = p.ticker.toUpperCase()
     const holding = portfolio.find((h) => h.ticker.toUpperCase() === sym)
@@ -219,7 +236,8 @@ export async function buildGlobalPicksApiResponse(
   }
 
   const scoredShape = picks as unknown as ScoredPick[]
-  const cachedNarratives = await loadCachedPickNarratives(supabase, tickers, 'global-picks')
+  const filteredTickers = picks.map((p) => p.ticker)
+  const cachedNarratives = await loadCachedPickNarratives(supabase, filteredTickers, 'global-picks')
   const { picks: withNarratives, narrativeTimes, pendingLlm } = attachPickNarratives(
     scoredShape,
     cachedNarratives,

@@ -3,8 +3,8 @@
 import useSWR from 'swr'
 import { useCallback, useEffect, useMemo, useState, type ReactNode } from 'react'
 import AppNav from '@/components/AppNav'
-import { RefreshCw } from 'lucide-react'
 import PicksLoadingState from '@/components/picks/PicksLoadingState'
+import { PicksRefreshProvider } from '@/contexts/picks-refresh'
 import AnalystMiniGrid from '@/components/AnalystMiniGrid'
 import PriceChartPanel from '@/components/PriceChartPanel'
 import StockResearchPanel from '@/components/StockResearchPanel'
@@ -98,66 +98,6 @@ function timeAgo(iso: string): string {
   const h = Math.floor(m / 60)
   if (h < 24) return `${h}h ago`
   return `${Math.floor(h / 24)}d ago`
-}
-
-function timeUntil(iso: string): string {
-  const s = Math.floor((new Date(iso).getTime() - Date.now()) / 1000)
-  if (s <= 0) return 'soon'
-  const m = Math.floor(s / 60)
-  if (m < 60) return `${m}m`
-  const h = Math.floor(m / 60)
-  if (h < 48) return `${h}h`
-  return `${Math.floor(h / 24)}d`
-}
-
-function GlobalPicksMeta({
-  data,
-  refreshing,
-  onRefresh,
-}: {
-  data: PicksResponse
-  refreshing: boolean
-  onRefresh: () => void
-}) {
-  const updated = data.generated_at ?? data.scores_at
-  const next = data.next_refresh_at
-
-  return (
-    <div className="mb-4">
-      <div className="flex items-center justify-between gap-3 rounded-xl border border-white/10 bg-zinc-900/60 px-3 py-2.5">
-        <div className="min-w-0 type-meta text-zinc-400 leading-snug">
-          {updated ? (
-            <span>Updated {timeAgo(updated)}</span>
-          ) : (
-            <span>Not published yet</span>
-          )}
-          {next ? (
-            <span className="text-muted"> · Next refresh in {timeUntil(next)}</span>
-          ) : null}
-          {data.qualified_count != null ? (
-            <span className="text-muted"> · {data.qualified_count} qualified</span>
-          ) : null}
-          {data.stale ? (
-            <span className="text-amber-400/90"> · Showing last published list</span>
-          ) : null}
-        </div>
-        <button
-          type="button"
-          onClick={onRefresh}
-          disabled={refreshing}
-          className={cn(
-            'shrink-0 w-11 h-11 flex items-center justify-center rounded-xl',
-            'border border-white/10 bg-zinc-800/80 text-zinc-300',
-            '[touch-action:manipulation] active:scale-95',
-            refreshing && 'opacity-50',
-          )}
-          aria-label="Refresh picks"
-        >
-          <RefreshCw className={cn('w-5 h-5', refreshing && 'animate-spin')} aria-hidden="true" />
-        </button>
-      </div>
-    </div>
-  )
 }
 
 function PickOwnershipRow({ pick }: { pick: Pick }) {
@@ -630,24 +570,16 @@ function PicksRankedList({
   data,
   marketSession,
   loading,
-  onRefresh,
-  refreshing,
 }: {
   data: PicksResponse
   marketSession: MarketSession
   loading?: boolean
-  onRefresh: () => void
-  refreshing?: boolean
 }) {
   const sectorBenchmarks = data.sector_benchmarks ?? {}
 
   const rankByTicker = useMemo(
     () => new Map(data.picks.map((p, i) => [p.ticker, i + 1])),
     [data.picks],
-  )
-
-  const metaBar = (
-    <GlobalPicksMeta data={data} refreshing={Boolean(refreshing)} onRefresh={onRefresh} />
   )
 
   if (loading) {
@@ -661,7 +593,6 @@ function PicksRankedList({
   if (!data.picks.length) {
     return (
       <section aria-label="Stock picks">
-        {metaBar}
         <div className="text-center py-24">
           <div className="w-16 h-16 rounded-3xl bg-zinc-900 flex items-center justify-center mx-auto mb-5">
             <Sparkles className="w-7 h-7 text-zinc-700" aria-hidden="true" />
@@ -677,8 +608,6 @@ function PicksRankedList({
 
   return (
     <section aria-label="Stock picks">
-      {metaBar}
-
       <ul className="space-y-3">
         {data.picks.map((p) => (
           <li key={p.ticker}>
@@ -718,7 +647,6 @@ const EMPTY_PICKS: PicksResponse = {
 
 export default function PicksPage() {
   const marketSession = useMarketSession()
-  const [pullY, setPullY] = useState(0)
   const [isRefreshing, setIsRefreshing] = useState(false)
   const { data, isLoading, error, mutate } = useSWR<PicksResponse>('/api/picks', fetchJson, {
     revalidateOnFocus: false,
@@ -728,12 +656,16 @@ export default function PicksPage() {
   const handleRefresh = useCallback(async () => {
     setIsRefreshing(true)
     try {
-      await mutate(fetchJson('/api/picks?refresh=1'), { revalidate: false })
+      await mutate(fetchJson('/api/picks'), { revalidate: false })
     } finally {
       setIsRefreshing(false)
-      setPullY(0)
     }
   }, [mutate])
+
+  const picksRefreshValue = useMemo(
+    () => ({ refresh: handleRefresh, refreshing: isRefreshing }),
+    [handleRefresh, isRefreshing],
+  )
 
   const headlineTickers = useMemo(() => {
     if (!data?.picks.length) return ''
@@ -792,48 +724,24 @@ export default function PicksPage() {
   }, [data, narrativeData, headlineData])
 
   return (
-    <div className="min-h-screen bg-zinc-950">
-      <AppNav />
+    <PicksRefreshProvider value={picksRefreshValue}>
+      <div className="min-h-screen bg-zinc-950">
+        <AppNav />
 
-      <main
-        id="main"
-        className="page-shell !pt-1"
-        onTouchStart={(e) => {
-          if (window.scrollY <= 0) {
-            setPullY(e.touches[0].clientY)
-          }
-        }}
-        onTouchMove={(e) => {
-          if (pullY <= 0) return
-          const delta = e.touches[0].clientY - pullY
-          if (delta > 0 && window.scrollY <= 0) e.preventDefault()
-        }}
-        onTouchEnd={async (e) => {
-          if (pullY <= 0) return
-          const delta = e.changedTouches[0].clientY - pullY
-          setPullY(0)
-          if (delta > 72 && window.scrollY <= 0) await handleRefresh()
-        }}
-      >
-        <h1 className="sr-only">Picks</h1>
-        {pullY > 0 ? (
-          <p className="type-meta text-center text-zinc-500 py-1" aria-hidden="true">
-            Pull to refresh
-          </p>
-        ) : null}
+        <main id="main" className="page-shell !pt-1">
+          <h1 className="sr-only">Picks</h1>
 
-        {error ? (
-          <p className="text-zinc-500 text-sm text-center py-16">Failed to load picks. Try refreshing.</p>
-        ) : (
-          <PicksRankedList
-            data={displayData ?? EMPTY_PICKS}
-            marketSession={marketSession}
-            loading={isLoading && !displayData}
-            onRefresh={handleRefresh}
-            refreshing={isRefreshing}
-          />
-        )}
-      </main>
-    </div>
+          {error ? (
+            <p className="text-zinc-500 text-sm text-center py-16">Failed to load picks.</p>
+          ) : (
+            <PicksRankedList
+              data={displayData ?? EMPTY_PICKS}
+              marketSession={marketSession}
+              loading={isLoading && !displayData}
+            />
+          )}
+        </main>
+      </div>
+    </PicksRefreshProvider>
   )
 }

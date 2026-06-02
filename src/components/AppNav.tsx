@@ -1,9 +1,10 @@
 'use client'
 
 import { signOut, useSession } from 'next-auth/react'
-import { TrendingUp, LogOut, BarChart2, Sparkles, PieChart, Settings } from 'lucide-react'
+import { TrendingUp, LogOut, BarChart2, Sparkles, PieChart, Settings, RefreshCw } from 'lucide-react'
 import Link from 'next/link'
 import { usePathname } from 'next/navigation'
+import { usePicksRefresh } from '@/contexts/picks-refresh'
 import { cn } from '@/lib/utils'
 
 const BOTTOM_TABS = [
@@ -15,6 +16,8 @@ const BOTTOM_TABS = [
 export default function AppNav() {
   const { data: session } = useSession()
   const pathname = usePathname()
+  const picksRefresh = usePicksRefresh()
+  const showPicksRefresh = pathname.startsWith('/picks') && picksRefresh != null
   const user = session?.user
   const initials = user?.name
     ? user.name.split(' ').map((n: string) => n[0]).join('').slice(0, 2).toUpperCase()
@@ -35,6 +38,26 @@ export default function AppNav() {
           </div>
 
           <div className="flex items-center gap-0.5">
+            {showPicksRefresh ? (
+              <button
+                type="button"
+                onClick={() => void picksRefresh.refresh()}
+                disabled={picksRefresh.refreshing}
+                aria-label="Refresh picks"
+                className={cn(
+                  'w-11 h-11 flex items-center justify-center rounded-xl transition-colors',
+                  'text-zinc-500 hover:text-zinc-300 active:bg-zinc-800/80',
+                  '[touch-action:manipulation] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-zinc-500',
+                  picksRefresh.refreshing && 'opacity-50',
+                )}
+              >
+                <RefreshCw
+                  className={cn('w-5 h-5', picksRefresh.refreshing && 'animate-spin')}
+                  aria-hidden="true"
+                />
+              </button>
+            ) : null}
+
             <Link
               href="/settings"
               aria-label="Settings"

@@ -1,6 +1,5 @@
 import { auth, getSessionUserId } from '@/lib/auth'
 import { buildGlobalPicksApiResponse } from '@/lib/global-picks-response'
-import { isPriceRefreshActive } from '@/lib/market-hours'
 import { PICKS_NO_CACHE_HEADERS } from '@/lib/picks-pipeline'
 import { createServerClient } from '@/lib/supabase'
 import { NextRequest, NextResponse } from 'next/server'
@@ -14,10 +13,9 @@ export async function GET(req: NextRequest) {
   }
 
   const supabase = createServerClient()
-  const forceRefresh = req.nextUrl.searchParams.get('refresh') === '1'
 
   const response = await buildGlobalPicksApiResponse(supabase, userId, {
-    overlayLivePrices: forceRefresh || isPriceRefreshActive(),
+    overlayLivePrices: true,
   })
 
   return NextResponse.json(response, { headers: PICKS_NO_CACHE_HEADERS })

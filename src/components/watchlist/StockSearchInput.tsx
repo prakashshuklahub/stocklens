@@ -29,10 +29,17 @@ export interface StockResult {
 
 interface Props {
   onSelect: (result: StockResult) => void
+  onQueryChange?: (query: string) => void
   disabled?: boolean
+  placeholder?: string
 }
 
-export default function StockSearchInput({ onSelect, disabled }: Props) {
+export default function StockSearchInput({
+  onSelect,
+  onQueryChange,
+  disabled,
+  placeholder = 'Search or add ticker…',
+}: Props) {
   const inputId = useId()
   const listboxId = useId()
   const [query, setQuery] = useState('')
@@ -51,6 +58,10 @@ export default function StockSearchInput({ onSelect, disabled }: Props) {
       setLoading(false)
     }
   }, [])
+
+  useEffect(() => {
+    onQueryChange?.(query)
+  }, [query, onQueryChange])
 
   useEffect(() => {
     if (debounceRef.current) clearTimeout(debounceRef.current)
@@ -90,7 +101,7 @@ export default function StockSearchInput({ onSelect, disabled }: Props) {
 
   return (
     <div ref={containerRef} className="relative w-full">
-      <label htmlFor={inputId} className="sr-only">Search stocks by ticker or company name</label>
+      <label htmlFor={inputId} className="sr-only">Search watchlist or add a stock by ticker or company name</label>
       <div className="relative">
         <Search
           className="absolute left-3 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-zinc-500 pointer-events-none"
@@ -105,12 +116,12 @@ export default function StockSearchInput({ onSelect, disabled }: Props) {
           aria-autocomplete="list"
           aria-expanded={open && results.length > 0}
           aria-controls={listboxId}
-          aria-label="Search stocks by ticker or company name"
+          aria-label="Search watchlist or add a stock by ticker or company name"
           autoComplete="off"
           spellCheck={false}
           value={query}
           onChange={(e) => setQuery(e.target.value)}
-          placeholder="Add ticker or company…"
+          placeholder={placeholder}
           disabled={disabled}
           onFocus={() => results.length > 0 && setOpen(true)}
           className="w-full card-surface pl-9 pr-9 py-2.5 min-h-[44px] text-sm text-white placeholder:text-muted focus:outline-none focus-visible:ring-2 focus-visible:ring-blue-500/40 transition-all disabled:opacity-40 [touch-action:manipulation]"
