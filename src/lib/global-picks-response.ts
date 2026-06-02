@@ -20,10 +20,13 @@ const EMPTY_NEWS = new Map<string, SignalNewsItem[]>()
 
 /** Drop picks when live price is more than this % above avg analyst target (see applyLivePriceToPick). */
 export const PICKS_LIVE_MIN_UPSIDE_PCT = -5
+/** Drop picks when live upside is below this % (near/at target). */
+export const PICKS_LIVE_TARGET_NEAR_MAX_PCT = 3
 
 export function pickPassesLiveUpsideGate(p: Pick): boolean {
   if (!p.target_mean || p.target_mean <= 0) return true
   if (p.upside_pct == null || !Number.isFinite(p.upside_pct)) return true
+  if (p.upside_pct < PICKS_LIVE_TARGET_NEAR_MAX_PCT) return false
   return p.upside_pct >= PICKS_LIVE_MIN_UPSIDE_PCT
 }
 

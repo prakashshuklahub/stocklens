@@ -59,6 +59,12 @@ export type YahooCompanyProfile = {
 
 const profileCache = new Map<string, { profile: YahooCompanyProfile; at: number }>()
 
+// Small, explicit overrides for known Yahoo misclassifications.
+// Keep this list tiny and data-driven (only when observed wrong in output).
+const SECTOR_OVERRIDES: Partial<Record<string, WatchlistSector>> = {
+  IREN: 'Technology',
+}
+
 async function fetchYahooSectorUncached(ticker: string): Promise<WatchlistSector | null> {
   const sym = ticker.toUpperCase()
 
@@ -146,16 +152,21 @@ async function fetchYahooCompanyProfileUncached(ticker: string): Promise<YahooCo
 /** Resolve sector + company name from Yahoo (24h in-memory cache). */
 export async function fetchYahooCompanyProfile(ticker: string): Promise<YahooCompanyProfile> {
   const key = ticker.toUpperCase()
+  const override = SECTOR_OVERRIDES[key]
   const hit = profileCache.get(key)
   if (hit && Date.now() - hit.at < SECTOR_CACHE_TTL_MS) return hit.profile
 
   const profile = await fetchYahooCompanyProfileUncached(key)
-  profileCache.set(key, { profile, at: Date.now() })
+  const finalProfile: YahooCompanyProfile = {
+    sector: override ?? profile.sector,
+    company_name: profile.company_name,
+  }
+  profileCache.set(key, { profile: finalProfile, at: Date.now() })
 
   // Keep the legacy sector-only cache warm too.
-  sectorCache.set(key, { sector: profile.sector, at: Date.now() })
+  sectorCache.set(key, { sector: finalProfile.sector, at: Date.now() })
 
-  return profile
+  return finalProfile
 }
 
 export async function resolveSectorForTicker(
