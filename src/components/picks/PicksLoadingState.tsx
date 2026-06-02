@@ -1,15 +1,6 @@
 'use client'
 
-import { useEffect, useState } from 'react'
-import { Loader2, Sparkles } from 'lucide-react'
 import { cn } from '@/lib/utils'
-
-const LOADING_STEPS = [
-  'Loading prices and analyst ratings…',
-  'Scoring your watchlist and portfolio…',
-  'Checking market movers…',
-  'Ranking the top 10 by signal strength…',
-] as const
 
 function SkeletonBar({ className, delayMs = 0 }: { className?: string; delayMs?: number }) {
   return (
@@ -18,6 +9,15 @@ function SkeletonBar({ className, delayMs = 0 }: { className?: string; delayMs?:
       style={delayMs ? { animationDelay: `${delayMs}ms` } : undefined}
       aria-hidden="true"
     />
+  )
+}
+
+function PicksMetaSkeleton() {
+  return (
+    <div className="mb-4 flex items-center justify-between gap-3 rounded-xl border border-white/10 bg-zinc-900/60 px-3 py-2.5">
+      <SkeletonBar className="h-4 w-48 max-w-[70%]" />
+      <SkeletonBar className="h-11 w-11 rounded-xl shrink-0" delayMs={40} />
+    </div>
   )
 }
 
@@ -76,45 +76,10 @@ function PickCardSkeleton({ rank }: { rank: number }) {
   )
 }
 
-function PicksLoadingBanner() {
-  const [step, setStep] = useState(0)
-
-  useEffect(() => {
-    const id = window.setInterval(() => {
-      setStep((current) => (current + 1) % LOADING_STEPS.length)
-    }, 2400)
-    return () => window.clearInterval(id)
-  }, [])
-
-  return (
-    <div className="rounded-2xl border border-amber-500/15 bg-gradient-to-br from-amber-500/[0.08] via-zinc-900/40 to-violet-500/[0.04] px-4 py-3.5 mb-4">
-      <div className="flex items-start gap-3">
-        <div className="relative shrink-0 mt-0.5">
-          <Sparkles className="w-5 h-5 text-amber-400/90" aria-hidden="true" />
-          <Loader2
-            className="absolute -right-1 -bottom-1 w-3 h-3 text-amber-300 animate-spin"
-            aria-hidden="true"
-          />
-        </div>
-        <div className="min-w-0 flex-1">
-          <p className="text-sm font-semibold text-amber-50/95">Building your top 10 picks</p>
-          <p className="type-meta text-zinc-400 mt-1" aria-live="polite">
-            {LOADING_STEPS[step]}
-          </p>
-          <div className="mt-3 h-1 rounded-full bg-zinc-800/90 overflow-hidden">
-            <div className="pick-loading-bar h-full w-1/3 rounded-full bg-gradient-to-r from-transparent via-amber-400/70 to-transparent" />
-          </div>
-          <p className="type-meta text-zinc-600 mt-2">Usually takes a few seconds the first time</p>
-        </div>
-      </div>
-    </div>
-  )
-}
-
 export default function PicksLoadingState() {
   return (
     <section aria-label="Loading stock picks" aria-busy="true">
-      <PicksLoadingBanner />
+      <PicksMetaSkeleton />
       <ul className="space-y-3">
         {[1, 2, 3, 4, 5].map((rank) => (
           <li key={rank}>

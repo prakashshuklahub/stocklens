@@ -9,7 +9,7 @@ import { fetchMarketMovers, type MoverQuote } from '@/lib/market-movers'
 
 export type { MoverQuote }
 
-/** Pull the candidate pool for trending scoring (default ~40 unique tickers). */
-export async function fetchTrendingCandidates(limit = 40): Promise<MoverQuote[]> {
+/** Pull the candidate pool for trending scoring (default up to 100 unique tickers). */
+export async function fetchTrendingCandidates(limit = 30): Promise<MoverQuote[]> {
   return fetchMarketMovers(limit)
 }

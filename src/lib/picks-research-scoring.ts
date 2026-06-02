@@ -73,7 +73,7 @@ export function daysUntilCalendarDate(isoDate: string | null | undefined): numbe
 /** Hard gate — exclude pick when earnings within N days. */
 export function isEarningsExclusionWindow(
   research: StockResearchSnapshot | null,
-  excludeDays = PICKS_RESEARCH_RULES.earningsExcludeDays,
+  excludeDays: number = PICKS_RESEARCH_RULES.earningsExcludeDays,
 ): boolean {
   const days = daysUntilCalendarDate(research?.earnings_date)
   if (days == null) return false

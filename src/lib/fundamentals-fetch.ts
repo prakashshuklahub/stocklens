@@ -69,7 +69,14 @@ export async function fetchYahooHistory(ticker: string) {
       }
     }
 
+    const last_price =
+      typeof currentPrice === 'number' && Number.isFinite(currentPrice) && currentPrice > 0
+        ? currentPrice
+        : null
+
     return {
+      last_price,
+      change_1d_pct: changePct(1),
       week52_high: (meta?.fiftyTwoWeekHigh as number) ?? null,
       week52_low: (meta?.fiftyTwoWeekLow as number) ?? null,
       change_7d_pct: changePct(7),
@@ -212,6 +219,8 @@ export async function fetchStockPriceData(ticker: string): Promise<Omit<
 
   return {
     ticker: sym,
+    last_price: yahoo?.last_price ?? null,
+    change_1d_pct: yahoo?.change_1d_pct ?? null,
     change_7d_pct: yahoo?.change_7d_pct ?? null,
     change_14d_pct: yahoo?.change_14d_pct ?? null,
     change_30d_pct: yahoo?.change_30d_pct ?? null,

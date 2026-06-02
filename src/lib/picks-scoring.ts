@@ -138,7 +138,7 @@ interface BuildPickOptions {
   momentumUpsidePointsCap: number | null
 }
 
-function buildPickVsSector(
+export function buildPickVsSector(
   candidate: PickCandidate,
   f: StockFundamentals,
   benchmark: SectorBenchmark | null | undefined,
@@ -155,7 +155,7 @@ function buildPickVsSector(
   return vs
 }
 
-function applyVsSectorScore(
+export function applyVsSectorScore(
   vs: SectorRelativeStrength | null,
   sector: string | null,
   factors: PickFactor[],

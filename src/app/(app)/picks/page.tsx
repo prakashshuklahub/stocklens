@@ -3,7 +3,7 @@
 import useSWR from 'swr'
 import { useCallback, useEffect, useMemo, useState, type ReactNode } from 'react'
 import AppNav from '@/components/AppNav'
-import FilterChipBar, { type FilterChipOption } from '@/components/FilterChipBar'
+import { RefreshCw } from 'lucide-react'
 import PicksLoadingState from '@/components/picks/PicksLoadingState'
 import AnalystMiniGrid from '@/components/AnalystMiniGrid'
 import PriceChartPanel from '@/components/PriceChartPanel'
@@ -27,14 +27,6 @@ import NewsRow from '@/components/NewsRow'
 import StockLogo from '@/components/StockLogo'
 import Week52Range from '@/components/Week52Range'
 import { pickDisplayCopy } from '@/lib/picks'
-import {
-  pickMatchesSourceFilter,
-  pickSourceFilterActiveClass,
-  pickSourceLabel,
-  pickSourceStyles,
-  PICK_SOURCE_LABELS,
-  type PickSourceFilter,
-} from '@/lib/pick-source-labels'
 import { isBenchmarkableSector, normalizeWatchlistSector } from '@/lib/sector-relative-strength-scoring'
 import {
   formatTargetPrice,
@@ -50,7 +42,6 @@ import type {
   PickNarrativesResponse,
   PicksResponse,
   PickFactor,
-  PickSourceTag,
   SectorBenchmark,
   SignalNewsItem,
 } from '@/types'
@@ -109,71 +100,90 @@ function timeAgo(iso: string): string {
   return `${Math.floor(h / 24)}d ago`
 }
 
-const PICKS_FILTER_STORAGE_KEY = 'picks-source-filter'
-
-function loadPickSourceFilter(): PickSourceFilter {
-  if (typeof window === 'undefined') return 'all'
-  const saved = sessionStorage.getItem(PICKS_FILTER_STORAGE_KEY)
-  if (
-    saved === 'all' ||
-    saved === 'movers' ||
-    saved === 'watchlist' ||
-    saved === 'portfolio'
-  ) {
-    return saved
-  }
-  return 'all'
+function timeUntil(iso: string): string {
+  const s = Math.floor((new Date(iso).getTime() - Date.now()) / 1000)
+  if (s <= 0) return 'soon'
+  const m = Math.floor(s / 60)
+  if (m < 60) return `${m}m`
+  const h = Math.floor(m / 60)
+  if (h < 48) return `${h}h`
+  return `${Math.floor(h / 24)}d`
 }
 
-const PICK_SOURCE_FILTERS: FilterChipOption<PickSourceFilter>[] = [
-  { id: 'all', label: 'All' },
-  {
-    id: 'movers',
-    label: PICK_SOURCE_LABELS.discovery,
-    activeClassName: pickSourceFilterActiveClass('movers'),
-  },
-  {
-    id: 'watchlist',
-    label: PICK_SOURCE_LABELS.watchlist,
-    activeClassName: pickSourceFilterActiveClass('watchlist'),
-  },
-  {
-    id: 'portfolio',
-    label: PICK_SOURCE_LABELS.portfolio,
-    activeClassName: pickSourceFilterActiveClass('portfolio'),
-  },
-]
+function GlobalPicksMeta({
+  data,
+  refreshing,
+  onRefresh,
+}: {
+  data: PicksResponse
+  refreshing: boolean
+  onRefresh: () => void
+}) {
+  const updated = data.generated_at ?? data.scores_at
+  const next = data.next_refresh_at
 
-function filterEmptyMessage(filter: PickSourceFilter): string {
-  switch (filter) {
-    case 'movers':
-      return 'No market movers in today\'s top 10.'
-    case 'watchlist':
-      return 'No watchlist names in today\'s top 10.'
-    case 'portfolio':
-      return 'No portfolio names in today\'s top 10.'
-    default:
-      return 'None of your stocks or today\'s market movers match our buy checklist.'
-  }
-}
-
-function ConfidenceBadge({ level }: { level: 'high' | 'medium' | 'low' }) {
-  const config = {
-    high: { label: 'High confidence', styles: 'bg-emerald-500/15 text-emerald-300 ring-1 ring-emerald-500/25' },
-    medium: { label: 'Medium confidence', styles: 'bg-yellow-500/15 text-yellow-300 ring-1 ring-yellow-500/20' },
-    low: { label: 'Low confidence', styles: 'bg-zinc-800/80 text-zinc-400 ring-1 ring-white/8' },
-  }[level]
   return (
-    <span
-      aria-label={config.label}
-      className={cn(
-        'shrink-0 whitespace-nowrap type-micro font-bold uppercase tracking-wide',
-        'px-2 py-0.5 rounded-full',
-        config.styles,
-      )}
-    >
-      {config.label}
-    </span>
+    <div className="mb-4">
+      <div className="flex items-center justify-between gap-3 rounded-xl border border-white/10 bg-zinc-900/60 px-3 py-2.5">
+        <div className="min-w-0 type-meta text-zinc-400 leading-snug">
+          {updated ? (
+            <span>Updated {timeAgo(updated)}</span>
+          ) : (
+            <span>Not published yet</span>
+          )}
+          {next ? (
+            <span className="text-muted"> · Next refresh in {timeUntil(next)}</span>
+          ) : null}
+          {data.qualified_count != null ? (
+            <span className="text-muted"> · {data.qualified_count} qualified</span>
+          ) : null}
+          {data.stale ? (
+            <span className="text-amber-400/90"> · Showing last published list</span>
+          ) : null}
+        </div>
+        <button
+          type="button"
+          onClick={onRefresh}
+          disabled={refreshing}
+          className={cn(
+            'shrink-0 w-11 h-11 flex items-center justify-center rounded-xl',
+            'border border-white/10 bg-zinc-800/80 text-zinc-300',
+            '[touch-action:manipulation] active:scale-95',
+            refreshing && 'opacity-50',
+          )}
+          aria-label="Refresh picks"
+        >
+          <RefreshCw className={cn('w-5 h-5', refreshing && 'animate-spin')} aria-hidden="true" />
+        </button>
+      </div>
+    </div>
+  )
+}
+
+function PickOwnershipRow({ pick }: { pick: Pick }) {
+  if (!pick.ownership) return null
+  const pnlPct =
+    pick.ownership.avg_cost_basis > 0
+      ? ((pick.current_price - pick.ownership.avg_cost_basis) / pick.ownership.avg_cost_basis) * 100
+      : null
+  return (
+    <div className="flex items-center gap-1.5 mt-3 px-2 py-2 rounded-lg bg-black/20 border border-white/[0.04]">
+      <Briefcase className="w-3.5 h-3.5 shrink-0 text-amber-400/70" aria-hidden="true" />
+      <p className="type-meta text-zinc-400">
+        Your position:{' '}
+        <span className="text-zinc-200 font-semibold tabular-nums">{fmt(pick.ownership.shares, 0)}</span> shares
+        <span className="text-muted"> · avg ${fmt(pick.ownership.avg_cost_basis)}</span>
+        <span className="text-muted"> · </span>
+        <span className="text-zinc-200 font-semibold tabular-nums">${fmt(pick.ownership.current_value, 0)}</span>
+        <span className="text-muted"> at ${fmt(pick.current_price)}</span>
+        {pnlPct != null ? (
+          <span className={cn('font-semibold tabular-nums', pnlPct >= 0 ? 'text-emerald-400' : 'text-red-400')}>
+            {' '}
+            ({pnlPct >= 0 ? '+' : ''}{pnlPct.toFixed(1)}%)
+          </span>
+        ) : null}
+      </p>
+    </div>
   )
 }
 
@@ -214,19 +224,6 @@ type PickHeroContentProps = {
   rank: number
   upsidePct: number | null
   isPos: boolean
-}
-
-function PickOwnershipRow({ pick }: { pick: Pick }) {
-  if (!pick.ownership) return null
-  return (
-    <div className="flex items-center gap-1.5 mt-3 px-2 py-2 rounded-lg bg-black/20 border border-white/[0.04]">
-      <Briefcase className="w-3.5 h-3.5 shrink-0 text-amber-400/70" aria-hidden="true" />
-      <p className="type-meta text-zinc-400">
-        You own <span className="text-zinc-200 font-semibold tabular-nums">{fmt(pick.ownership.shares, 0)}</span> shares
-        <span className="text-muted"> · paid avg ${fmt(pick.ownership.avg_cost_basis)}</span>
-      </p>
-    </div>
-  )
 }
 
 function PickCardHeroStats({
@@ -283,8 +280,7 @@ function PickCardHero({ pick, rank, upsidePct, isPos }: PickHeroContentProps) {
         <PickRankBadge rank={rank} />
         <StockLogo ticker={pick.ticker} size="md" inset />
         <div className="min-w-0 flex-1">
-          <div className="flex items-center justify-between gap-2">
-            <div className="flex items-baseline gap-1.5 min-w-0 flex-wrap">
+          <div className="flex items-baseline gap-1.5 min-w-0 flex-wrap">
               <span className="text-lg font-bold text-white tracking-tight" translate="no">
                 {pick.ticker}
               </span>
@@ -294,8 +290,6 @@ function PickCardHero({ pick, rank, upsidePct, isPos }: PickHeroContentProps) {
                 </span>
               )}
             </div>
-            <ConfidenceBadge level={pick.confidence} />
-          </div>
           <p className="text-sm text-zinc-400 leading-snug line-clamp-2 mt-0.5 [text-wrap:pretty]">
             {pick.company_name}
           </p>
@@ -303,9 +297,6 @@ function PickCardHero({ pick, rank, upsidePct, isPos }: PickHeroContentProps) {
             {pick.sector && pick.sector !== 'Other' && (
               <span className="type-meta text-zinc-500">{pick.sector}</span>
             )}
-            <span className={cn('type-micro font-bold uppercase tracking-wide px-2 py-0.5 rounded-full', pickSourceStyles(pick.source))}>
-              {pickSourceLabel(pick.source)}
-            </span>
           </div>
         </div>
       </div>
@@ -423,7 +414,7 @@ function PickCard({
   marketSession: MarketSession
   sectorBenchmarks: Record<string, SectorBenchmark>
 }) {
-  const cardId = `pick-${pick.ticker}-${pick.source}`
+  const cardId = `pick-${pick.ticker}`
 
   const [activeSection, setActiveSection] = useState<PickAccordionKey | null>(null)
 
@@ -639,36 +630,29 @@ function PicksRankedList({
   data,
   marketSession,
   loading,
-  sourceFilter,
-  onSourceFilterChange,
+  onRefresh,
+  refreshing,
 }: {
   data: PicksResponse
   marketSession: MarketSession
   loading?: boolean
-  sourceFilter: PickSourceFilter
-  onSourceFilterChange: (filter: PickSourceFilter) => void
+  onRefresh: () => void
+  refreshing?: boolean
 }) {
   const sectorBenchmarks = data.sector_benchmarks ?? {}
 
-  const filteredPicks = useMemo(
-    () => data.picks.filter((p) => pickMatchesSourceFilter(p.source, sourceFilter)),
-    [data.picks, sourceFilter],
+  const rankByTicker = useMemo(
+    () => new Map(data.picks.map((p, i) => [p.ticker, i + 1])),
+    [data.picks],
   )
 
-  const rankByPickKey = useMemo(
-    () => new Map(data.picks.map((p, i) => [`${p.ticker}:${p.source}`, i + 1])),
-    [data.picks],
+  const metaBar = (
+    <GlobalPicksMeta data={data} refreshing={Boolean(refreshing)} onRefresh={onRefresh} />
   )
 
   if (loading) {
     return (
       <section aria-label="Stock picks">
-        <FilterChipBar
-          value={sourceFilter}
-          options={PICK_SOURCE_FILTERS}
-          onChange={onSourceFilterChange}
-          ariaLabel="Filter picks by source"
-        />
         <PicksLoadingState />
       </section>
     )
@@ -677,19 +661,14 @@ function PicksRankedList({
   if (!data.picks.length) {
     return (
       <section aria-label="Stock picks">
-        <FilterChipBar
-          value={sourceFilter}
-          options={PICK_SOURCE_FILTERS}
-          onChange={onSourceFilterChange}
-          ariaLabel="Filter picks by source"
-        />
+        {metaBar}
         <div className="text-center py-24">
           <div className="w-16 h-16 rounded-3xl bg-zinc-900 flex items-center justify-center mx-auto mb-5">
             <Sparkles className="w-7 h-7 text-zinc-700" aria-hidden="true" />
           </div>
           <p className="text-white text-base font-semibold mb-1">No picks right now</p>
           <p className="text-zinc-500 text-sm max-w-[280px] mx-auto [text-wrap:pretty]">
-            {filterEmptyMessage('all')}
+            No stocks met our quality bar in the latest run. Check back after the nightly refresh.
           </p>
         </div>
       </section>
@@ -698,34 +677,21 @@ function PicksRankedList({
 
   return (
     <section aria-label="Stock picks">
-      <FilterChipBar
-        value={sourceFilter}
-        options={PICK_SOURCE_FILTERS}
-        onChange={onSourceFilterChange}
-        ariaLabel="Filter picks by source"
-      />
+      {metaBar}
 
-      {!filteredPicks.length ? (
-        <div className="text-center py-16 px-4">
-          <p className="text-zinc-500 text-sm max-w-[280px] mx-auto [text-wrap:pretty]">
-            {filterEmptyMessage(sourceFilter)}
-          </p>
-        </div>
-      ) : (
-        <ul className="space-y-3">
-          {filteredPicks.map((p) => (
-            <li key={`${p.ticker}-${p.source}`}>
-              <PickCard
-                pick={p}
-                rank={rankByPickKey.get(`${p.ticker}:${p.source}`) ?? 1}
-                llmEnabled={data.llm_enabled}
-                marketSession={marketSession}
-                sectorBenchmarks={sectorBenchmarks}
-              />
-            </li>
-          ))}
-        </ul>
-      )}
+      <ul className="space-y-3">
+        {data.picks.map((p) => (
+          <li key={p.ticker}>
+            <PickCard
+              pick={p}
+              rank={rankByTicker.get(p.ticker) ?? 1}
+              llmEnabled={data.llm_enabled}
+              marketSession={marketSession}
+              sectorBenchmarks={sectorBenchmarks}
+            />
+          </li>
+        ))}
+      </ul>
 
       <div className="mt-4 flex items-start gap-2 px-1">
         <ShieldCheck className="w-3.5 h-3.5 text-muted shrink-0 mt-0.5" aria-hidden="true" />
@@ -738,13 +704,36 @@ function PicksRankedList({
   )
 }
 
+const EMPTY_PICKS: PicksResponse = {
+  picks: [],
+  scores_at: '',
+  generated_at: null,
+  next_refresh_at: null,
+  qualified_count: 0,
+  stale: false,
+  narratives_at: null,
+  llm_enabled: false,
+  sector_benchmarks: {},
+}
+
 export default function PicksPage() {
   const marketSession = useMarketSession()
-  const [sourceFilter, setSourceFilter] = useState<PickSourceFilter>(() => loadPickSourceFilter())
-  const { data, isLoading, error } = useSWR<PicksResponse>('/api/picks', fetchJson, {
+  const [pullY, setPullY] = useState(0)
+  const [isRefreshing, setIsRefreshing] = useState(false)
+  const { data, isLoading, error, mutate } = useSWR<PicksResponse>('/api/picks', fetchJson, {
     revalidateOnFocus: false,
     dedupingInterval: 0,
   })
+
+  const handleRefresh = useCallback(async () => {
+    setIsRefreshing(true)
+    try {
+      await mutate(fetchJson('/api/picks?refresh=1'), { revalidate: false })
+    } finally {
+      setIsRefreshing(false)
+      setPullY(0)
+    }
+  }, [mutate])
 
   const headlineTickers = useMemo(() => {
     if (!data?.picks.length) return ''
@@ -787,47 +776,61 @@ export default function PicksPage() {
 
     let merged = data
     if (narrativeData?.narratives && Object.keys(narrativeData.narratives).length) {
-      const picks = mergePickNarratives(merged.picks, narrativeData.narratives)
       merged = {
         ...merged,
-        picks,
-        your_picks: picks.filter((p) => p.source !== 'discovery'),
-        discovery_picks: picks.filter((p) => p.source === 'discovery'),
+        picks: mergePickNarratives(merged.picks, narrativeData.narratives),
       }
     }
     if (headlineData?.headlines && Object.keys(headlineData.headlines).length) {
-      const picks = mergePickHeadlines(merged.picks, headlineData.headlines)
       merged = {
         ...merged,
-        picks,
-        your_picks: picks.filter((p) => p.source !== 'discovery'),
-        discovery_picks: picks.filter((p) => p.source === 'discovery'),
+        picks: mergePickHeadlines(merged.picks, headlineData.headlines),
       }
     }
 
     return merged
   }, [data, narrativeData, headlineData])
 
-  useEffect(() => {
-    sessionStorage.setItem(PICKS_FILTER_STORAGE_KEY, sourceFilter)
-  }, [sourceFilter])
-
   return (
     <div className="min-h-screen bg-zinc-950">
       <AppNav />
 
-      <main id="main" className="page-shell !pt-1">
+      <main
+        id="main"
+        className="page-shell !pt-1"
+        onTouchStart={(e) => {
+          if (window.scrollY <= 0) {
+            setPullY(e.touches[0].clientY)
+          }
+        }}
+        onTouchMove={(e) => {
+          if (pullY <= 0) return
+          const delta = e.touches[0].clientY - pullY
+          if (delta > 0 && window.scrollY <= 0) e.preventDefault()
+        }}
+        onTouchEnd={async (e) => {
+          if (pullY <= 0) return
+          const delta = e.changedTouches[0].clientY - pullY
+          setPullY(0)
+          if (delta > 72 && window.scrollY <= 0) await handleRefresh()
+        }}
+      >
         <h1 className="sr-only">Picks</h1>
+        {pullY > 0 ? (
+          <p className="type-meta text-center text-zinc-500 py-1" aria-hidden="true">
+            Pull to refresh
+          </p>
+        ) : null}
 
         {error ? (
           <p className="text-zinc-500 text-sm text-center py-16">Failed to load picks. Try refreshing.</p>
         ) : (
           <PicksRankedList
-            data={displayData ?? { picks: [], your_picks: [], discovery_picks: [], scores_at: '', narratives_at: null, llm_enabled: false, sector_benchmarks: {} }}
+            data={displayData ?? EMPTY_PICKS}
             marketSession={marketSession}
             loading={isLoading && !displayData}
-            sourceFilter={sourceFilter}
-            onSourceFilterChange={setSourceFilter}
+            onRefresh={handleRefresh}
+            refreshing={isRefreshing}
           />
         )}
       </main>

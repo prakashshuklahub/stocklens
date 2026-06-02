@@ -1,10 +1,10 @@
 /**
- * Benchmark unified /api/picks pipeline (top 10 global rank).
+ * Benchmark global /api/picks pipeline (nightly DB list + live price overlay).
  * Run: set -a && source .env.local && set +a && npx tsx scripts/benchmark-picks.ts
  */
 
+import { buildGlobalPicksApiResponse } from '@/lib/global-picks-response'
 import { isLLMEnabled } from '@/lib/llm'
-import { buildUnifiedPicksResponse } from '@/lib/picks-pipeline'
 import { createClient } from '@supabase/supabase-js'
 import ws from 'ws'
 
@@ -30,7 +30,7 @@ async function main() {
   const total0 = performance.now()
   const supabase = createBenchmarkSupabase()
 
-  console.log('\n=== Picks unified top-10 benchmark ===\n')
+  console.log('\n=== Global picks API benchmark ===\n')
 
   const sampleUser = await time('1. Find user', async () => {
     const { data } = await supabase.from('watchlist_stocks').select('user_id').limit(1).maybeSingle()
@@ -38,14 +38,12 @@ async function main() {
     return data
   })
 
-  const { response } = await time('2. buildUnifiedPicksResponse', () =>
-    buildUnifiedPicksResponse(supabase, sampleUser.user_id, false, 'picks-bench'),
+  const response = await time('2. buildGlobalPicksApiResponse', () =>
+    buildGlobalPicksApiResponse(supabase, sampleUser.user_id),
   )
 
-  console.log(`     → top picks: ${response.picks.length}`)
-  console.log(
-    `     → sources: watchlist/portfolio ${response.your_picks.length}, strong movers ${response.discovery_picks.length}`,
-  )
+  console.log(`     → picks: ${response.picks.length} (qualified ${response.qualified_count})`)
+  console.log(`     → stale: ${response.stale}`)
   console.log(`     → LLM enabled: ${isLLMEnabled()} (background LLM + headlines not timed)`)
 
   console.log(`\n  ${'TOTAL (critical path)'.padEnd(44)} ${String(ms(total0)).padStart(6)} ms\n`)

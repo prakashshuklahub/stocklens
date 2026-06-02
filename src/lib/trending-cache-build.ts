@@ -18,7 +18,7 @@ import type { createServerClient } from '@/lib/supabase'
 import type { CachedTrendingPayload } from '@/lib/trending-cache'
 import type { StockFundamentals } from '@/types'
 
-const CANDIDATE_POOL = 40
+const CANDIDATE_POOL = 100
 
 export async function buildGlobalTrendingCache(
   supabase: ReturnType<typeof createServerClient>,

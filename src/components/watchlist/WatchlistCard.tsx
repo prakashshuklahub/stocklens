@@ -701,7 +701,7 @@ export default function WatchlistCard({
                 )}
                 {showDayRange && (
                   <p className="text-xs text-zinc-500 tabular-nums mt-0.5">
-                    H {dayHigh} · L {dayLow}
+                    L {dayLow} · H {dayHigh}
                   </p>
                 )}
               </>

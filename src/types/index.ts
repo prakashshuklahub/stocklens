@@ -164,6 +164,9 @@ export interface UserSettingsResponse {
 
 export interface StockFundamentals {
   ticker: string
+  /** Last close / regular price from Yahoo chart refresh (cron scoring). */
+  last_price?: number | null
+  change_1d_pct?: number | null
   // Historical % changes
   change_7d_pct: number | null
   change_14d_pct: number | null
@@ -354,21 +357,24 @@ export interface Pick {
 
   // Optional ownership tag
   ownership: PickOwnership | null
+  /** Global picks v2 — user holds this ticker on watchlist. */
+  in_watchlist?: boolean
+  /** Global picks v2 — user holds this ticker in portfolio. */
+  in_portfolio?: boolean
 }
 
 export interface PicksResponse {
-  /** Top 10 buy ideas ranked across watchlist, portfolio, and strong movers. */
+  /** Ranked global buy ideas (nightly cron). */
   picks: Pick[]
-  /** @deprecated subset of picks — non-discovery sources only */
-  your_picks: Pick[]
-  /** @deprecated subset of picks — discovery source only */
-  discovery_picks: Pick[]
-  /** When prices, scores, and ranking were last computed */
+  /** When the published run completed. */
   scores_at: string
-  /** When pick summaries were last generated (3h narrative cache) */
+  generated_at: string | null
+  next_refresh_at: string | null
+  qualified_count: number
+  stale: boolean
+  /** When pick summaries were last generated (3h narrative cache). */
   narratives_at: string | null
   llm_enabled: boolean
-  /** Sector ETF benchmarks for client-side d1 vs-sector rows. */
   sector_benchmarks: Record<string, SectorBenchmark>
 }
 
