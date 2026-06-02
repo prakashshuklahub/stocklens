@@ -11,6 +11,7 @@ import {
 } from '@/lib/picks-scoring-v2'
 import { normalizeWatchlistSector, isBenchmarkableSector, type BenchmarkableSector } from '@/lib/sector-relative-strength-scoring'
 import { ensureSectorBenchmarksLoaded } from '@/lib/sector-benchmarks'
+import { fetchYahooSector } from '@/lib/sectors'
 import type { PickScoreInput, PickCandidate } from '@/lib/picks-scoring'
 import { loadResearchBatchFromDb } from '@/lib/stock-research-cache'
 import type { createServerClient } from '@/lib/supabase'
@@ -38,6 +39,23 @@ function priceFromFundamentals(f: StockFundamentals): number | null {
 function sectorForBenchmark(sector: string | null | undefined) {
   const normalized = normalizeWatchlistSector(sector)
   return isBenchmarkableSector(normalized) ? normalized : null
+}
+
+async function resolveYahooSectorsForTickers(
+  tickers: string[],
+): Promise<Map<string, string | null>> {
+  const out = new Map<string, string | null>()
+  for (const sym of tickers) {
+    try {
+      const sector = await fetchYahooSector(sym)
+      out.set(sym.toUpperCase(), sector)
+    } catch {
+      out.set(sym.toUpperCase(), null)
+    }
+    // Tiny gap to be polite to Yahoo.
+    await new Promise((r) => setTimeout(r, 35))
+  }
+  return out
 }
 
 export async function buildGlobalPicksInDb(supabase: Supabase): Promise<BuildGlobalPicksResult> {
@@ -82,21 +100,57 @@ export async function buildGlobalPicksInDb(supabase: Supabase): Promise<BuildGlo
     const sectorLoaded = await ensureSectorBenchmarksLoaded(supabase)
     const sectorBenchmarks = sectorLoaded.benchmarks
 
-    const sectorByTicker = new Map<string, string | null>()
-    for (const f of fundamentals) {
-      sectorByTicker.set(f.ticker.toUpperCase(), null)
-    }
-    const sectorPeMedians = computeSectorPeMedians(researchByTicker, sectorByTicker)
+    // ── Two-stage build ──────────────────────────────────────────────────────
+    // 1) Score the full universe without sector enrichment (fast).
+    // 2) Enrich only the top candidates with sector (Yahoo) and rescore with
+    //    vs-sector + sector median P/E + sector cap.
 
-    const scored: ScoredPick[] = []
+    const fundamentalsByTicker = new Map<string, StockFundamentals>()
+    for (const f of fundamentals) fundamentalsByTicker.set(f.ticker.toUpperCase(), f)
 
+    const coarse: ScoredPick[] = []
     for (const f of fundamentals) {
       const sym = f.ticker.toUpperCase()
       const current_price = priceFromFundamentals(f)
       if (current_price == null) continue
 
       const research = researchByTicker.get(sym) ?? null
-      const sector = research ? null : null
+      const candidate: PickCandidate = {
+        ticker: sym,
+        company_name: sym,
+        sector: null,
+        source: 'discovery',
+      }
+
+      const input: PickScoreInput = {
+        candidate,
+        current_price,
+        change_1d_pct: f.change_1d_pct ?? null,
+        fundamentals: f,
+        ownership: null,
+        benchmark: null,
+        researchContext: { research, sectorPeMedian: null },
+      }
+
+      const pick = scorePickV2(input)
+      if (pick) coarse.push(pick)
+    }
+
+    const preRank = [...coarse].sort((a, b) => b.score - a.score).slice(0, 120)
+    const preTickers = preRank.map((p) => p.ticker.toUpperCase())
+    const yahooSectors = await resolveYahooSectorsForTickers(preTickers)
+
+    const sectorPeMedians = computeSectorPeMedians(researchByTicker, yahooSectors)
+
+    const rescored: ScoredPick[] = []
+    for (const sym of preTickers) {
+      const f = fundamentalsByTicker.get(sym)
+      if (!f) continue
+      const current_price = priceFromFundamentals(f)
+      if (current_price == null) continue
+
+      const research = researchByTicker.get(sym) ?? null
+      const sector = yahooSectors.get(sym) ?? null
 
       const candidate: PickCandidate = {
         ticker: sym,
@@ -124,10 +178,10 @@ export async function buildGlobalPicksInDb(supabase: Supabase): Promise<BuildGlo
       }
 
       const pick = scorePickV2(input)
-      if (pick) scored.push(pick)
+      if (pick) rescored.push(pick)
     }
 
-    const ranked = rankGlobalPicks(scored, PICKS_V2_MAX_RESULTS)
+    const ranked = rankGlobalPicks(rescored, PICKS_V2_MAX_RESULTS)
     const shouldPublish = ranked.length >= PICKS_V2_MIN_PUBLISH_COUNT
 
     if (ranked.length) {

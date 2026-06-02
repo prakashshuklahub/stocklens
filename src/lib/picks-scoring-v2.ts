@@ -32,22 +32,29 @@ export const PICKS_V2_EARNINGS_EXCLUDE_DAYS = 7
 export const PICKS_V2_EARNINGS_SOFT_PENALTY_DAYS = 14
 export const PICKS_V2_EARNINGS_SOFT_PENALTY_POINTS = 10
 export const PICKS_V2_SECTOR_CAP = 3
-export const PICKS_V2_LIVE_MOMENTUM_RULES = {
+export const PICKS_V2_DISPERSION_RULES = {
+  wildMin: 1.0,
+  extremeMin: 1.5,
+  wildPenalty: 8,
+  extremePenalty: 15,
+} as const
+export const PICKS_V2_MOMENTUM_30D_RULES = {
   sweetSpotMinPct: 10,
   sweetSpotMaxPct: 30,
   sweetSpotPoints: 8,
-  moderateMaxPct: 60,
-  moderatePoints: 4,
+  strongMaxPct: 60,
+  strongPoints: 4,
   overheatedMinPct: 60,
   overheatedPenalty: 10,
+  extremeMinPct: 100,
+  extremePenalty: 20,
 } as const
-export const PICKS_V2_UPSIDE_TO_RAN_RATIO_MIN = 0.2
-export const PICKS_V2_UPSIDE_TO_RAN_RATIO_PENALTY = 12
-export const PICKS_V2_DISPERSION_RULES = {
-  wildMin: 1.0,
-  wildPenalty: 6,
-  extremeMin: 1.5,
-  extremePenalty: 12,
+export const PICKS_V2_UPSIDE_TO_RAN_RULES = {
+  minChange30dPct: 20,
+  hardMinRatio: 0.15,
+  hardPenalty: 25,
+  softMinRatio: 0.3,
+  softPenalty: 12,
 } as const
 
 export const PICKS_V2_RULES = {
@@ -114,18 +121,22 @@ function applyEarningsSoftPenalty(research: StockResearchSnapshot | null, factor
 function apply30dMomentumScore(change_30d_pct: number | null | undefined, factors: PickFactor[]): number {
   const c30 = change_30d_pct
   if (c30 == null || !Number.isFinite(c30)) return 0
-  const rules = PICKS_V2_LIVE_MOMENTUM_RULES
-  if (c30 >= rules.sweetSpotMinPct && c30 <= rules.sweetSpotMaxPct) {
-    factors.push({ label: 'Healthy 30d momentum', value: `+${c30.toFixed(0)}%`, tone: 'positive' })
-    return rules.sweetSpotPoints
-  }
-  if (c30 > rules.sweetSpotMaxPct && c30 <= rules.moderateMaxPct) {
-    factors.push({ label: 'Strong 30d momentum', value: `+${c30.toFixed(0)}%`, tone: 'neutral' })
-    return rules.moderatePoints
+  const rules = PICKS_V2_MOMENTUM_30D_RULES
+  if (c30 > rules.extremeMinPct) {
+    factors.push({ label: 'Extreme 30d run', value: `+${c30.toFixed(0)}%`, tone: 'negative' })
+    return -rules.extremePenalty
   }
   if (c30 > rules.overheatedMinPct) {
     factors.push({ label: 'Overheated 30d run', value: `+${c30.toFixed(0)}%`, tone: 'negative' })
     return -rules.overheatedPenalty
+  }
+  if (c30 > rules.sweetSpotMaxPct && c30 <= rules.strongMaxPct) {
+    factors.push({ label: 'Strong 30d momentum', value: `+${c30.toFixed(0)}%`, tone: 'neutral' })
+    return rules.strongPoints
+  }
+  if (c30 >= rules.sweetSpotMinPct && c30 <= rules.sweetSpotMaxPct) {
+    factors.push({ label: 'Healthy 30d momentum', value: `+${c30.toFixed(0)}%`, tone: 'positive' })
+    return rules.sweetSpotPoints
   }
   return 0
 }
@@ -137,15 +148,28 @@ function applyUpsideToRanPenalty(
 ): number {
   const c30 = change_30d_pct
   if (c30 == null || !Number.isFinite(c30) || c30 <= 0) return 0
-  if (!Number.isFinite(upside_pct) || upside_pct <= 0) return 0
-  const ratio = upside_pct / c30
-  if (ratio >= PICKS_V2_UPSIDE_TO_RAN_RATIO_MIN) return 0
-  factors.push({
-    label: 'Limited upside vs recent run',
-    value: `${ratio.toFixed(2)}×`,
-    tone: 'negative',
-  })
-  return -PICKS_V2_UPSIDE_TO_RAN_RATIO_PENALTY
+  const rules = PICKS_V2_UPSIDE_TO_RAN_RULES
+  if (c30 <= rules.minChange30dPct) return 0
+  if (!Number.isFinite(upside_pct)) return 0
+
+  const ratio = upside_pct / Math.abs(c30)
+  if (ratio < rules.hardMinRatio) {
+    factors.push({
+      label: 'Limited upside vs recent run',
+      value: `${ratio.toFixed(2)}×`,
+      tone: 'negative',
+    })
+    return -rules.hardPenalty
+  }
+  if (ratio < rules.softMinRatio) {
+    factors.push({
+      label: 'Limited upside vs recent run',
+      value: `${ratio.toFixed(2)}×`,
+      tone: 'negative',
+    })
+    return -rules.softPenalty
+  }
+  return 0
 }
 
 function applyTargetDispersionPenalty(
