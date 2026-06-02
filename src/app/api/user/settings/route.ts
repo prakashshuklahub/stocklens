@@ -1,5 +1,4 @@
 import { auth, getSessionUserId } from '@/lib/auth'
-import { formatLastSentIst } from '@/lib/whatsapp/ist-day'
 import {
   indianMobileDisplay,
   normalizeIndianWhatsAppNumber,
@@ -26,32 +25,14 @@ export async function GET() {
   const supabase = createServerClient()
   const { data: user, error } = await supabase
     .from('users')
-    .select('whatsapp_number, preferences')
+    .select('whatsapp_number')
     .eq('id', userId)
     .single()
 
   if (error) return NextResponse.json({ error: error.message }, { status: 500 })
 
-  const prefs = parsePreferences(user.preferences)
-
-  const { data: lastNotif } = await supabase
-    .from('notifications_log')
-    .select('sent_at')
-    .eq('user_id', userId)
-    .eq('type', 'daily_briefing')
-    .eq('channel', 'whatsapp')
-    .eq('delivered', true)
-    .order('sent_at', { ascending: false })
-    .limit(1)
-    .maybeSingle()
-
-  const lastSentAt = lastNotif?.sent_at ?? null
-
   const body: UserSettingsResponse = {
     whatsapp_number: indianMobileDisplay(user.whatsapp_number) || null,
-    whatsapp_daily_briefing: prefs.whatsapp_daily_briefing === true,
-    last_sent_at: lastSentAt,
-    last_sent_label: lastSentAt ? formatLastSentIst(lastSentAt) : null,
   }
 
   return NextResponse.json(body)
@@ -59,7 +40,6 @@ export async function GET() {
 
 type PatchBody = {
   whatsapp_number?: string | null
-  whatsapp_daily_briefing?: boolean
 }
 
 export async function PATCH(req: NextRequest) {
@@ -79,7 +59,7 @@ export async function PATCH(req: NextRequest) {
   const supabase = createServerClient()
   const { data: existing, error: loadError } = await supabase
     .from('users')
-    .select('whatsapp_number, preferences')
+    .select('preferences')
     .eq('id', userId)
     .single()
 
@@ -105,24 +85,8 @@ export async function PATCH(req: NextRequest) {
     }
   }
 
-  if (typeof body.whatsapp_daily_briefing === 'boolean') {
-    prefs.whatsapp_daily_briefing = body.whatsapp_daily_briefing
-  }
-
-  const nextPhone =
-    'whatsapp_number' in updates ? updates.whatsapp_number : existing.whatsapp_number
-  const nextOptIn =
-    typeof body.whatsapp_daily_briefing === 'boolean'
-      ? body.whatsapp_daily_briefing
-      : prefs.whatsapp_daily_briefing === true
-
-  if (nextOptIn && !nextPhone) {
-    return NextResponse.json(
-      { error: 'Add a WhatsApp number before enabling daily briefing' },
-      { status: 400 },
-    )
-  }
-
+  // WhatsApp briefings disabled — keep opt-in off when saving contact info.
+  prefs.whatsapp_daily_briefing = false
   updates.preferences = prefs
 
   const { error: updateError } = await supabase.from('users').update(updates).eq('id', userId)

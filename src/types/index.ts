@@ -157,9 +157,6 @@ export interface PortfolioSummaryResponse {
 
 export interface UserSettingsResponse {
   whatsapp_number: string | null
-  whatsapp_daily_briefing: boolean
-  last_sent_at: string | null
-  last_sent_label: string | null
 }
 
 export interface StockFundamentals {

@@ -10,8 +10,7 @@ export default function SettingsLoadingSkeleton() {
       </div>
       <div className="space-y-2">
         <div className="h-3 w-20 rounded bg-zinc-800/50 ml-1" />
-        <div className="rounded-2xl border border-white/[0.04] overflow-hidden divide-y divide-white/[0.04]">
-          <div className="h-[72px] bg-zinc-900/40" />
+        <div className="rounded-2xl border border-white/[0.04] overflow-hidden">
           <div className="h-[88px] bg-zinc-900/40" />
         </div>
       </div>

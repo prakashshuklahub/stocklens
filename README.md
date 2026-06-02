@@ -30,15 +30,12 @@ Built with **Next.js 16**, **Supabase**, **NextAuth**, live prices from **Yahoo 
 
 ### Picks
 
-- Ranks **top 10 buy candidates globally** from:
-  - Your **watchlist**
-  - Your **portfolio** (tickers you hold but may not watch)
-  - **Discovery** — strong movers from trending screeners you don't already own
-- **Source filter** — All / Your picks / Discovery (persisted in session).
-- Scoring uses momentum, analyst ratings, 52-week position, news sentiment, upside vs target, **sector-relative strength**, and **research metrics** (earnings proximity, growth, volume).
-- Each pick shows confidence, buy zone, target, upside, factor chips, price chart, vs-sector panel, and expandable research.
-- Optional **Gemini** thesis + risk + company blurb (cached ~3h in `pick_narratives`; LLM runs in background, client polls `/api/picks/narratives`).
-- **Prices & scores** timestamp shown separately from AI narrative freshness.
+- **One shared list for everyone** — up to **15** US stocks ranked nightly (not personalized to your watchlist).
+- Built overnight by cron from `stock_fundamentals` + `stock_research_cache` (no live Yahoo during scoring).
+- During the day, `/api/picks` overlays **live prices** so upside and buy zone stay current; if you hold a pick, portfolio size/cost is shown on the card.
+- Each pick shows confidence, buy zone, analyst target, upside, factor chips, chart, vs-sector panel, and Key Research.
+- Optional **Gemini** thesis + risk (cached ~3h; client polls `/api/picks/narratives`).
+- See **[How Picks work](#how-picks-work)** below for the full scoring breakdown.
 
 ### Portfolio
 
@@ -102,6 +99,7 @@ Built with **Next.js 16**, **Supabase**, **NextAuth**, live prices from **Yahoo 
 
 - `stock_fundamentals` — price fields ~30 min; targets daily 5pm IST
 - `stock_research_cache` — earnings, growth, volume metrics
+- `global_top_picks` / `global_top_picks_runs` — nightly ranked list (scoring v2 snapshot per run)
 - `pick_narratives` — LLM thesis / risk / company blurb (~3h TTL)
 - `portfolio_sell_narratives` — sell-review text cache
 - `watchlist_suggestions_cache` — global trending pool (~3h)
@@ -121,8 +119,141 @@ Requires `CRON_SECRET` (`Authorization: Bearer …` on cron routes).
 | `/api/cron/refresh-research` | 16:00 Mon–Fri | Refresh stale `stock_research_cache` |
 | `/api/cron/refresh-portfolio-summaries` | 16:30 Mon–Fri | Regenerate stale portfolio daily summaries |
 | `/api/cron/send-whatsapp-briefings` | 15:30 Mon–Fri | Send WhatsApp briefings (~10:30 AM ET window) |
+| `/api/cron/build-global-picks` | 17:00 Mon–Fri | Score universe → publish `global_top_picks` |
+| `/api/cron/evaluate-global-picks` | 21:30 Mon–Fri | Track pick outcomes vs market (accuracy) |
+| `/api/cron/send-picks-accuracy-report` | 14:00 Mon | Weekly accuracy email (opt-in) |
 
 Configured in `vercel.json`.
+
+---
+
+## How Picks work
+
+Stocklens Picks answers: *“Which US stocks look like strong buys right now, based on analyst targets, price action, news, fundamentals, and sector context?”*
+
+Think of it as a **filter funnel**, then a **points contest**:
+
+1. **Universe** — Every ticker in `stock_fundamentals` (thousands of names with cached data).
+2. **Must-pass gates** — Strict rules; fail any rule and the stock is out (no partial credit).
+3. **Scoring** — Survivors earn points for upside, analyst consensus, momentum, news, etc. Research and sector comparisons add or subtract within caps.
+4. **Rank** — Sort by total score (tie-break: higher upside, then bigger move today).
+5. **Publish** — Save top **15** to `global_top_picks` if at least **3** qualify; everyone sees the same list on the Picks tab.
+
+Scoring runs in **`src/lib/picks-scoring-v2.ts`** (constants in `PICKS_V2_RULES`). Tune numbers there. Deeper architecture: [`docs/picks-architecture.md`](docs/picks-architecture.md) (some sections describe the older per-user pipeline; v2 global cron is the live path).
+
+### When the list updates
+
+| Step | What happens |
+|------|----------------|
+| Nightly cron | `build-global-picks` scores the full fundamentals table and writes today’s run |
+| Your app open | `GET /api/picks` reads the latest **published** run from the DB |
+| Market hours | Live Yahoo prices refresh **current price**, **upside %**, and **buy zone** on the card (rank/score factors stay from last night) |
+
+### Must-pass gates (v2)
+
+A stock only gets a score if **all** of these are true:
+
+| Gate | Threshold |
+|------|-----------|
+| Share price | ≥ **$5** |
+| Market cap | ≥ **$500M** (from research cache) |
+| Analyst coverage | ≥ **8** analysts (buy + hold + sell) |
+| Sell ratings | ≤ **35%** of analysts |
+| Buy ratings | ≥ **50%** of analysts |
+| Price target | **Analyst consensus only** (no momentum/52w synthetic targets) |
+| Upside to target | ≥ **8%** above current price |
+| News sentiment | If we have it: not negative (≥ **0**) |
+| 30-day trend | If we have it: not down (≥ **0%**) |
+| Earnings | **Excluded** if earnings are within **7** calendar days |
+| Business quality | Profitable **or** revenue growing YoY (when research exists) |
+| Minimum score | Total ≥ **35** points after bonuses |
+| Confidence | Must be **high** only (≥ **15** analysts and **>60%** buy); medium/low picks are dropped |
+
+### Scoring parameters (exact points)
+
+Points stack. The UI **factor chips** mirror these labels.
+
+#### Analyst upside (biggest lever)
+
+| Upside to analyst target | Points |
+|--------------------------|--------|
+| ≥ 30% | **+44** |
+| ≥ 15% | **+31** |
+| ≥ 8% | **+13** |
+
+#### Analyst buy consensus
+
+| Buy ratio (buys ÷ all ratings) | Points |
+|--------------------------------|--------|
+| > 70% | **+25** |
+| > 50% | **+15** |
+| ≥ 50% (lean) | **+8** |
+
+#### Price action & news
+
+| Signal | Condition | Points |
+|--------|-----------|--------|
+| 14-day pullback | Between **−15%** and **−3%**, with upside still > 8% | **+12** |
+| Good news tone | Sentiment > **0.3** | **+10** |
+| Near 20-day support | Price within **3%** above support | **+8** |
+| Near 52-week high | Price ≥ **97%** of 52w high **and** upside < **5%** | **−15** (penalty) |
+| Volume spike | ≥ **1.5×** avg → +8; ≥ **2.0×** → **+12** | |
+| Healthy volume band | **1.2×–2.0×** avg (not a spike) | **+4** |
+| 7-day momentum | 7d change ≥ **+5%** | **+6** |
+| Above 20-day average | Price ≥ 20d avg | **+5** |
+| News buzz | ≥ **8** articles in 7 days | **+5** |
+| Big move today | +2.5% → +8; +5% → +10; +8% → +12 (cap **+12** total) | |
+
+#### Vs sector (sector ETF benchmark)
+
+Uses relative strength vs the sector benchmark (e.g. XLK for Tech). Takes the **better** of RS score or price delta (not both):
+
+| Signal | Condition | Points |
+|--------|-----------|--------|
+| Strong RS | RS score ≥ **65** | **+6** |
+| Weak RS | RS score ≤ **35** | **−4** |
+| Beating sector | 7d/30d delta vs ETF ≥ **+2%** | **+5** |
+| Lagging sector | Delta ≤ **−2%** | **−3** |
+
+#### Key research (fundamentals cache)
+
+Total research adjustment is clamped to **±20** points (`PICKS_RESEARCH_RULES` in `src/lib/picks-research-scoring.ts`):
+
+| Signal | Condition | Points |
+|--------|-----------|--------|
+| Revenue YoY | > **15%** / > **5%** / < **−10%** | **+8** / **+4** / **−6** |
+| Profit margin | > **15%** / > **0%** / < **−20%** | **+6** / **+3** / **−8** |
+| EPS YoY | > **10%** | **+5** |
+| Debt / equity | < **1** / > **2.5** | **+4** / **−5** |
+| Current ratio | > **1.5** | **+3** |
+| Trailing P/E | **8–25** (reasonable) / ≥ **50** (stretched) | **+4** / **−4** |
+| P/E vs sector median | ≤ **0.85×** / ≥ **1.5×** / ≥ **2.0×** | **+5** / **−6** / **−10** |
+| Rich vs sector (v2 extra) | P/E **1.5×–2.0×** sector median | **−2** (within the ±20 cap) |
+
+### Outputs on each pick card
+
+| Field | Meaning |
+|-------|---------|
+| **Score** | Total points from the table above (from last nightly run) |
+| **Confidence** | High / medium / low from analyst depth; v2 only publishes **high** |
+| **Buy zone** | Suggested entry band from support vs current price |
+| **Target** | Analyst consensus mean (low/high range when available) |
+| **Upside** | % from current price (live) to target |
+| **Factors** | Human-readable list of which rules fired |
+
+**Not financial advice** — scores are mechanical rules on cached data, not buy recommendations.
+
+### Code reference
+
+| What | File |
+|------|------|
+| v2 gates, bonuses, ranking | `src/lib/picks-scoring-v2.ts` |
+| Research points | `src/lib/picks-research-scoring.ts` |
+| Vs-sector points | `src/lib/sector-relative-strength-scoring.ts` (`PICKS_VS_SECTOR_RULES`) |
+| Nightly build | `src/lib/cron/build-global-picks.ts` |
+| API response | `src/lib/global-picks-response.ts`, `src/app/api/picks/route.ts` |
+
+Older **per-user** scoring (watchlist + portfolio + trending, top 10) still lives in `src/lib/picks-scoring.ts` for scripts/tests but is **not** what powers the Picks tab today.
 
 ---
 
@@ -247,7 +378,7 @@ vercel.json                 # Cron schedules
 | `GET /api/fundamentals/batch` | Cache-first fundamentals for watchlist |
 | `GET /api/fundamentals/[ticker]` | Single ticker fundamentals |
 | `GET /api/signals` | Bullish / bearish / quiet for watchlist cards |
-| `GET /api/picks` | Unified top-10 picks |
+| `GET /api/picks` | Global nightly top picks (live price overlay) |
 | `GET /api/picks/narratives` | Poll for LLM narrative updates |
 | `GET /api/picks/headlines` | Headlines for pick cards |
 | `GET /api/research/[ticker]` | Cached research panel data |

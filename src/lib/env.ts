@@ -19,4 +19,9 @@ export const env = {
   TWILIO_ACCOUNT_SID: process.env.TWILIO_ACCOUNT_SID ?? '',
   TWILIO_AUTH_TOKEN: process.env.TWILIO_AUTH_TOKEN ?? '',
   TWILIO_WHATSAPP_FROM: process.env.TWILIO_WHATSAPP_FROM ?? '',
+  // Top Picks accuracy report — sent via Resend to admin only.
+  PICKS_REPORT_EMAIL:
+    process.env.PICKS_REPORT_EMAIL ?? 'prakashshukla1820@gmail.com',
+  RESEND_API_KEY: process.env.RESEND_API_KEY ?? '',
+  EMAIL_FROM: process.env.EMAIL_FROM ?? 'StockLens <onboarding@resend.dev>',
 }
