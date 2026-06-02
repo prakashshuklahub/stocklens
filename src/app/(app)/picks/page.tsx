@@ -773,7 +773,7 @@ export default function PicksPage() {
             </div>
             {bucket === 'risky' ? (
               <p className="type-meta text-amber-200/70 mt-2 px-1 leading-snug">
-                These are “maybe” setups — higher uncertainty and bigger swings. Use smaller size.
+                These are higher-risk ideas — they can swing more and fail more often. If you try them, use a smaller position.
               </p>
             ) : null}
           </div>
