@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useRef, useEffect, useCallback, useId } from 'react'
+import { useState, useRef, useEffect, useCallback, useId, useMemo } from 'react'
 import { Search, X, Loader2 } from 'lucide-react'
 import StockLogo from '@/components/StockLogo'
 import { cn } from '@/lib/utils'
@@ -30,6 +30,8 @@ export interface StockResult {
 interface Props {
   onSelect: (result: StockResult) => void
   onQueryChange?: (query: string) => void
+  /** Tickers already on the watchlist — hidden from add suggestions */
+  excludeTickers?: Set<string>
   disabled?: boolean
   placeholder?: string
 }
@@ -37,6 +39,7 @@ interface Props {
 export default function StockSearchInput({
   onSelect,
   onQueryChange,
+  excludeTickers,
   disabled,
   placeholder = 'Search or add ticker…',
 }: Props) {
@@ -48,6 +51,14 @@ export default function StockSearchInput({
   const [open, setOpen] = useState(false)
   const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null)
   const containerRef = useRef<HTMLDivElement>(null)
+
+  const addableResults = useMemo(
+    () =>
+      excludeTickers
+        ? results.filter((r) => !excludeTickers.has(r.ticker.toUpperCase()))
+        : results,
+    [results, excludeTickers],
+  )
 
   const search = useCallback(async (q: string) => {
     setLoading(true)
@@ -114,7 +125,7 @@ export default function StockSearchInput({
           enterKeyHint="search"
           role="combobox"
           aria-autocomplete="list"
-          aria-expanded={open && results.length > 0}
+          aria-expanded={open && addableResults.length > 0}
           aria-controls={listboxId}
           aria-label="Search watchlist or add a stock by ticker or company name"
           autoComplete="off"
@@ -123,7 +134,7 @@ export default function StockSearchInput({
           onChange={(e) => setQuery(e.target.value)}
           placeholder={placeholder}
           disabled={disabled}
-          onFocus={() => results.length > 0 && setOpen(true)}
+          onFocus={() => addableResults.length > 0 && setOpen(true)}
           className="w-full card-surface pl-9 pr-9 py-2.5 min-h-[44px] text-sm text-white placeholder:text-muted focus:outline-none focus-visible:ring-2 focus-visible:ring-blue-500/40 transition-all disabled:opacity-40 [touch-action:manipulation]"
         />
         {loading && (
@@ -144,14 +155,14 @@ export default function StockSearchInput({
         )}
       </div>
 
-      {open && results.length > 0 && (
+      {open && addableResults.length > 0 && (
         <ul
           id={listboxId}
           role="listbox"
           aria-label="Stock search results"
           className="absolute z-50 mt-1 w-full bg-zinc-900 shadow-2xl shadow-black/50 rounded-xl overflow-hidden max-h-60 overflow-y-auto"
         >
-          {results.map((r) => (
+          {addableResults.map((r) => (
             <li key={r.ticker} role="option" aria-selected={false}>
               <button
                 type="button"
@@ -187,12 +198,14 @@ export default function StockSearchInput({
         </ul>
       )}
 
-      {open && !loading && query.length > 1 && results.length === 0 && (
+      {open && !loading && query.length > 1 && addableResults.length === 0 && (
         <div
           className="absolute z-50 mt-1.5 w-full bg-zinc-900 shadow-2xl shadow-black/50 rounded-2xl px-4 py-4 text-center text-sm text-muted"
           aria-live="polite"
         >
-          No results for &ldquo;{query}&rdquo;
+          {results.length > 0
+            ? 'Already on your watchlist'
+            : <>No results for &ldquo;{query}&rdquo;</>}
         </div>
       )}
     </div>

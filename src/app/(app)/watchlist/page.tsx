@@ -656,6 +656,7 @@ export default function WatchlistPage() {
               <StockSearchInput
                 onSelect={handleAdd}
                 onQueryChange={setFilterQuery}
+                excludeTickers={ownedTickers}
                 disabled={adding}
               />
             </div>
