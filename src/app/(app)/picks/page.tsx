@@ -3,6 +3,7 @@
 import useSWR from 'swr'
 import { useCallback, useEffect, useMemo, useState, type ReactNode } from 'react'
 import AppNav from '@/components/AppNav'
+import PickPriceTrack from '@/components/picks/PickPriceTrack'
 import PicksLoadingState from '@/components/picks/PicksLoadingState'
 import { PicksRefreshProvider } from '@/contexts/picks-refresh'
 import AnalystMiniGrid from '@/components/AnalystMiniGrid'
@@ -164,26 +165,30 @@ type PickHeroContentProps = {
   rank: number
   upsidePct: number | null
   isPos: boolean
+  pickedAt?: string | null
 }
 
 function PickCardHeroStats({
   pick,
   upsidePct,
   isPos,
+  pickedAt,
 }: {
   pick: Pick
   upsidePct: number | null
   isPos: boolean
+  pickedAt?: string | null
 }) {
   return (
-    <div className="pick-card-stats rounded-xl px-3 py-2.5 space-y-2">
+    <div className="pick-card-stats rounded-xl px-3 py-2.5 space-y-2.5">
+      <PickPriceTrack pick={pick} pickedAt={pickedAt} />
       <div className="flex flex-wrap items-baseline gap-x-2 gap-y-1 text-sm">
-        <span className="type-micro font-bold uppercase tracking-wide text-blue-400/55 shrink-0">Buy</span>
+        <span className="type-micro font-bold uppercase tracking-wide text-blue-400/55 shrink-0">
+          Buy zone
+        </span>
         <span className="font-bold text-white tabular-nums">
           ${fmt(pick.entry_low)} – ${fmt(pick.entry_high)}
         </span>
-        <span className="text-muted">·</span>
-        <span className="type-meta text-zinc-500 tabular-nums">Now ${fmt(pick.current_price)}</span>
       </div>
       <div className="h-px bg-blue-500/10" />
       <div className="flex flex-wrap items-center justify-between gap-2">
@@ -208,7 +213,7 @@ function PickCardHeroStats({
   )
 }
 
-function PickCardHero({ pick, rank, upsidePct, isPos }: PickHeroContentProps) {
+function PickCardHero({ pick, rank, upsidePct, isPos, pickedAt }: PickHeroContentProps) {
   return (
     <div className="pick-card-hero px-4 pt-5 pb-3.5">
       <Sparkles
@@ -241,7 +246,7 @@ function PickCardHero({ pick, rank, upsidePct, isPos }: PickHeroContentProps) {
         </div>
       </div>
 
-      <PickCardHeroStats pick={pick} upsidePct={upsidePct} isPos={isPos} />
+      <PickCardHeroStats pick={pick} upsidePct={upsidePct} isPos={isPos} pickedAt={pickedAt} />
       <PickOwnershipRow pick={pick} />
     </div>
   )
@@ -347,12 +352,14 @@ function PickCard({
   llmEnabled,
   marketSession,
   sectorBenchmarks,
+  pickedAt,
 }: {
   pick: Pick
   rank: number
   llmEnabled?: boolean
   marketSession: MarketSession
   sectorBenchmarks: Record<string, SectorBenchmark>
+  pickedAt?: string | null
 }) {
   const cardId = `pick-${pick.ticker}`
 
@@ -403,12 +410,14 @@ function PickCard({
         return (
           <div className="space-y-3 rounded-xl bg-zinc-900/60 border border-white/[0.04] px-3 py-3">
             <div className="grid grid-cols-2 gap-3">
-              <div>
-                <p className="type-micro font-semibold text-zinc-500 uppercase tracking-wide">Price to buy</p>
-                <p className="text-sm font-bold text-white tabular-nums leading-tight">
-                  ${fmt(pick.entry_low)} – ${fmt(pick.entry_high)}
-                </p>
-                <p className="type-meta text-zinc-500 tabular-nums">Current ${fmt(pick.current_price)}</p>
+              <div className="space-y-2.5">
+                <PickPriceTrack pick={pick} pickedAt={pickedAt} compact />
+                <div>
+                  <p className="type-micro font-semibold text-zinc-500 uppercase tracking-wide">Buy zone</p>
+                  <p className="text-sm font-bold text-white tabular-nums leading-tight">
+                    ${fmt(pick.entry_low)} – ${fmt(pick.entry_high)}
+                  </p>
+                </div>
               </div>
               <div className="text-right">
                 <p className="type-micro font-semibold text-zinc-500 uppercase tracking-wide">
@@ -531,6 +540,7 @@ function PickCard({
     llmEnabled,
     marketSession,
     pick,
+    pickedAt,
     sectorBenchmarks,
     showAnalystRange,
     showTarget,
@@ -551,6 +561,7 @@ function PickCard({
         rank={rank}
         upsidePct={upsidePct}
         isPos={isPos}
+        pickedAt={pickedAt}
       />
 
       <div className="border-t border-amber-500/10 bg-zinc-950/35">
@@ -581,6 +592,8 @@ function PicksRankedList({
     () => new Map(data.picks.map((p, i) => [p.ticker, i + 1])),
     [data.picks],
   )
+
+  const pickedAt = (data.generated_at ?? data.scores_at) || null
 
   if (loading) {
     return (
@@ -617,6 +630,7 @@ function PicksRankedList({
               llmEnabled={data.llm_enabled}
               marketSession={marketSession}
               sectorBenchmarks={sectorBenchmarks}
+              pickedAt={pickedAt}
             />
           </li>
         ))}

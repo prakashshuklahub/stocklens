@@ -102,28 +102,18 @@ async function loadRiskyPicksForRun(supabase: Supabase, run_id: string): Promise
   return (data ?? []) as GlobalPickRow[]
 }
 
-/** Recompute upside and buy zone when live price differs from the cron snapshot. */
+/** Overlay live price and upside; keep publish-time buy zone and suggested_price frozen. */
 function applyLivePriceToPick(p: Pick, newPrice: number): Pick {
-  const oldPrice = p.current_price
-  if (oldPrice <= 0 || newPrice <= 0) return p
+  if (newPrice <= 0) return p
 
+  const suggested_price = p.suggested_price ?? p.current_price
   const upside_pct = computeTargetUpsidePct(p.target_mean, newPrice) ?? p.upside_pct
-
-  if (Math.abs(newPrice - oldPrice) < 0.001) {
-    return { ...p, current_price: newPrice, upside_pct }
-  }
-
-  const scaledEntryLow =
-    p.entry_high > 0 ? (p.entry_low / p.entry_high) * newPrice : newPrice * 0.97
-  const entry_low = Math.min(Math.max(scaledEntryLow, newPrice * 0.97), newPrice)
-  const entry_high = newPrice
 
   return {
     ...p,
+    suggested_price,
     current_price: newPrice,
     upside_pct,
-    entry_low,
-    entry_high,
   }
 }
 

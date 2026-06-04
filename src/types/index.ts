@@ -310,7 +310,10 @@ export interface Pick {
   sector: string | null
 
   // Pricing
+  /** Live / latest price (updated on read). */
   current_price: number
+  /** Price when the pick was published — frozen in DB snapshot; never scaled with live. */
+  suggested_price?: number
   change_1d_pct: number | null
   change_1d_session?: MarketSession
   change_7d_pct: number | null

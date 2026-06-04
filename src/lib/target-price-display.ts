@@ -1,6 +1,43 @@
 // UI formatting for target price and upside (shared across watchlist, picks, etc.)
 
-import type { StockFundamentals } from '@/types'
+import type { Pick, StockFundamentals } from '@/types'
+
+/** Frozen buy reference when the pick was published. */
+export function suggestedPickPrice(pick: Pick): number {
+  if (pick.suggested_price != null && pick.suggested_price > 0) return pick.suggested_price
+  if (pick.entry_high > 0) return pick.entry_high
+  return pick.current_price
+}
+
+/** % change from suggested publish price to live price. */
+export function pickReturnSincePublishPct(pick: Pick): number | null {
+  const base = suggestedPickPrice(pick)
+  if (base <= 0 || pick.current_price <= 0) return null
+  return ((pick.current_price - base) / base) * 100
+}
+
+export function formatPickPrice(value: number): string {
+  return new Intl.NumberFormat('en-US', {
+    style: 'currency',
+    currency: 'USD',
+    minimumFractionDigits: 2,
+    maximumFractionDigits: 2,
+  }).format(value)
+}
+
+export function formatPickSincePct(pct: number): string {
+  const sign = pct > 0 ? '+' : pct < 0 ? '' : ''
+  return `${sign}${pct.toFixed(1)}%`
+}
+
+/** Short label for when the published run completed (US market date). */
+export function formatPickPublishedDate(iso: string): string {
+  return new Intl.DateTimeFormat('en-US', {
+    month: 'short',
+    day: 'numeric',
+    timeZone: 'America/New_York',
+  }).format(new Date(iso))
+}
 
 export const TARGET_UNAVAILABLE = '—'
 

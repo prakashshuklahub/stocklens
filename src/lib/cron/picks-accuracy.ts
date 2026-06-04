@@ -86,7 +86,7 @@ export function buildEvaluationRow(
   horizonDays = PICKS_ACCURACY_HORIZON_DAYS,
 ): PickEvaluationRow {
   const snap = pick.snapshot
-  const priceAtPublish = snap.current_price
+  const priceAtPublish = snap.suggested_price ?? snap.current_price
   const targetAtPublish = snap.target_mean > 0 ? snap.target_mean : null
   const ret = priceAtEval != null ? returnPct(priceAtPublish, priceAtEval) : null
   const vsSpy =
