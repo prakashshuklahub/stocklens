@@ -31,6 +31,7 @@ import {
 import { RefreshCountdown } from '@/components/LiveRefreshHeader'
 import { useMarketOpen } from '@/hooks/useMarketOpen'
 import { useLivePriceRefresh } from '@/hooks/useLivePriceRefresh'
+import { PORTFOLIO_LIVE_REFRESH_SEC } from '@/lib/market-hours'
 import { computeHoldingMetrics } from '@/lib/portfolio-holding-metrics'
 import { mergePriceSnapshots } from '@/lib/portfolio-signals'
 import { cn } from '@/lib/utils'
@@ -229,7 +230,11 @@ function HoldingsSection({
           </span>
           <div className="flex items-center gap-2 shrink-0">
             {marketOpen && !loading && (
-              <RefreshCountdown seconds={countdown} refreshing={refreshing} />
+              <RefreshCountdown
+                seconds={countdown}
+                refreshing={refreshing}
+                intervalSec={PORTFOLIO_LIVE_REFRESH_SEC}
+              />
             )}
             {!loading && (
               <PortfolioHoldingsViewToggle value={view} onChange={onViewChange} />
@@ -260,7 +265,7 @@ function HoldingsSection({
 
       {!loading && holdings.length > 0 && (
         <p className="type-micro text-muted mt-2 leading-snug px-0.5">
-          Live prices update every 13s during market hours.
+          Live prices update every 8s during market hours.
         </p>
       )}
     </section>
@@ -376,7 +381,11 @@ export default function PortfolioPage() {
     )
   }, [mutate])
 
-  const countdown = useLivePriceRefresh(marketOpen && holdings.length > 0, refreshPrices)
+  const countdown = useLivePriceRefresh(
+    marketOpen && holdings.length > 0,
+    refreshPrices,
+    PORTFOLIO_LIVE_REFRESH_SEC,
+  )
 
   async function handleFileChange(e: React.ChangeEvent<HTMLInputElement>) {
     const file = e.target.files?.[0]

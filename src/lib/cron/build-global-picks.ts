@@ -1,5 +1,11 @@
 import { usTradingDateString } from '@/lib/global-picks-schedule'
 import {
+  applyPickPriceAnchor,
+  failStaleGlobalPicksRuns,
+  loadPermanentPickPriceAnchors,
+  persistNewPickPriceAnchors,
+} from '@/lib/pick-price-anchors'
+import {
   computeSectorPeMedians,
   PICKS_V2_MAX_RESULTS,
   PICKS_V2_MIN_PUBLISH_COUNT,
@@ -65,6 +71,9 @@ async function resolveYahooProfilesForTickers(
 
 export async function buildGlobalPicksInDb(supabase: Supabase): Promise<BuildGlobalPicksResult> {
   const run_date = usTradingDateString()
+  await failStaleGlobalPicksRuns(supabase)
+  const permanentAnchors = await loadPermanentPickPriceAnchors(supabase)
+
   const config = {
     minScore: PICKS_V2_MIN_SCORE,
     minAnalysts: PICKS_V2_MIN_ANALYSTS,
@@ -205,6 +214,14 @@ export async function buildGlobalPicksInDb(supabase: Supabase): Promise<BuildGlo
       (p) => !topTickers.has(p.ticker.toUpperCase()),
     )
     const shouldPublish = ranked.length >= PICKS_V2_MIN_PUBLISH_COUNT
+    const completedAt = new Date().toISOString()
+
+    const toSnapshot = (p: ScoredPick) => ({
+      ...applyPickPriceAnchor(p, permanentAnchors, completedAt),
+      target_label: 'analyst' as const,
+    })
+    const rankedSnapshots = ranked.map(toSnapshot)
+    const riskySnapshots = rankedRisky.map(toSnapshot)
 
     if (ranked.length) {
       const pickRows = ranked.map((p, i) => ({
@@ -213,10 +230,7 @@ export async function buildGlobalPicksInDb(supabase: Supabase): Promise<BuildGlo
         ticker: p.ticker.toUpperCase(),
         score: p.score,
         confidence: p.confidence,
-        snapshot: {
-          ...p,
-          target_label: 'analyst' as const,
-        },
+        snapshot: rankedSnapshots[i],
       }))
 
       const { error: picksError } = await supabase.from('global_top_picks').insert(pickRows)
@@ -230,10 +244,7 @@ export async function buildGlobalPicksInDb(supabase: Supabase): Promise<BuildGlo
         ticker: p.ticker.toUpperCase(),
         score: p.score,
         confidence: p.confidence,
-        snapshot: {
-          ...p,
-          target_label: 'analyst' as const,
-        },
+        snapshot: riskySnapshots[i],
       }))
       const { error: riskyError } = await supabase.from('global_top_picks_risky').insert(riskyRows)
       if (riskyError) throw new Error(riskyError.message)
@@ -255,13 +266,17 @@ export async function buildGlobalPicksInDb(supabase: Supabase): Promise<BuildGlo
       .update({
         status: 'completed',
         published: shouldPublish,
-        completed_at: new Date().toISOString(),
+        completed_at: completedAt,
         universe_count: fundamentals.length,
         qualified_count: ranked.length,
       })
       .eq('id', run_id)
 
     if (updateError) throw new Error(updateError.message)
+
+    if (shouldPublish) {
+      await persistNewPickPriceAnchors(supabase, [...rankedSnapshots, ...riskySnapshots])
+    }
 
     return {
       run_id,

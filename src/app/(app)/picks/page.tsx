@@ -23,7 +23,8 @@ import {
   Newspaper,
   Gauge,
 } from 'lucide-react'
-import { useMarketSession } from '@/hooks/useMarketOpen'
+import { useMarketOpen, useMarketSession } from '@/hooks/useMarketOpen'
+import { PICKS_PRICE_REFRESH_MS } from '@/lib/market-hours'
 import NewsRow from '@/components/NewsRow'
 import StockLogo from '@/components/StockLogo'
 import Week52Range from '@/components/Week52Range'
@@ -165,55 +166,52 @@ type PickHeroContentProps = {
   rank: number
   upsidePct: number | null
   isPos: boolean
-  pickedAt?: string | null
 }
 
 function PickCardHeroStats({
   pick,
   upsidePct,
   isPos,
-  pickedAt,
 }: {
   pick: Pick
   upsidePct: number | null
   isPos: boolean
-  pickedAt?: string | null
 }) {
   return (
-    <div className="pick-card-stats rounded-xl px-3 py-2.5 space-y-2.5">
-      <PickPriceTrack pick={pick} pickedAt={pickedAt} />
-      <div className="flex flex-wrap items-baseline gap-x-2 gap-y-1 text-sm">
-        <span className="type-micro font-bold uppercase tracking-wide text-blue-400/55 shrink-0">
-          Buy zone
-        </span>
-        <span className="font-bold text-white tabular-nums">
-          ${fmt(pick.entry_low)} – ${fmt(pick.entry_high)}
-        </span>
-      </div>
-      <div className="h-px bg-blue-500/10" />
-      <div className="flex flex-wrap items-center justify-between gap-2">
-        <div className="flex items-baseline gap-2">
-          <span className="type-micro font-bold uppercase tracking-wide text-blue-400/55">Room to grow</span>
-          <span className={cn(
-            'text-base font-black tabular-nums',
-            upsidePct == null ? 'text-zinc-500' : isPos ? 'text-emerald-400' : 'text-red-400',
-          )}>
+    <div className="pick-card-stats rounded-xl p-3 space-y-2.5">
+      <PickPriceTrack pick={pick} />
+
+      <div className="grid grid-cols-2 gap-2">
+        <div className="rounded-lg bg-black/20 border border-white/[0.04] px-2.5 py-2">
+          <p className="text-xs text-zinc-500 mb-0.5">Buy zone</p>
+          <p className="text-sm font-bold text-white tabular-nums leading-tight">
+            ${fmt(pick.entry_low)} – ${fmt(pick.entry_high)}
+          </p>
+        </div>
+        <div className="rounded-lg bg-black/20 border border-white/[0.04] px-2.5 py-2">
+          <p className="text-xs text-zinc-500 mb-0.5">To analyst target</p>
+          <p
+            className={cn(
+              'text-sm font-bold tabular-nums leading-tight',
+              upsidePct == null ? 'text-zinc-500' : isPos ? 'text-emerald-400' : 'text-red-400',
+            )}
+          >
             {formatUpsidePct(upsidePct)}
-          </span>
-        </div>
-        <div className="flex items-baseline gap-2">
-          <span className="type-micro font-bold uppercase tracking-wide text-blue-400/55">Analysts</span>
-          <span className="text-sm font-bold text-white tabular-nums">
-            {pick.analyst_buy} buy
-          </span>
-          <span className="type-meta text-zinc-500 tabular-nums">/ {pick.analyst_total}</span>
+          </p>
         </div>
       </div>
+
+      <p className="text-xs text-zinc-500 text-center leading-snug">
+        <span className="text-zinc-300 font-semibold tabular-nums">{pick.analyst_buy}</span>
+        {' '}of{' '}
+        <span className="tabular-nums">{pick.analyst_total}</span>
+        {' '}analysts say buy
+      </p>
     </div>
   )
 }
 
-function PickCardHero({ pick, rank, upsidePct, isPos, pickedAt }: PickHeroContentProps) {
+function PickCardHero({ pick, rank, upsidePct, isPos }: PickHeroContentProps) {
   return (
     <div className="pick-card-hero px-4 pt-5 pb-3.5">
       <Sparkles
@@ -230,8 +228,18 @@ function PickCardHero({ pick, rank, upsidePct, isPos, pickedAt }: PickHeroConten
                 {pick.ticker}
               </span>
               {rank === 1 && (
-                <span className="type-micro font-bold uppercase tracking-wide text-amber-300/90 shrink-0">
+                <span className="text-xs font-semibold text-amber-300/90 shrink-0">
                   Top pick
+                </span>
+              )}
+              {pick.change_1d_pct != null && (
+                <span
+                  className={cn(
+                    'text-xs font-semibold tabular-nums shrink-0',
+                    pick.change_1d_pct >= 0 ? 'text-emerald-400' : 'text-red-400',
+                  )}
+                >
+                  {fmtPct(pick.change_1d_pct)} today
                 </span>
               )}
             </div>
@@ -246,7 +254,7 @@ function PickCardHero({ pick, rank, upsidePct, isPos, pickedAt }: PickHeroConten
         </div>
       </div>
 
-      <PickCardHeroStats pick={pick} upsidePct={upsidePct} isPos={isPos} pickedAt={pickedAt} />
+      <PickCardHeroStats pick={pick} upsidePct={upsidePct} isPos={isPos} />
       <PickOwnershipRow pick={pick} />
     </div>
   )
@@ -324,7 +332,7 @@ function PickSectionTabs({
                   className={cn('w-4 h-4 shrink-0', selected ? 'text-blue-400' : 'text-zinc-400')}
                   aria-hidden="true"
                 />
-                <span className="text-[10px] font-semibold leading-none truncate max-w-full">
+                <span className="text-xs font-semibold leading-none truncate max-w-full">
                   {shortLabel}
                 </span>
               </button>
@@ -352,14 +360,12 @@ function PickCard({
   llmEnabled,
   marketSession,
   sectorBenchmarks,
-  pickedAt,
 }: {
   pick: Pick
   rank: number
   llmEnabled?: boolean
   marketSession: MarketSession
   sectorBenchmarks: Record<string, SectorBenchmark>
-  pickedAt?: string | null
 }) {
   const cardId = `pick-${pick.ticker}`
 
@@ -411,12 +417,25 @@ function PickCard({
           <div className="space-y-3 rounded-xl bg-zinc-900/60 border border-white/[0.04] px-3 py-3">
             <div className="grid grid-cols-2 gap-3">
               <div className="space-y-2.5">
-                <PickPriceTrack pick={pick} pickedAt={pickedAt} compact />
-                <div>
-                  <p className="type-micro font-semibold text-zinc-500 uppercase tracking-wide">Buy zone</p>
-                  <p className="text-sm font-bold text-white tabular-nums leading-tight">
-                    ${fmt(pick.entry_low)} – ${fmt(pick.entry_high)}
-                  </p>
+                <PickPriceTrack pick={pick} compact />
+                <div className="grid grid-cols-2 gap-2">
+                  <div>
+                    <p className="text-xs text-zinc-500 mb-0.5">Buy zone</p>
+                    <p className="text-sm font-bold text-white tabular-nums leading-tight">
+                      ${fmt(pick.entry_low)} – ${fmt(pick.entry_high)}
+                    </p>
+                  </div>
+                  <div className="text-right">
+                    <p className="text-xs text-zinc-500 mb-0.5">To analyst target</p>
+                    <p
+                      className={cn(
+                        'text-sm font-bold tabular-nums leading-tight',
+                        showTarget && isPos ? 'text-emerald-400' : showTarget ? 'text-red-400' : 'text-zinc-500',
+                      )}
+                    >
+                      {showTarget ? formatUpsidePct(pick.upside_pct) : TARGET_UNAVAILABLE}
+                    </p>
+                  </div>
                 </div>
               </div>
               <div className="text-right">
@@ -540,7 +559,7 @@ function PickCard({
     llmEnabled,
     marketSession,
     pick,
-    pickedAt,
+    isPos,
     sectorBenchmarks,
     showAnalystRange,
     showTarget,
@@ -556,13 +575,7 @@ function PickCard({
         rank >= 2 && rank <= 3 && 'pick-card--ranked',
       )}
     >
-      <PickCardHero
-        pick={pick}
-        rank={rank}
-        upsidePct={upsidePct}
-        isPos={isPos}
-        pickedAt={pickedAt}
-      />
+      <PickCardHero pick={pick} rank={rank} upsidePct={upsidePct} isPos={isPos} />
 
       <div className="border-t border-amber-500/10 bg-zinc-950/35">
         <PickSectionTabs
@@ -592,8 +605,6 @@ function PicksRankedList({
     () => new Map(data.picks.map((p, i) => [p.ticker, i + 1])),
     [data.picks],
   )
-
-  const pickedAt = (data.generated_at ?? data.scores_at) || null
 
   if (loading) {
     return (
@@ -630,7 +641,6 @@ function PicksRankedList({
               llmEnabled={data.llm_enabled}
               marketSession={marketSession}
               sectorBenchmarks={sectorBenchmarks}
-              pickedAt={pickedAt}
             />
           </li>
         ))}
@@ -661,11 +671,13 @@ const EMPTY_PICKS: PicksResponse = {
 
 export default function PicksPage() {
   const marketSession = useMarketSession()
+  const marketOpen = useMarketOpen()
   const [isRefreshing, setIsRefreshing] = useState(false)
   const [bucket, setBucket] = useState<'top' | 'risky'>('top')
   const { data, isLoading, error, mutate } = useSWR<PicksResponse>('/api/picks', fetchJson, {
     revalidateOnFocus: false,
     dedupingInterval: 0,
+    refreshInterval: marketOpen ? PICKS_PRICE_REFRESH_MS : 0,
   })
 
   const handleRefresh = useCallback(async () => {

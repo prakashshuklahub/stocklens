@@ -8,6 +8,12 @@ export type MarketSession = 'regular' | 'closed'
 /** Suggestions polling interval during market hours only. */
 export const PRICE_REFRESH_MS = 120_000
 
+/** Picks page — silent live price refresh (Now, room to grow, since-pick %). */
+export const PICKS_PRICE_REFRESH_MS = 60_000
+
+/** Portfolio holdings — live price poll during regular session. */
+export const PORTFOLIO_LIVE_REFRESH_SEC = 8
+
 const OPEN_MINUTES = 9 * 60 + 30
 const CLOSE_MINUTES = 16 * 60
 

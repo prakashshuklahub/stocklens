@@ -50,13 +50,13 @@ function PickCardSkeleton({ rank }: { rank: number }) {
           </div>
         </div>
 
-        <div className="pick-card-stats rounded-xl px-3 py-2.5 space-y-2.5">
-          <SkeletonBar className="h-4 w-[min(100%,15rem)]" delayMs={stagger + 180} />
-          <div className="h-px bg-blue-500/10" />
-          <div className="flex flex-wrap items-center justify-between gap-3">
-            <SkeletonBar className="h-5 w-28" delayMs={stagger + 200} />
-            <SkeletonBar className="h-5 w-24" delayMs={stagger + 220} />
+        <div className="pick-card-stats rounded-xl p-3 space-y-2.5">
+          <SkeletonBar className="h-[4.5rem] w-full rounded-lg" delayMs={stagger + 180} />
+          <div className="grid grid-cols-2 gap-2">
+            <SkeletonBar className="h-14 w-full rounded-lg" delayMs={stagger + 200} />
+            <SkeletonBar className="h-14 w-full rounded-lg" delayMs={stagger + 220} />
           </div>
+          <SkeletonBar className="h-4 w-40 mx-auto" delayMs={stagger + 240} />
         </div>
       </div>
 

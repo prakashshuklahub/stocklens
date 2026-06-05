@@ -36,4 +36,4 @@ export async function GET(req: NextRequest) {
   }
 }
 
-export const maxDuration = 10
+export const maxDuration = 120

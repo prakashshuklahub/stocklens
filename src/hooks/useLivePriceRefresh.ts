@@ -3,28 +3,32 @@
 import { LIVE_REFRESH_SEC } from '@/components/LiveRefreshHeader'
 import { useEffect, useState } from 'react'
 
-/** 13s countdown + fetch every 13s while enabled (regular market hours only). */
-export function useLivePriceRefresh(enabled: boolean, onRefresh: () => void) {
-  const [countdown, setCountdown] = useState(LIVE_REFRESH_SEC)
+/** 13s countdown + fetch while enabled (regular market hours only). Default interval for watchlist. */
+export function useLivePriceRefresh(
+  enabled: boolean,
+  onRefresh: () => void,
+  intervalSec = LIVE_REFRESH_SEC,
+) {
+  const [countdown, setCountdown] = useState(intervalSec)
 
   useEffect(() => {
     if (!enabled) {
-      setCountdown(LIVE_REFRESH_SEC)
+      setCountdown(intervalSec)
       return
     }
 
-    let secs = LIVE_REFRESH_SEC
+    let secs = intervalSec
     setCountdown(secs)
     const tick = setInterval(() => {
       secs -= 1
       if (secs <= 0) {
         onRefresh()
-        secs = LIVE_REFRESH_SEC
+        secs = intervalSec
       }
       setCountdown(secs)
     }, 1000)
     return () => clearInterval(tick)
-  }, [enabled, onRefresh])
+  }, [enabled, onRefresh, intervalSec])
 
   return countdown
 }
