@@ -181,15 +181,17 @@ function SummaryBar({
   )
 }
 
-/** Highest unrealized P&L first; missing prices last; tie-break by ticker. */
-function sortHoldingsByPnlDesc(holdings: PortfolioHoldingWithSignal[]): PortfolioHoldingWithSignal[] {
+/** Highest today % first; missing day change last; tie-break by ticker. */
+function sortHoldingsByTodayPctDesc(
+  holdings: PortfolioHoldingWithSignal[],
+): PortfolioHoldingWithSignal[] {
   return [...holdings].sort((a, b) => {
-    const pa = computeHoldingMetrics(a).pnl
-    const pb = computeHoldingMetrics(b).pnl
-    if (pa == null && pb == null) return a.ticker.localeCompare(b.ticker)
-    if (pa == null) return 1
-    if (pb == null) return -1
-    if (pb !== pa) return pb - pa
+    const ca = computeHoldingMetrics(a).change1d
+    const cb = computeHoldingMetrics(b).change1d
+    if (ca == null && cb == null) return a.ticker.localeCompare(b.ticker)
+    if (ca == null) return 1
+    if (cb == null) return -1
+    if (cb !== ca) return cb - ca
     return a.ticker.localeCompare(b.ticker)
   })
 }
@@ -217,7 +219,7 @@ function HoldingsSection({
     setView(next)
   }, [])
 
-  const sortedHoldings = useMemo(() => sortHoldingsByPnlDesc(holdings), [holdings])
+  const sortedHoldings = useMemo(() => sortHoldingsByTodayPctDesc(holdings), [holdings])
 
   const showToolbar = loading || holdings.length > 0
 
