@@ -1,28 +1,8 @@
 {
   "crons": [
     {
-      "path": "/api/cron/refresh-targets",
-      "schedule": "30 15 * * 1-5"
-    },
-    {
-      "path": "/api/cron/refresh-research",
-      "schedule": "0 16 * * 1-5"
-    },
-    {
-      "path": "/api/cron/refresh-portfolio-summaries",
-      "schedule": "30 16 * * 1-5"
-    },
-    {
-      "path": "/api/cron/build-global-picks",
+      "path": "/api/cron/nightly",
       "schedule": "0 17 * * 1-5"
-    },
-    {
-      "path": "/api/cron/evaluate-global-picks",
-      "schedule": "30 21 * * 1-5"
-    },
-    {
-      "path": "/api/cron/send-picks-accuracy-report",
-      "schedule": "0 14 * * 1"
     }
   ]
 }

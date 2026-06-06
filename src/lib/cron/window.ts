@@ -54,6 +54,11 @@ export function isIstWeekday(now = new Date()): boolean {
   return weekday !== 'Sat' && weekday !== 'Sun'
 }
 
+/** Monday in Asia/Kolkata (weekly picks accuracy email). */
+export function isIstMonday(now = new Date()): boolean {
+  return istClock(now).weekday === 'Mon'
+}
+
 export function cronWindowSkipMessage(status: Extract<CronWindowStatus, { allowed: false }>): string {
   if (status.reason === 'weekend') {
     return 'Skipped — weekend (IST). Scheduled jobs run Mon–Fri from 3:00pm IST.'
