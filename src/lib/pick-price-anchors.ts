@@ -1,5 +1,4 @@
 import type { createServerClient } from '@/lib/supabase'
-import type { Pick } from '@/types'
 import type { ScoredPick } from '@/lib/picks-scoring'
 
 type Supabase = ReturnType<typeof createServerClient>
@@ -45,10 +44,19 @@ export async function loadPermanentPickPriceAnchors(
   return map
 }
 
+export type PickPriceAnchorInput = {
+  ticker: string
+  suggested_price?: number
+  suggested_at?: string
+  entry_low: number
+  entry_high: number
+  current_price: number
+}
+
 /** Insert anchors for newly suggested tickers only (never overwrite existing). */
 export async function persistNewPickPriceAnchors(
   supabase: Supabase,
-  snapshots: Pick[],
+  snapshots: PickPriceAnchorInput[],
 ): Promise<void> {
   if (!snapshots.length) return
 
@@ -107,7 +115,7 @@ export function applyPickPriceAnchor(
   pick: ScoredPick,
   anchors: Map<string, PickPriceAnchor>,
   firstSeenAt: string,
-): Pick {
+): ScoredPick & { suggested_price: number; suggested_at: string } {
   const prior = anchors.get(pick.ticker.toUpperCase())
   if (prior) {
     return {
