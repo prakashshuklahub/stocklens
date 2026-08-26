@@ -1,435 +1,414 @@
-# Stocklens
+<div align="center">
 
-A mobile-first stock watchlist and decision-support app for US equities. Track names you care about, get ranked buy ideas from your watchlist and portfolio, sync a Vested portfolio, review holdings with daily summaries, and optionally receive a WhatsApp briefing—all behind invite-only Google sign-in.
+# 📈 Stocklens
 
-Built with **Next.js 16**, **Supabase**, **NextAuth**, live prices from **Yahoo Finance**, fundamentals from **Finnhub** + a multi-source analyst target chain, and optional **Google Gemini** narratives.
+**A mobile-first decision-support app for US equities.**
 
----
+Track the names you care about, get a nightly ranked shortlist scored on analyst targets,
+price action and fundamentals, and review your portfolio with a daily briefing —
+all behind invite-only Google sign-in.
 
-## Features
+<p>
+  <img src="assets/badges/next-js-16-a71b3e.svg" alt="Next.js 16" />
+  <img src="assets/badges/react-19-be5c32.svg" alt="React 19" />
+  <img src="assets/badges/typescript-d76883.svg" alt="TypeScript" />
+  <img src="assets/badges/supabase-ebae2a.svg" alt="Supabase" />
+  <img src="assets/badges/tailwind-4-6c15fa.svg" alt="Tailwind 4" />
+</p>
 
-### Watchlist
+[**▶ Live app**](https://stocklens-amber.vercel.app) · [Features](#-what-it-does) · [Architecture](#-architecture) · [How Picks work](#-how-picks-work) · [Setup](#-getting-started)
 
-- **Search & add** US tickers via Yahoo search (sector normalized for grouping).
-- **Custom tags** — label stocks and group by tag; suggested tag hints; up to a few tags per name.
-- **Sort / filter** — sector, tag, day change, target upside, alphabetical, **bullish**, or **bearish** (signal-based).
-- **Live prices** during US regular hours (9:30 AM–4:00 PM ET):
-  - **13s progress bar** + auto-refresh while market is open
-  - **Closing prices** when market is closed (grey **Closed** badge)
-- **Rich expandable cards** per stock:
-  - Price, day change, **day high / day low**
-  - Signal reason chips + linked headlines (bullish / bearish / quiet)
-  - 7d / 14d / 30d performance, 52-week range
-  - Analyst buy / hold / sell bar
-  - **Target price** with upside vs current (analyst consensus when available)
-  - **Key research** panel — earnings date, revenue/earnings growth, P/E vs sector (cached)
-  - **Vs sector** relative strength when benchmark data exists
-- **Trending suggestions** (collapsible) — up to 3 names not on your list; skip/dismiss support; optional Gemini blurbs; 3h global cache.
-- **Cache-first fundamentals** — batch API returns DB cache immediately; stale rows refresh in background.
-- Max **30** watchlist tickers per user.
-
-### Picks
-
-- **One shared list for everyone** — up to **15** US stocks ranked nightly (not personalized to your watchlist).
-- Built overnight by cron from `stock_fundamentals` + `stock_research_cache` (no live Yahoo during scoring).
-- During the day, `/api/picks` overlays **live prices** so upside and buy zone stay current; if you hold a pick, portfolio size/cost is shown on the card.
-- Each pick shows confidence, buy zone, analyst target, upside, factor chips, chart, vs-sector panel, and Key Research.
-- Optional **Gemini** thesis + risk (cached ~3h; client polls `/api/picks/narratives`).
-- See **[How Picks work](#how-picks-work)** below for the full scoring breakdown.
-
-### Portfolio
-
-- **Vested sync** — upload `.xlsx` with a `Holdings` sheet (Ticker, shares, average cost).
-- **Portfolio value** — invested, total P&L, live value; **Closed** badge + timestamp when market is closed.
-- **Daily summary** (collapsible) — AI-generated editorial overview of your holdings (cached ~3h; cron-refreshed on market days).
-- **Holdings views** — compact list or table; sorted by P&L; **13s live refresh** during regular hours.
-- **Per-holding signals** — attention / soft / profit tiers with factor chips and expandable detail (merged from portfolio + watchlist signal logic).
-- Per-user holdings; shared fundamentals and summary cache keyed by portfolio hash.
-
-### Settings
-
-- **WhatsApp daily briefing** — opt in with Indian mobile number; sent **10:30 AM ET** on US market days (Mon–Fri) via Twilio.
-- Account header and app version.
-
-### Auth & access
-
-- **Google OAuth** via NextAuth v5.
-- **Email whitelist** in Supabase `allowed_emails` — unlisted users see “Access denied”.
-- Session exposes `user.id` for all per-user API routes.
-- Middleware redirects unauthenticated users to `/login`.
-
-### PWA / mobile
-
-- Bottom tab navigation (Watchlist · Picks · Portfolio), Settings in header.
-- Safe-area insets, 44px+ touch targets, dark phone-first UI.
-- `viewport-fit=cover`, `manifest.json` for add-to-home-screen.
+</div>
 
 ---
 
-## Tech stack
+## The problem
 
-| Layer | Choice |
-|--------|--------|
-| Framework | Next.js 16 (App Router) |
-| UI | React 19, Tailwind CSS 4, Lucide icons |
-| Auth | NextAuth 5 + Google provider |
-| Database | Supabase (Postgres + RLS) |
-| Client data | SWR |
-| Market data | Yahoo Finance (quotes, charts, screeners) |
-| Fundamentals | Finnhub (recommendations, sentiment); Yahoo charts (52w, momentum) |
-| Analyst targets | StockAnalysis → FMP → Eulerpool → Finnhub → Yahoo → 52w high (daily reset 5pm IST) |
-| Research | Cached earnings/growth metrics in `stock_research_cache` |
-| LLM (optional) | Google Gemini (`gemini-2.5-flash`) |
-| WhatsApp (optional) | Twilio |
-| Portfolio import | `xlsx` (Vested export) |
+Most stock apps show you a price and leave the thinking to you. Checking whether a name is
+actually worth buying means opening five tabs — analyst targets on one site, fundamentals on
+another, the 52-week range somewhere else, news sentiment nowhere in particular — and doing
+the comparison in your head, every time, for every ticker.
 
----
+Stocklens does that comparison once a night, mechanically, across the whole universe, and hands
+you the fifteen names that survive. Everything else in the app exists to let you check its work.
 
-## Data model (high level)
+## ✨ What it does
 
-**Per-user** (filtered by `user_id`):
+| | Feature | |
+|---|---|---|
+| 👁️ | **Watchlist** | Up to 30 US tickers with custom tags, sector grouping, and sort/filter by day change, target upside, or bullish/bearish signal |
+| ⚡ | **Live prices** | 13-second auto-refresh during US regular hours (9:30–16:00 ET), closing prices with a **Closed** badge outside them |
+| 🎯 | **Picks** | One shared list of up to 15 names, ranked overnight against analyst consensus, momentum, news and fundamentals |
+| 💼 | **Portfolio** | Vested `.xlsx` sync, live P&L, per-holding attention/profit signals, and an AI daily summary |
+| 📊 | **Research panel** | Earnings date, revenue and EPS growth, P/E vs sector median, 52-week range, analyst buy/hold/sell split |
+| 📉 | **Vs sector** | Relative strength against the sector's benchmark ETF (XLK for Tech, and so on) |
+| 💬 | **WhatsApp briefing** | Optional daily digest at 10:30 AM ET on US market days, via Twilio |
+| 📱 | **Installable PWA** | Bottom-tab navigation, safe-area insets, 44px touch targets, add-to-home-screen |
 
-- `watchlist_stocks`, `watchlist_tags`
-- `portfolio_holdings`, portfolio sync metadata
-- `portfolio_daily_summaries` (keyed by user + holdings hash)
-- User settings (WhatsApp number, opt-in) on `users.preferences`
-- Trending skip list per user
+## 🏗 Architecture
 
-**Shared** (no `user_id`):
+```mermaid
+flowchart TB
+    subgraph client["📱 Client — Next.js 16 App Router"]
+        W["Watchlist"]
+        P["Picks"]
+        PF["Portfolio"]
+        S["Settings"]
+    end
 
-- `stock_fundamentals` — price fields ~30 min; targets daily 5pm IST
-- `stock_research_cache` — earnings, growth, volume metrics
-- `global_top_picks` / `global_top_picks_runs` — nightly ranked list (scoring v2 snapshot per run)
-- `pick_narratives` — LLM thesis / risk / company blurb (~3h TTL)
-- `portfolio_sell_narratives` — sell-review text cache
-- `watchlist_suggestions_cache` — global trending pool (~3h)
-- `stock_logos`, `sector_benchmarks`
+    subgraph api["🔌 API routes"]
+        RW["/api/watchlist/*"]
+        RP["/api/picks"]
+        RF["/api/fundamentals/*"]
+        RPF["/api/portfolio/*"]
+    end
 
-See `supabase/migrations/` and `AGENTS.md`.
+    subgraph db["🗄 Supabase — Postgres"]
+        FUND[("stock_fundamentals")]
+        RES[("stock_research_cache")]
+        PICKS[("global_top_picks")]
+        USER[("watchlist / holdings")]
+    end
 
----
+    subgraph cron["⏰ Nightly cron — 17:00 UTC, Mon–Fri"]
+        T["refresh-targets"] --> R["refresh-research"]
+        R --> PS["refresh-portfolio-summaries"]
+        PS --> B["build-global-picks"]
+        B --> E["evaluate-global-picks"]
+    end
 
-## Scheduled jobs (Vercel cron)
+    subgraph ext["🌐 External data"]
+        Y["Yahoo Finance<br/>quotes · charts · screeners"]
+        F["Finnhub<br/>ratings · sentiment"]
+        TGT["Target chain<br/>StockAnalysis → FMP → Eulerpool"]
+        G["Gemini<br/>narratives"]
+        TW["Twilio<br/>WhatsApp"]
+    end
 
-Requires `CRON_SECRET` (`Authorization: Bearer …` on cron routes).
+    client --> api
+    api --> db
+    api -->|live prices only| Y
+    cron --> db
+    cron --> Y & F & TGT & G
+    cron --> TW
+```
 
-| Cron | Schedule (UTC) | Purpose |
-|------|------------------|---------|
-| `/api/cron/refresh-targets` | 15:30 Mon–Fri | Bulk refresh analyst targets |
-| `/api/cron/refresh-research` | 16:00 Mon–Fri | Refresh stale `stock_research_cache` |
-| `/api/cron/refresh-portfolio-summaries` | 16:30 Mon–Fri | Regenerate stale portfolio daily summaries |
-| `/api/cron/send-whatsapp-briefings` | 15:30 Mon–Fri | Send WhatsApp briefings (~10:30 AM ET window) |
-| `/api/cron/build-global-picks` | 17:00 Mon–Fri | Score universe → publish `global_top_picks` |
-| `/api/cron/evaluate-global-picks` | 21:30 Mon–Fri | Track pick outcomes vs market (accuracy) |
-| `/api/cron/send-picks-accuracy-report` | 14:00 Mon | Weekly accuracy email (opt-in) |
+**The key design decision:** scoring never touches a live API. The nightly cron writes a scored
+snapshot to Postgres; during the day `GET /api/picks` reads that snapshot and overlays only live
+*prices* on top. Rank and factors stay fixed from last night, so the list doesn't reshuffle under
+you while you're reading it — and a Yahoo outage at 11 AM can't take the Picks tab down.
 
-Configured in `vercel.json`.
+## 🎯 How Picks work
 
----
+Picks answers one question: *which US stocks look like strong buys right now, on analyst targets,
+price action, news, fundamentals and sector context?*
 
-## How Picks work
+It's a **filter funnel** followed by a **points contest**:
 
-Stocklens Picks answers: *“Which US stocks look like strong buys right now, based on analyst targets, price action, news, fundamentals, and sector context?”*
+```mermaid
+flowchart LR
+    U["Universe<br/>every ticker in<br/>stock_fundamentals"] --> G{"Must-pass<br/>gates"}
+    G -->|fails any| X["❌ out"]
+    G -->|passes all| S["Points contest<br/>upside · consensus · momentum<br/>news · research · vs sector"]
+    S --> R["Rank by score<br/>tie-break: upside, then day move"]
+    R --> P["Publish top 15<br/>if ≥ 3 qualify"]
+```
 
-Think of it as a **filter funnel**, then a **points contest**:
+Gates are strict and binary — fail one and you're out, no partial credit. Only **high-confidence**
+picks (≥ 15 analysts, > 60% buy) are published.
 
-1. **Universe** — Every ticker in `stock_fundamentals` (thousands of names with cached data).
-2. **Must-pass gates** — Strict rules; fail any rule and the stock is out (no partial credit).
-3. **Scoring** — Survivors earn points for upside, analyst consensus, momentum, news, etc. Research and sector comparisons add or subtract within caps.
-4. **Rank** — Sort by total score (tie-break: higher upside, then bigger move today).
-5. **Publish** — Save top **15** to `global_top_picks` if at least **3** qualify; everyone sees the same list on the Picks tab.
+<details>
+<summary><b>Must-pass gates — the exact thresholds</b></summary>
 
-Scoring runs in **`src/lib/picks-scoring-v2.ts`** (constants in `PICKS_V2_RULES`). Tune numbers there. Deeper architecture: [`docs/picks-architecture.md`](docs/picks-architecture.md) (some sections describe the older per-user pipeline; v2 global cron is the live path).
-
-### When the list updates
-
-| Step | What happens |
-|------|----------------|
-| Nightly cron | `build-global-picks` scores the full fundamentals table and writes today’s run |
-| Your app open | `GET /api/picks` reads the latest **published** run from the DB |
-| Market hours | Live Yahoo prices refresh **current price**, **upside %**, and **buy zone** on the card (rank/score factors stay from last night) |
-
-### Must-pass gates (v2)
-
-A stock only gets a score if **all** of these are true:
+<br/>
 
 | Gate | Threshold |
-|------|-----------|
+|---|---|
 | Share price | ≥ **$5** |
-| Market cap | ≥ **$500M** (from research cache) |
-| Analyst coverage | ≥ **8** analysts (buy + hold + sell) |
-| Sell ratings | ≤ **35%** of analysts |
-| Buy ratings | ≥ **50%** of analysts |
-| Price target | **Analyst consensus only** (no momentum/52w synthetic targets) |
-| Upside to target | ≥ **8%** above current price |
-| News sentiment | If we have it: not negative (≥ **0**) |
-| 30-day trend | If we have it: not down (≥ **0%**) |
-| Earnings | **Excluded** if earnings are within **7** calendar days |
-| Business quality | Profitable **or** revenue growing YoY (when research exists) |
-| Minimum score | Total ≥ **35** points after bonuses |
-| Confidence | Must be **high** only (≥ **15** analysts and **>60%** buy); medium/low picks are dropped |
+| Market cap | ≥ **$500M** |
+| Analyst coverage | ≥ **8** analysts |
+| Sell ratings | ≤ **35%** |
+| Buy ratings | ≥ **50%** |
+| Price target | **Analyst consensus only** — no synthetic momentum targets |
+| Upside to target | ≥ **8%** |
+| News sentiment | Not negative, when known |
+| 30-day trend | Not down, when known |
+| Earnings | Excluded within **7 days** of the date |
+| Business quality | Profitable **or** growing revenue YoY |
+| Minimum score | ≥ **35** points |
+| Confidence | **High only** |
 
-### Scoring parameters (exact points)
+</details>
 
-Points stack. The UI **factor chips** mirror these labels.
+<details>
+<summary><b>Scoring table — where the points come from</b></summary>
 
-#### Analyst upside (biggest lever)
+<br/>
 
-| Upside to analyst target | Points |
-|--------------------------|--------|
+**Analyst upside** — the biggest lever
+
+| Upside to target | Points |
+|---|---|
 | ≥ 30% | **+44** |
 | ≥ 15% | **+31** |
 | ≥ 8% | **+13** |
 
-#### Analyst buy consensus
+**Analyst consensus**
 
-| Buy ratio (buys ÷ all ratings) | Points |
-|--------------------------------|--------|
+| Buy ratio | Points |
+|---|---|
 | > 70% | **+25** |
 | > 50% | **+15** |
-| ≥ 50% (lean) | **+8** |
+| ≥ 50% | **+8** |
 
-#### Price action & news
+**Price action & news**
 
 | Signal | Condition | Points |
-|--------|-----------|--------|
-| 14-day pullback | Between **−15%** and **−3%**, with upside still > 8% | **+12** |
-| Good news tone | Sentiment > **0.3** | **+10** |
-| Near 20-day support | Price within **3%** above support | **+8** |
-| Near 52-week high | Price ≥ **97%** of 52w high **and** upside < **5%** | **−15** (penalty) |
-| Volume spike | ≥ **1.5×** avg → +8; ≥ **2.0×** → **+12** | |
-| Healthy volume band | **1.2×–2.0×** avg (not a spike) | **+4** |
-| 7-day momentum | 7d change ≥ **+5%** | **+6** |
+|---|---|---|
+| 14-day pullback | −15% to −3%, upside still > 8% | **+12** |
+| Volume spike | ≥ 1.5× avg → +8 · ≥ 2.0× → +12 | |
+| Big move today | +2.5% → +8 · +5% → +10 · +8% → +12 (cap +12) | |
+| Good news tone | Sentiment > 0.3 | **+10** |
+| Near 20-day support | Within 3% above support | **+8** |
+| 7-day momentum | ≥ +5% | **+6** |
 | Above 20-day average | Price ≥ 20d avg | **+5** |
-| News buzz | ≥ **8** articles in 7 days | **+5** |
-| Big move today | +2.5% → +8; +5% → +10; +8% → +12 (cap **+12** total) | |
+| News buzz | ≥ 8 articles in 7 days | **+5** |
+| Healthy volume band | 1.2×–2.0× avg | **+4** |
+| Near 52-week high | ≥ 97% of 52w high **and** upside < 5% | **−15** |
 
-#### Vs sector (sector ETF benchmark)
-
-Uses relative strength vs the sector benchmark (e.g. XLK for Tech). Takes the **better** of RS score or price delta (not both):
-
-| Signal | Condition | Points |
-|--------|-----------|--------|
-| Strong RS | RS score ≥ **65** | **+6** |
-| Weak RS | RS score ≤ **35** | **−4** |
-| Beating sector | 7d/30d delta vs ETF ≥ **+2%** | **+5** |
-| Lagging sector | Delta ≤ **−2%** | **−3** |
-
-#### Key research (fundamentals cache)
-
-Total research adjustment is clamped to **±20** points (`PICKS_RESEARCH_RULES` in `src/lib/picks-research-scoring.ts`):
+**Vs sector** — takes the better of relative strength or price delta, never both
 
 | Signal | Condition | Points |
-|--------|-----------|--------|
-| Revenue YoY | > **15%** / > **5%** / < **−10%** | **+8** / **+4** / **−6** |
-| Profit margin | > **15%** / > **0%** / < **−20%** | **+6** / **+3** / **−8** |
-| EPS YoY | > **10%** | **+5** |
-| Debt / equity | < **1** / > **2.5** | **+4** / **−5** |
-| Current ratio | > **1.5** | **+3** |
-| Trailing P/E | **8–25** (reasonable) / ≥ **50** (stretched) | **+4** / **−4** |
-| P/E vs sector median | ≤ **0.85×** / ≥ **1.5×** / ≥ **2.0×** | **+5** / **−6** / **−10** |
-| Rich vs sector (v2 extra) | P/E **1.5×–2.0×** sector median | **−2** (within the ±20 cap) |
+|---|---|---|
+| Strong RS | score ≥ 65 | **+6** |
+| Beating sector | 7d/30d delta ≥ +2% | **+5** |
+| Lagging sector | delta ≤ −2% | **−3** |
+| Weak RS | score ≤ 35 | **−4** |
 
-### Outputs on each pick card
+**Fundamentals** — total research adjustment clamped to **±20**
 
-| Field | Meaning |
-|-------|---------|
-| **Score** | Total points from the table above (from last nightly run) |
-| **Confidence** | High / medium / low from analyst depth; v2 only publishes **high** |
-| **Buy zone** | Suggested entry band from support vs current price |
-| **Target** | Analyst consensus mean (low/high range when available) |
-| **Upside** | % from current price (live) to target |
-| **Factors** | Human-readable list of which rules fired |
+| Signal | Condition | Points |
+|---|---|---|
+| Revenue YoY | > 15% / > 5% / < −10% | **+8** / **+4** / **−6** |
+| Profit margin | > 15% / > 0% / < −20% | **+6** / **+3** / **−8** |
+| EPS YoY | > 10% | **+5** |
+| P/E vs sector median | ≤ 0.85× / ≥ 1.5× / ≥ 2.0× | **+5** / **−6** / **−10** |
+| Debt / equity | < 1 / > 2.5 | **+4** / **−5** |
+| Trailing P/E | 8–25 / ≥ 50 | **+4** / **−4** |
+| Current ratio | > 1.5 | **+3** |
 
-**Not financial advice** — scores are mechanical rules on cached data, not buy recommendations.
+</details>
 
-### Code reference
+<details>
+<summary><b>Where the scoring lives in the code</b></summary>
+
+<br/>
 
 | What | File |
-|------|------|
-| v2 gates, bonuses, ranking | `src/lib/picks-scoring-v2.ts` |
-| Research points | `src/lib/picks-research-scoring.ts` |
-| Vs-sector points | `src/lib/sector-relative-strength-scoring.ts` (`PICKS_VS_SECTOR_RULES`) |
+|---|---|
+| Gates, bonuses, ranking | `src/lib/picks-scoring-v2.ts` (`PICKS_V2_RULES`) |
+| Research points | `src/lib/picks-research-scoring.ts` (`PICKS_RESEARCH_RULES`) |
+| Vs-sector points | `src/lib/sector-relative-strength-scoring.ts` |
 | Nightly build | `src/lib/cron/build-global-picks.ts` |
-| API response | `src/lib/global-picks-response.ts`, `src/app/api/picks/route.ts` |
+| API response shape | `src/lib/global-picks-response.ts` |
 
-Older **per-user** scoring (watchlist + portfolio + trending, top 10) still lives in `src/lib/picks-scoring.ts` for scripts/tests but is **not** what powers the Picks tab today.
+Tuning the numbers means editing the rule constants — they're deliberately in one place per concern.
 
----
+The older **per-user** pipeline (`src/lib/picks-scoring.ts`) is kept for scripts and tests but no
+longer powers the Picks tab.
 
-## Prerequisites
+</details>
 
-- **Node.js** 20+
-- **Supabase** project
-- **Google Cloud** OAuth client
-- **Finnhub** API key (free tier)
-- **FMP** / **Eulerpool** keys (optional — improve target accuracy)
-- **Gemini** API key (optional — AI narratives)
-- **Twilio** WhatsApp credentials (optional — daily briefing)
-- **CRON_SECRET** (production cron auth)
+> [!NOTE]
+> **Not financial advice.** Scores are mechanical rules applied to cached data. They are a
+> starting point for research, not a recommendation to buy anything.
 
----
+## 🛠 Tech stack
 
-## Local setup
+| Layer | Choice |
+|---|---|
+| Framework | Next.js 16 (App Router) |
+| UI | React 19, Tailwind CSS 4, Radix primitives, Lucide icons |
+| Auth | NextAuth 5 + Google, with a Supabase email allow-list |
+| Database | Supabase (Postgres + RLS) |
+| Client data | SWR |
+| Market data | Yahoo Finance — quotes, charts, screeners |
+| Fundamentals | Finnhub — recommendations, sentiment |
+| Analyst targets | StockAnalysis → FMP → Eulerpool → Finnhub → Yahoo → 52w high |
+| LLM *(optional)* | Google Gemini `gemini-2.5-flash` |
+| Messaging *(optional)* | Twilio WhatsApp |
+| Portfolio import | `xlsx` — Vested export |
 
-### 1. Clone and install
+## ⏰ Scheduled jobs
+
+One Vercel cron entry point, `/api/cron/nightly` at **17:00 UTC, Mon–Fri**, runs six steps in
+order and reports per-step success:
+
+```
+refresh-targets → refresh-research → refresh-portfolio-summaries
+    → build-global-picks → evaluate-global-picks → [Mon] send-picks-accuracy-report
+```
+
+Each step also has its own route under `/api/cron/*` for manual runs. All of them require
+`Authorization: Bearer $CRON_SECRET`.
+
+## 🚀 Getting started
+
+**Prerequisites** — Node 20+, a Supabase project, a Google Cloud OAuth client, and a free
+Finnhub API key. FMP, Eulerpool, Gemini and Twilio keys are all optional.
 
 ```bash
 git clone https://github.com/prakashshuklahub/stocklens.git
 cd stocklens
 npm install
-```
-
-### 2. Environment variables
-
-```bash
 cp .env.example .env.local
+npm run dev
 ```
 
-| Variable | Required | Description |
-|----------|----------|-------------|
-| `NEXTAUTH_URL` | Yes | `http://localhost:3000` in dev |
-| `NEXTAUTH_SECRET` | Yes | `openssl rand -base64 32` |
-| `GOOGLE_CLIENT_ID` / `GOOGLE_CLIENT_SECRET` | Yes | OAuth 2.0 Web client |
-| `SUPABASE_URL` / `SUPABASE_ANON_KEY` / `SUPABASE_SERVICE_ROLE_KEY` | Yes | Supabase API keys |
-| `FINNHUB_API_KEY` | Yes | Recommendations & sentiment |
-| `FMP_API_KEY` | No | Analyst targets (fallback chain) |
-| `EULERPOOL_API_KEY` | No | Analyst targets (fallback chain) |
-| `GEMINI_API_KEY` | No | AI narratives |
-| `TWILIO_ACCOUNT_SID` / `TWILIO_AUTH_TOKEN` / `TWILIO_WHATSAPP_FROM` | No | WhatsApp briefing |
-| `CRON_SECRET` | Prod | Cron route authorization |
-| `DATABASE_URL` | No | For `scripts/migrate.mjs` only |
+<details>
+<summary><b>Environment variables</b></summary>
 
-### 3. Database migrations
+<br/>
 
-Run migrations in order via Supabase SQL Editor, or use `supabase/migrations/run_once_combined.sql` for a fresh project, then apply newer migrations (`010`–`019`) as needed.
+| Variable | Required | Purpose |
+|---|---|---|
+| `NEXTAUTH_URL` | ✅ | `http://localhost:3000` in dev |
+| `NEXTAUTH_SECRET` | ✅ | `openssl rand -base64 32` |
+| `GOOGLE_CLIENT_ID` / `GOOGLE_CLIENT_SECRET` | ✅ | OAuth 2.0 web client |
+| `SUPABASE_URL` / `SUPABASE_ANON_KEY` / `SUPABASE_SERVICE_ROLE_KEY` | ✅ | Supabase API keys |
+| `FINNHUB_API_KEY` | ✅ | Recommendations & sentiment |
+| `FMP_API_KEY` | — | Analyst targets, fallback chain |
+| `EULERPOOL_API_KEY` | — | Analyst targets, fallback chain |
+| `GEMINI_API_KEY` | — | AI narratives |
+| `TWILIO_ACCOUNT_SID` / `TWILIO_AUTH_TOKEN` / `TWILIO_WHATSAPP_FROM` | — | WhatsApp briefing |
+| `RESEND_API_KEY` / `EMAIL_FROM` / `PICKS_REPORT_EMAIL` | — | Weekly accuracy email |
+| `CRON_SECRET` | prod | Cron route authorization |
+| `DATABASE_URL` | — | `scripts/migrate.mjs` only |
+
+</details>
+
+<details>
+<summary><b>Database, access and OAuth setup</b></summary>
+
+<br/>
+
+**1. Migrations** — run `supabase/migrations/run_once_combined.sql` in the Supabase SQL editor for
+a fresh project, then apply any newer numbered migrations. Or use the CLI migrator:
 
 ```bash
-# Optional CLI migrator
 node scripts/migrate.mjs
 ```
 
-### 4. Allow your Google account
+**2. Allow your account** — sign-in is invite-only:
 
 ```sql
 INSERT INTO allowed_emails (email) VALUES ('you@gmail.com');
 ```
 
-### 5. Google OAuth redirect URIs
+**3. Google OAuth redirect URIs**
 
-- Origins: `http://localhost:3000` (+ production URL)
-- Redirect: `http://localhost:3000/api/auth/callback/google` (+ production)
+- Origins: `http://localhost:3000` and your production URL
+- Redirect: `http://localhost:3000/api/auth/callback/google` and the production equivalent
 
-### 6. Run
+</details>
 
-```bash
-npm run dev
-```
+<details>
+<summary><b>API routes</b> — authenticated unless noted</summary>
 
-Open [http://localhost:3000](http://localhost:3000) and sign in with an allowed account.
-
-### 7. Production build
-
-```bash
-npm run build
-npm start
-```
-
----
-
-## Project structure
-
-```
-src/
-├── app/
-│   ├── (app)/              # watchlist, picks, portfolio, settings
-│   ├── api/                # REST + cron routes
-│   └── login/
-├── components/
-│   ├── AppNav.tsx          # Header + bottom tabs
-│   ├── LiveRefreshHeader.tsx
-│   ├── watchlist/          # Cards, search, tags, suggestions
-│   ├── picks/              # Pick cards, loading states
-│   ├── portfolio/          # Holdings, daily summary
-│   └── settings/
-├── hooks/                  # Market session, live price refresh
-├── lib/
-│   ├── auth.ts, supabase.ts
-│   ├── live-prices.ts, market-hours.ts
-│   ├── fundamentals-fetch.ts, load-fundamentals.ts
-│   ├── picks-pipeline.ts, picks.ts, pick-narratives.ts
-│   ├── portfolio-summary-*.ts, twilio/
-│   └── llm.ts              # Gemini (optional)
-supabase/migrations/
-vercel.json                 # Cron schedules
-```
-
----
-
-## API routes (authenticated unless noted)
+<br/>
 
 | Route | Purpose |
-|-------|---------|
-| `GET/POST /api/watchlist` | List / add watchlist |
-| `PATCH/DELETE /api/watchlist/[ticker]` | Tags / remove |
+|---|---|
+| `GET/POST /api/watchlist` | List / add watchlist entries |
+| `PATCH/DELETE /api/watchlist/[ticker]` | Update tags / remove |
 | `GET /api/watchlist/search` | Yahoo ticker search |
 | `GET /api/watchlist/suggestions` | Trending ideas |
 | `POST /api/watchlist/suggestions/skip` | Dismiss a suggestion |
-| `GET /api/fundamentals/batch` | Cache-first fundamentals for watchlist |
-| `GET /api/fundamentals/[ticker]` | Single ticker fundamentals |
-| `GET /api/signals` | Bullish / bearish / quiet for watchlist cards |
-| `GET /api/picks` | Global nightly top picks (live price overlay) |
+| `GET /api/fundamentals/batch` | Cache-first fundamentals for the whole watchlist |
+| `GET /api/fundamentals/[ticker]` | Single ticker |
+| `GET /api/signals` | Bullish / bearish / quiet classification |
+| `GET /api/picks` | Nightly top picks with live price overlay |
 | `GET /api/picks/narratives` | Poll for LLM narrative updates |
 | `GET /api/picks/headlines` | Headlines for pick cards |
 | `GET /api/research/[ticker]` | Cached research panel data |
 | `GET /api/chart/[ticker]` | Price chart series |
-| `GET /api/portfolio` | Holdings + live prices |
-| `POST /api/portfolio/sync` | Vested XLSX upload |
-| `GET /api/portfolio/summary` | Daily AI portfolio summary |
+| `GET /api/portfolio` | Holdings with live prices |
+| `POST /api/portfolio/sync` | Vested `.xlsx` upload |
+| `GET /api/portfolio/summary` | AI daily summary |
 | `GET /api/portfolio/signals/[ticker]` | Per-holding signal detail |
-| `GET/PATCH /api/user/settings` | WhatsApp & preferences |
-| `GET /api/cron/*` | Scheduled jobs (Bearer `CRON_SECRET`) |
-| `GET /api/auth/*` | NextAuth |
+| `GET/PATCH /api/user/settings` | WhatsApp number & preferences |
+| `GET /api/cron/*` | Scheduled jobs — Bearer `CRON_SECRET` |
 
----
+</details>
 
-## External services & limits
+<details>
+<summary><b>Project structure</b></summary>
 
-- **Yahoo Finance** — unofficial endpoints; app refreshes live prices every **13s** during US regular hours only.
-- **Finnhub free tier** — recommendations & sentiment; paid-only endpoints avoided where possible.
-- **Target chain** — StockAnalysis → FMP → Eulerpool → Finnhub → Yahoo; falls back to 52w high; cached until **5pm IST** daily reset.
-- **Gemini** — optional; picks/portfolio/suggestions use sequential calls with delays to reduce 429s; narratives cached **3 hours**.
-- **Twilio WhatsApp** — optional; one briefing per user per US trading day when opted in.
-- **Not financial advice** — scoring and copy are informational.
+<br/>
 
----
+```
+src/
+├── app/
+│   ├── (app)/              # watchlist · picks · portfolio · settings
+│   ├── api/                # 31 REST + cron routes
+│   └── login/
+├── components/
+│   ├── watchlist/          # cards, search, tags, suggestions
+│   ├── picks/              # pick cards, loading states
+│   ├── portfolio/          # holdings, daily summary
+│   ├── settings/ signals/
+│   └── AppNav · LiveRefreshHeader · StockResearchPanel · VsSectorPanel
+├── hooks/                  # useMarketOpen · useLivePriceRefresh
+└── lib/
+    ├── picks-scoring-v2.ts · picks-research-scoring.ts   # the scoring engine
+    ├── cron/               # nightly job fan-out
+    ├── live-prices.ts · market-hours.ts · yahoo-*.ts
+    ├── portfolio-summary-*.ts
+    ├── twilio/ · whatsapp/
+    └── llm.ts
+supabase/migrations/
+vercel.json                 # cron schedule
+```
 
-## Deployment checklist
+</details>
 
-- [ ] All env vars set on Vercel (see `.env.example`)
-- [ ] `NEXTAUTH_URL` matches production domain
-- [ ] Google OAuth production redirect URIs
-- [ ] Supabase migrations applied through latest (`019`+)
-- [ ] Email(s) in `allowed_emails`
-- [ ] `CRON_SECRET` set; `vercel.json` crons enabled on Pro/Hobby as applicable
-- [ ] `npm run build` succeeds locally
-- [ ] Never commit `.env.local` or service role keys
+## 📋 Data model
 
----
+**Per-user**, filtered by `user_id` — `watchlist_stocks`, `watchlist_tags`, `portfolio_holdings`,
+`portfolio_daily_summaries` (keyed by user + holdings hash), preferences on `users`, and a
+per-user trending skip list.
 
-## Scripts
+**Shared**, no `user_id` — `stock_fundamentals` (prices ~30 min, targets daily), `stock_research_cache`,
+`global_top_picks` / `global_top_picks_runs` (a scoring snapshot per run), narrative caches with a
+~3 hour TTL, `watchlist_suggestions_cache`, `stock_logos`, `sector_benchmarks`.
+
+## 🌐 External services & limits
+
+- **Yahoo Finance** — unofficial endpoints; live prices refresh every 13s during regular hours only.
+- **Finnhub free tier** — recommendations and sentiment; paid-only endpoints avoided.
+- **Target chain** — falls back through five sources before resorting to the 52-week high; cached with a daily 5pm IST reset.
+- **Gemini** — optional; sequential calls with delays to avoid 429s, narratives cached 3 hours.
+- **Twilio** — optional; at most one briefing per user per US trading day.
+
+## 📦 Scripts
 
 | Command | Description |
-|---------|-------------|
+|---|---|
 | `npm run dev` | Development server |
 | `npm run build` | Production build |
-| `npm start` | Run production server |
+| `npm start` | Production server |
 | `npm run lint` | ESLint |
-| `npm run generate-icons` | PWA icon assets |
+| `npm run generate-icons` | Regenerate PWA icon assets |
 | `node scripts/migrate.mjs` | Apply SQL via `DATABASE_URL` |
 
 ---
 
-## License
+<div align="center">
 
-Private project — all rights reserved unless otherwise specified by the repository owner.
+Built by **[Prakash Shukla](https://github.com/prakashshuklahub)**
+
+[The Hustling Engineer](https://www.youtube.com/@TheHustlingEngineer) · [LinkedIn](https://www.linkedin.com/in/prakash-shukla/)
+
+<sub>Private project — all rights reserved unless otherwise specified by the repository owner.</sub>
+
+</div>
